@@ -1,5 +1,5 @@
 {
-  "version": "1.0.19",
-  "changelog": "Melhorias na IA - Meta DEMO/REAL separada - Graficos em tempo real - Restauracao de dados ao reconectar",
-  "installer_url": "https://github.com/whsouza22/wstrader-update/releases/download/v1.0.19/WsTrader_Setup.exe"
+  "version": "2.0",
+  "changelog": "DOM Forex Perfect Zones + ENSEMBLE IA - Build otimizado - Multi-broker - Correcoes de SALDO/META e icone",
+  "installer_url": "https://github.com/whsouza22/wstrader-update/releases/download/v2.0/WsTrader_Setup_2.0.exe"
 }
