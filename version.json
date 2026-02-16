@@ -1,5 +1,1 @@
-{
-  "version": "2.1",
-  "changelog": "Fix botao fechar em todas as telas - Tamanho padronizado - Build otimizado",
-  "installer_url": "https://github.com/whsouza22/wstrader-update/releases/download/v2.1/WsTrader_Setup_2.1.exe"
-}
+{"version": "2.2", "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v2.2/WsTrader_Setup_2.2.exe"}
