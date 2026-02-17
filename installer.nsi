@@ -9,7 +9,7 @@
 ; Configurações Gerais
 ; ================================
 Name "WS Trader AI"
-OutFile "WsTrader_Setup_2.4.exe"
+OutFile "WsTrader_Setup_2.5.exe"
 InstallDir "$PROGRAMFILES64\WsTrader"
 InstallDirRegKey HKLM "Software\WsTrader" "InstallDir"
 RequestExecutionLevel admin
@@ -50,13 +50,13 @@ RequestExecutionLevel admin
 ; ================================
 ; Informações da Versão
 ; ================================
-VIProductVersion "2.4.0.0"
+VIProductVersion "2.5.0.0"
 VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "ProductName" "WS Trader AI"
 VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "CompanyName" "WS Trader Team"
 VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "LegalCopyright" "© 2026 WS Trader Team"
 VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "FileDescription" "Assistente Inteligente de Trading"
-VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "FileVersion" "2.4"
-VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "ProductVersion" "2.4"
+VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "FileVersion" "2.5"
+VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "ProductVersion" "2.5"
 
 ; ================================
 ; Seção Principal - Instalação
@@ -93,7 +93,7 @@ Section "WS Trader AI" SecMain
 
     ; Salva informações no registro
     WriteRegStr HKLM "Software\WsTrader" "InstallDir" "$INSTDIR"
-    WriteRegStr HKLM "Software\WsTrader" "Version" "2.4"
+    WriteRegStr HKLM "Software\WsTrader" "Version" "2.5"
 
     ; Cria desinstalador
     WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -103,7 +103,7 @@ Section "WS Trader AI" SecMain
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "UninstallString" "$INSTDIR\Uninstall.exe"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "DisplayIcon" "$INSTDIR\WsTrader.exe"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "Publisher" "WS Trader Team"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "DisplayVersion" "2.4"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "DisplayVersion" "2.5"
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "NoModify" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "NoRepair" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "EstimatedSize" 320000
