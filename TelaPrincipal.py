@@ -404,7 +404,19 @@ exit
         await update_splash_ui(t["connected"], show_progress_bar=True, progress_value=None, show_button=False)
         await asyncio.sleep(0.2)
 
-        response = requests.get(VERSION_URL, timeout=10)
+        # Executar request em thread separada para não bloquear a UI (evita "Working...")
+        def _fetch_version():
+            for attempt in range(3):
+                try:
+                    return requests.get(VERSION_URL, timeout=5)
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    import time
+                    time.sleep(1)
+        
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, _fetch_version)
         response.raise_for_status()
         data = json.loads(response.text)
 
@@ -566,10 +578,16 @@ async def main(page: ft.Page):
         except Exception:
             pass
 
-    atexit.register(kill_all_bot_processes)
+    # ===== FECHAMENTO INSTANTÂNEO - mata tudo sem esperar =====
+    def _cleanup_on_exit():
+        try:
+            kill_all_bot_processes()
+        except Exception:
+            pass
+    atexit.register(_cleanup_on_exit)
 
-    # ===== HANDLER DE FECHAMENTO DA JANELA (Flet 0.80) =====
     def on_window_event(e):
+        """Intercepta o close e mata o processo inteiro instantaneamente."""
         is_close = False
         if hasattr(e, 'type'):
             try:
@@ -579,9 +597,19 @@ async def main(page: ft.Page):
         if not is_close and hasattr(e, 'data'):
             is_close = ('close' in str(e.data).lower())
         if is_close:
-            logger.info("Janela fechada pelo usuário. Encerrando...")
-            # Fechar imediatamente sem page.update() para evitar tela "Working..."
-            kill_all_bot_processes()
+            # Matar TUDO instantaneamente - sem page.update(), sem delay
+            try:
+                kill_all_bot_processes()
+            except Exception:
+                pass
+            # Mata o processo Python e todos os filhos (incluindo flet.exe)
+            import ctypes
+            try:
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.OpenProcess(1, False, os.getpid())
+                kernel32.TerminateProcess(handle, 0)
+            except Exception:
+                pass
             os._exit(0)
 
     page.window.prevent_close = True
