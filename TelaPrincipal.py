@@ -354,14 +354,12 @@ exit
 
             logger.info("Fechando aplicativo para atualizacao...")
             try:
-                page.window.close()
-                await asyncio.sleep(0.5)
+                page.window.prevent_close = False
+                page.update()
+                page.window.destroy()
             except Exception:
                 pass
-            try:
-                page.window_destroy()
-            except Exception:
-                pass
+            await asyncio.sleep(1.0)
             os._exit(0)
 
         except requests.exceptions.RequestException as e:
