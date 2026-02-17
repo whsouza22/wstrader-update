@@ -1,0 +1,146 @@
+{
+  "wins": [
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769977860.4480448
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769977980.5275586
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769978100.5003302
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769978340.4526136
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769978460.5391092
+    },
+    {
+      "direction": "PUT",
+      "trend": "FORTE_BAIXA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769979180.8477657
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769979540.711457
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769979960.7298667
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769980260.3330755
+    }
+  ],
+  "losses": [
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769978220.6690156
+    },
+    {
+      "direction": "PUT",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "OVERBOUGHT",
+      "timestamp": 1769978580.648611
+    },
+    {
+      "direction": "PUT",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "OVERBOUGHT",
+      "timestamp": 1769978700.9541154
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_BAIXA",
+      "volatility": "NORMAL",
+      "rsi_zone": "OVERSOLD",
+      "timestamp": 1769978820.5718198
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769978940.7759612
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769979060.5783746
+    },
+    {
+      "direction": "PUT",
+      "trend": "FORTE_BAIXA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769979300.4150972
+    },
+    {
+      "direction": "PUT",
+      "trend": "FORTE_BAIXA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769979420.7538443
+    },
+    {
+      "direction": "PUT",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "OVERBOUGHT",
+      "timestamp": 1769979720.6895483
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769980140.765732
+    },
+    {
+      "direction": "CALL",
+      "trend": "FORTE_ALTA",
+      "volatility": "NORMAL",
+      "rsi_zone": "NEUTRO",
+      "timestamp": 1769981820.3927011
+    }
+  ]
+}

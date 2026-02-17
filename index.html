@@ -1,0 +1,1539 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WSTrader — IA autônoma de última geração</title>
+  <meta name="description" content="WSTrader: plataforma com IA de última geração que opera de forma autônoma, aprende continuamente e evolui com o tempo." />
+  <meta name="theme-color" content="#050508" />
+  <link rel="icon" href="logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#050508;
+      --bg2:#0a0c14;
+      --bg3:#0e1018;
+      --surface:rgba(255,255,255,.04);
+      --surface2:rgba(255,255,255,.07);
+      --surface3:rgba(255,255,255,.10);
+      --line:rgba(255,255,255,.08);
+      --line2:rgba(255,255,255,.14);
+      --text:#e8ecf4;
+      --muted:rgba(232,236,244,.60);
+      --brand:#ff6a00;
+      --brand2:#ff9d2b;
+      --brand3:#ffb84d;
+      --cyan:#00d4ff;
+      --cyan2:rgba(0,212,255,.15);
+      --purple:#8b5cf6;
+      --radius:16px;
+      --shadow:0 20px 60px rgba(0,0,0,.55);
+      --shadow2:0 30px 80px rgba(0,0,0,.65);
+      --glow:rgba(255,106,0,.12);
+      --glow2:rgba(0,212,255,.08);
+    }
+
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    html,body{height:100%}
+    body{
+      font-family:'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+      color:var(--text);
+      background:var(--bg);
+      overflow-x:hidden;
+      -webkit-font-smoothing:antialiased;
+    }
+
+    /* === ANIMATED GRID BACKGROUND === */
+    body::before{
+      content:"";position:fixed;inset:0;
+      background-image:
+        linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+      background-size:60px 60px;
+      mask-image:radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 70%);
+      -webkit-mask-image:radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 70%);
+      pointer-events:none;z-index:0;
+    }
+
+    /* === AMBIENT ORBS === */
+    .ambientOrb{
+      position:fixed;border-radius:50%;pointer-events:none;
+      filter:blur(100px);opacity:.4;z-index:0;
+    }
+    .orb1{width:600px;height:600px;top:-10%;left:-8%;background:var(--glow)}
+    .orb2{width:500px;height:500px;top:30%;right:-12%;background:var(--glow2)}
+    .orb3{width:400px;height:400px;bottom:5%;left:15%;background:rgba(139,92,246,.06)}
+
+    a{color:inherit;text-decoration:none}
+    img{max-width:100%;display:block}
+    button{font:inherit;color:inherit}
+
+    .wrap{max-width:1180px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+    .section{padding:100px 0}
+    section[id]{scroll-margin-top:92px}
+
+    /* === TOPBAR === */
+    .topbar{
+      position:sticky;top:0;z-index:60;
+      background:rgba(5,5,8,.80);
+      backdrop-filter:blur(20px) saturate(1.4);
+      -webkit-backdrop-filter:blur(20px) saturate(1.4);
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .topbar .row{
+      display:grid;
+      grid-template-columns:minmax(200px,1fr) auto minmax(200px,1fr);
+      align-items:center;gap:18px;padding:16px 0;
+    }
+    .brand{display:flex;align-items:center;gap:12px}
+    .logoImg{height:40px;width:auto}
+    .brandName{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:2px;text-transform:uppercase;font-size:15px;color:var(--text)}
+    .brandFirst{font-size:20px;color:var(--brand);font-weight:700}
+
+    .nav{
+      display:flex;gap:2px;align-items:center;
+      background:rgba(255,255,255,.04);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:999px;padding:4px;
+      justify-self:center;
+    }
+    .nav a{
+      padding:8px 16px;border-radius:999px;
+      font-size:13px;font-weight:600;
+      color:var(--muted);
+      transition:all .2s ease;
+    }
+    .nav a:hover{color:var(--text);background:rgba(255,255,255,.08)}
+
+    .actions{display:flex;gap:10px;align-items:center;justify-content:flex-end}
+    .langBtn{
+      width:28px;height:20px;border-radius:4px;cursor:pointer;
+      border:1px solid rgba(255,255,255,.12);object-fit:cover;
+      transition:opacity .2s;opacity:.7;
+    }
+    .langBtn:hover{opacity:1}
+
+    /* === BUTTONS === */
+    .btn{
+      border:1px solid var(--line2);
+      background:var(--surface2);
+      color:var(--text);
+      padding:10px 20px;border-radius:12px;
+      font-weight:700;font-size:13px;
+      display:inline-flex;align-items:center;gap:10px;
+      transition:all .25s ease;
+      cursor:pointer;white-space:nowrap;
+      position:relative;overflow:hidden;
+    }
+    .btn::before{
+      content:"";position:absolute;inset:0;
+      background:linear-gradient(135deg,rgba(255,255,255,.06),transparent);
+      opacity:0;transition:opacity .25s ease;
+    }
+    .btn:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.22)}
+    .btn:hover::before{opacity:1}
+    .btn.primary{
+      border:none;
+      background:linear-gradient(135deg,var(--brand),var(--brand2));
+      color:#050508;font-weight:800;
+      box-shadow:0 0 30px rgba(255,106,0,.25),0 8px 30px rgba(255,106,0,.15);
+    }
+    .btn.primary:hover{box-shadow:0 0 40px rgba(255,106,0,.35),0 12px 40px rgba(255,106,0,.20)}
+    .btn.soon{border-style:dashed;opacity:.8}
+    .btn.ghost{background:transparent}
+    .btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+
+    /* === HERO === */
+    .hero{padding:120px 0 100px;position:relative;overflow:hidden}
+    .hero::before{
+      content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);
+      width:800px;height:800px;
+      background:radial-gradient(circle,rgba(255,106,0,.10) 0%,transparent 70%);
+      pointer-events:none;
+    }
+    .heroGrid{
+      display:grid;
+      grid-template-columns:1.15fr .85fr;
+      gap:60px;align-items:center;
+    }
+    .eyebrow{
+      font-family:'Space Grotesk',sans-serif;
+      font-size:12px;letter-spacing:.3em;
+      text-transform:uppercase;color:var(--brand2);font-weight:600;
+      display:inline-flex;align-items:center;gap:10px;
+    }
+    .eyebrow::before{
+      content:"";width:24px;height:1px;
+      background:linear-gradient(90deg,var(--brand),transparent);
+    }
+    .headline{
+      margin:20px 0 18px;
+      font-family:'Space Grotesk',sans-serif;
+      font-size:clamp(42px,5.2vw,72px);
+      line-height:1.0;letter-spacing:-.03em;font-weight:700;
+    }
+    .headline .accent{
+      color:transparent;
+      background:linear-gradient(135deg,var(--brand),var(--brand2),var(--brand3));
+      -webkit-background-clip:text;background-clip:text;
+    }
+    .lead{color:var(--muted);font-size:17px;line-height:1.8;max-width:56ch}
+    .lead strong{color:var(--text)}
+    .heroActions{display:flex;gap:14px;flex-wrap:wrap;margin-top:28px}
+
+    .launchBadge{
+      margin-top:24px;font-size:13px;color:var(--muted);
+      padding:12px 18px;border-radius:14px;
+      border:1px solid rgba(255,106,0,.15);
+      background:rgba(255,106,0,.04);
+      width:fit-content;
+      display:flex;align-items:center;gap:10px;
+    }
+    .launchBadge::before{
+      content:"";width:8px;height:8px;border-radius:50%;
+      background:var(--brand);
+      box-shadow:0 0 12px var(--brand);
+      animation:pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse{0%,100%{opacity:.5;transform:scale(.8)}50%{opacity:1;transform:scale(1.1)}}
+
+    .heroVisual{position:relative}
+    .visualFrame{
+      position:relative;width:100%;min-height:440px;
+      border-radius:28px;overflow:visible;
+    }
+    .glowOrb{
+      position:absolute;inset:-60px;z-index:0;pointer-events:none;
+      background:
+        radial-gradient(300px 260px at 55% 45%,rgba(255,106,0,.20),transparent 70%),
+        radial-gradient(350px 280px at 40% 65%,rgba(0,212,255,.08),transparent 72%);
+      filter:blur(8px);
+    }
+    .heroRobot{
+      position:relative;z-index:1;
+      width:min(440px,95%);margin:0 auto;
+      filter:drop-shadow(0 0 60px rgba(255,106,0,.20)) drop-shadow(0 30px 60px rgba(0,0,0,.50));
+      animation:floatSoft 8s ease-in-out infinite;
+    }
+    @keyframes floatSoft{
+      0%,100%{transform:translateY(0)}
+      50%{transform:translateY(-14px)}
+    }
+
+    /* === SECTION HEADERS === */
+    .sectionHeader{margin-bottom:48px}
+    .sectionHeader h2{
+      font-family:'Space Grotesk',sans-serif;
+      font-size:clamp(26px,3vw,40px);
+      letter-spacing:-.02em;font-weight:700;margin-top:12px;
+    }
+    .sectionHeader .hint{color:var(--muted);font-size:15px;line-height:1.8;max-width:60ch;margin-top:12px}
+
+    /* === DIVIDER === */
+    .divider{
+      height:1px;
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.08) 30%,rgba(255,255,255,.08) 70%,transparent);
+    }
+
+    /* === CARDS === */
+    .grid{display:grid;gap:16px}
+    .cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .card{
+      padding:28px 24px;border-radius:20px;
+      border:1px solid rgba(255,255,255,.08);
+      background:rgba(255,255,255,.03);
+      backdrop-filter:blur(16px);
+      position:relative;overflow:hidden;
+      transition:all .3s ease;
+      min-height:200px;
+    }
+    .card::before{
+      content:"";position:absolute;top:0;left:0;right:0;height:1px;
+      background:linear-gradient(90deg,transparent,rgba(255,106,0,.4),transparent);
+      opacity:0;transition:opacity .3s ease;
+    }
+    .card::after{
+      content:"";position:absolute;inset:0;
+      background:radial-gradient(300px circle at var(--mx,50%) var(--my,50%),rgba(255,106,0,.06),transparent 60%);
+      opacity:0;transition:opacity .3s ease;pointer-events:none;
+    }
+    .card:hover{border-color:rgba(255,106,0,.20);transform:translateY(-4px)}
+    .card:hover::before{opacity:1}
+    .card:hover::after{opacity:1}
+    .cardIcon{
+      width:44px;height:44px;border-radius:14px;
+      display:grid;place-items:center;
+      background:linear-gradient(135deg,rgba(255,106,0,.12),rgba(255,157,43,.08));
+      border:1px solid rgba(255,106,0,.15);
+    }
+    .cardIcon svg{width:20px;height:20px;color:var(--brand2)}
+    .card h3{margin:16px 0 8px;font-size:16px;font-weight:700}
+    .card p{color:var(--muted);font-size:13.5px;line-height:1.75}
+
+    /* === NUMBERS === */
+    .numbersGrid{
+      display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:16px;
+    }
+    .numCard{
+      padding:32px 24px;border-radius:20px;
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.02);
+      backdrop-filter:blur(16px);
+      text-align:center;position:relative;overflow:hidden;
+      transition:all .3s ease;
+    }
+    .numCard::before{
+      content:"";position:absolute;inset:-1px;border-radius:20px;
+      background:linear-gradient(135deg,rgba(255,106,0,.12),rgba(0,212,255,.08),transparent 60%);
+      z-index:-1;opacity:0;transition:opacity .4s ease;
+    }
+    .numCard:hover{transform:translateY(-6px);border-color:rgba(255,106,0,.18)}
+    .numCard:hover::before{opacity:1}
+    .numIcon{
+      width:56px;height:56px;border-radius:16px;
+      display:inline-flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,rgba(255,106,0,.10),rgba(0,212,255,.06));
+      border:1px solid rgba(255,255,255,.08);
+      margin:0 auto 18px;
+    }
+    .numIcon svg{width:24px;height:24px;color:var(--brand2)}
+    .numValue{
+      font-family:'Space Grotesk',sans-serif;
+      font-size:clamp(32px,3.5vw,44px);font-weight:700;
+      background:linear-gradient(135deg,var(--brand),var(--brand2));
+      -webkit-background-clip:text;background-clip:text;color:transparent;
+      line-height:1.1;margin-bottom:8px;
+    }
+    .numLabel{font-size:14px;font-weight:700;margin-bottom:6px}
+    .numDesc{font-size:12.5px;color:var(--muted);line-height:1.65}
+
+    .benefitStrip{
+      margin-top:32px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center;
+    }
+    .benefitChip{
+      display:inline-flex;align-items:center;gap:10px;
+      padding:12px 20px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.08);
+      background:rgba(255,255,255,.03);
+      font-size:13px;font-weight:600;color:var(--muted);
+      transition:all .2s ease;
+    }
+    .benefitChip:hover{border-color:rgba(255,106,0,.18);color:var(--text);transform:translateY(-2px)}
+    .benefitChip .chipIcon{
+      width:28px;height:28px;border-radius:8px;
+      display:inline-flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,rgba(255,106,0,.12),rgba(255,157,43,.08));
+      flex:0 0 auto;
+    }
+    .benefitChip .chipIcon svg{width:14px;height:14px;color:var(--brand2)}
+
+    /* === EXPLAIN CARDS === */
+    .explainGrid{
+      display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:16px;
+    }
+    .explainCard{
+      padding:28px 24px;border-radius:20px;
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.02);
+      backdrop-filter:blur(16px);
+      position:relative;overflow:hidden;
+      transition:all .3s ease;
+    }
+    .explainCard::before{
+      content:"";position:absolute;top:0;left:0;right:0;height:2px;
+      background:linear-gradient(90deg,var(--brand),var(--cyan),transparent);
+      opacity:.5;
+    }
+    .explainCard:hover{border-color:rgba(255,106,0,.15);transform:translateY(-4px)}
+    .explainCard .step{
+      display:inline-flex;align-items:center;justify-content:center;
+      width:32px;height:32px;border-radius:10px;
+      background:linear-gradient(135deg,rgba(255,106,0,.15),rgba(0,212,255,.08));
+      border:1px solid rgba(255,106,0,.18);
+      font-family:'Space Grotesk',sans-serif;
+      font-weight:700;font-size:14px;color:var(--brand2);margin-bottom:14px;
+    }
+    .explainCard h4{font-size:16px;font-weight:700;margin:0 0 10px}
+    .explainCard p{color:var(--muted);font-size:13px;line-height:1.75}
+    .explainCard ul{margin:10px 0 0;padding-left:18px;color:var(--muted);font-size:12.5px;line-height:1.75}
+    .explainCard ul li{margin-bottom:4px}
+    .tagLabel{
+      display:inline-flex;align-items:center;gap:6px;
+      padding:5px 12px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.08);
+      background:rgba(255,255,255,.03);
+      font-size:11px;font-weight:600;color:var(--muted);margin-top:14px;
+    }
+    .tagLabel .tagDot{width:5px;height:5px;border-radius:999px;background:var(--brand);box-shadow:0 0 8px var(--brand)}
+
+    .infoBox{
+      margin-top:28px;padding:20px 24px;border-radius:18px;
+      border:1px solid rgba(255,106,0,.12);
+      background:rgba(255,106,0,.03);
+      backdrop-filter:blur(10px);
+    }
+    .infoBox h4{margin:0 0 8px;font-size:15px;color:var(--brand2)}
+    .infoBox p{color:var(--muted);font-size:13px;line-height:1.75}
+
+    /* === SPLIT LAYOUT === */
+    .split{
+      display:grid;grid-template-columns:1.1fr .9fr;
+      gap:40px;align-items:start;
+    }
+    .stackList{display:grid;gap:14px}
+    .stackItem{
+      display:flex;gap:16px;align-items:flex-start;
+      padding:20px;border-radius:18px;
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.02);
+      backdrop-filter:blur(16px);
+      transition:all .3s ease;
+      position:relative;
+    }
+    .stackItem::before{
+      content:"";position:absolute;left:0;top:20%;bottom:20%;width:2px;
+      background:linear-gradient(180deg,var(--brand),transparent);
+      border-radius:999px;opacity:0;transition:opacity .3s ease;
+    }
+    .stackItem:hover{border-color:rgba(255,106,0,.15);transform:translateX(4px)}
+    .stackItem:hover::before{opacity:1}
+    .dot{
+      width:10px;height:10px;border-radius:50%;flex:0 0 auto;margin-top:4px;
+      background:linear-gradient(135deg,var(--brand),var(--brand2));
+      box-shadow:0 0 12px rgba(255,106,0,.3);
+    }
+    .stackItem h4{font-size:15px;font-weight:700;margin:0 0 6px}
+    .stackItem p{color:var(--muted);font-size:13px;line-height:1.7}
+
+    /* === METRICS === */
+    .metricsGrid{
+      display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:16px;
+    }
+    .metric{
+      padding:24px;border-radius:18px;
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.02);
+      backdrop-filter:blur(16px);
+      transition:all .3s ease;
+      position:relative;overflow:hidden;
+    }
+    .metric::after{
+      content:"";position:absolute;bottom:0;left:0;right:0;height:2px;
+      background:linear-gradient(90deg,var(--brand),var(--cyan),transparent);
+      opacity:0;transition:opacity .3s ease;
+    }
+    .metric:hover{border-color:rgba(255,106,0,.15);transform:translateY(-3px)}
+    .metric:hover::after{opacity:.5}
+    .metric h4{font-family:'Space Grotesk',sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:.18em;color:var(--muted);margin-bottom:8px}
+    .metric p{font-size:15px;font-weight:700;margin-bottom:8px}
+    .metric span{display:block;color:var(--muted);font-size:12.5px;line-height:1.65}
+
+    /* === DOWNLOAD === */
+    .downloadPanel{
+      display:flex;align-items:center;justify-content:space-between;
+      gap:24px;flex-wrap:wrap;padding:32px;border-radius:24px;
+      border:1px solid rgba(255,106,0,.15);
+      background:linear-gradient(135deg,rgba(255,106,0,.06),rgba(0,212,255,.03));
+      backdrop-filter:blur(16px);
+      box-shadow:0 0 60px rgba(255,106,0,.08);
+      position:relative;overflow:hidden;
+    }
+    .downloadPanel::before{
+      content:"";position:absolute;inset:-1px;border-radius:24px;
+      background:linear-gradient(135deg,rgba(255,106,0,.15),transparent 40%,transparent 60%,rgba(0,212,255,.10));
+      z-index:-1;
+    }
+    .downloadPanel h3{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;margin-bottom:8px}
+    .downloadPanel p{color:var(--muted);font-size:14px;line-height:1.8}
+
+    /* === PRICING === */
+    /* Moved to pricing.html */
+
+    /* === FAQ === */
+    .faq{display:grid;gap:12px}
+    details{
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.02);
+      backdrop-filter:blur(16px);
+      padding:18px 22px;
+      transition:all .3s ease;
+    }
+    details[open]{border-color:rgba(255,106,0,.12);background:rgba(255,255,255,.03)}
+    summary{
+      cursor:pointer;font-weight:700;font-size:14px;
+      list-style:none;display:flex;align-items:center;gap:12px;
+    }
+    summary::-webkit-details-marker{display:none}
+    summary::before{
+      content:"+";
+      width:24px;height:24px;border-radius:8px;
+      background:rgba(255,106,0,.10);border:1px solid rgba(255,106,0,.15);
+      display:inline-flex;align-items:center;justify-content:center;
+      font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;color:var(--brand2);
+      flex:0 0 auto;transition:all .2s ease;
+    }
+    details[open] summary::before{content:"−";background:rgba(255,106,0,.15)}
+    details p{color:var(--muted);margin:12px 0 0 36px;font-size:13.5px;line-height:1.8}
+
+    /* === FOOTER === */
+    footer{padding:40px 0 48px;border-top:1px solid rgba(255,255,255,.06);color:var(--muted)}
+    .foot{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+    .small{font-size:12px;color:rgba(232,236,244,.40)}
+    .foot a{color:var(--muted);transition:color .2s ease}
+    .foot a:hover{color:var(--brand2)}
+
+    /* === MODAL === */
+    .modalOverlay{
+      position:fixed;inset:0;
+      background:rgba(5,5,8,.75);
+      backdrop-filter:blur(16px);
+      display:none;align-items:center;justify-content:center;
+      padding:22px;z-index:999;
+    }
+    .modal{
+      width:min(560px,100%);border-radius:24px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(10,12,20,.95);
+      box-shadow:var(--shadow2),0 0 80px rgba(255,106,0,.06);
+      overflow:hidden;
+    }
+    .modalHead{
+      display:flex;align-items:center;justify-content:space-between;
+      gap:12px;padding:20px 24px 16px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .modalTitle{
+      display:flex;align-items:center;gap:10px;
+      font-family:'Space Grotesk',sans-serif;
+      font-weight:700;letter-spacing:-.3px;
+    }
+    .xBtn{
+      appearance:none;border:1px solid rgba(255,255,255,.10);
+      background:rgba(255,255,255,.04);color:var(--text);
+      border-radius:10px;padding:6px 12px;cursor:pointer;font-weight:900;
+      transition:all .2s ease;
+    }
+    .xBtn:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16)}
+    .modalBody{padding:20px 24px}
+    .badge{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:8px 14px;border-radius:999px;
+      border:1px solid rgba(255,106,0,.15);
+      background:rgba(255,106,0,.05);
+      color:var(--brand2);font-size:13px;font-weight:700;margin-bottom:16px;
+    }
+    .badge::before{
+      content:"";width:8px;height:8px;border-radius:50%;
+      background:var(--brand);box-shadow:0 0 8px var(--brand);
+    }
+    .modalBody p{color:var(--muted);font-size:14px;line-height:1.85}
+    .modalBody p strong{color:var(--text)}
+    .modalActions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+    .fineprint{margin-top:14px;font-size:12px;color:rgba(232,236,244,.40);line-height:1.65}
+
+    /* === REVEAL ANIMATION === */
+    [data-reveal]{
+      opacity:0;transform:translateY(22px);
+      transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1);
+      transition-delay:var(--delay,0s);
+    }
+    [data-reveal].is-visible{opacity:1;transform:translateY(0)}
+
+    /* === RESPONSIVE === */
+    @media(max-width:1000px){
+      .heroGrid{grid-template-columns:1fr}
+      .heroVisual{order:-1}
+      .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .metricsGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .split{grid-template-columns:1fr}
+      .nav{display:none}
+      .explainGrid{grid-template-columns:1fr}
+      .numbersGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    @media(max-width:720px){
+      .section{padding:60px 0}
+      .wrap{padding:0 18px}
+      .hero{padding:60px 0 40px}
+      .headline{font-size:clamp(30px,8vw,42px);line-height:1.08}
+      .lead{font-size:15px;line-height:1.75}
+      .heroActions{flex-direction:column;gap:10px}
+      .heroActions .btn{width:100%;justify-content:center;text-align:center;padding:14px 20px;font-size:14px}
+      .visualFrame{min-height:280px}
+      .heroRobot{width:min(300px,85%)}
+      .launchBadge{font-size:12px;padding:10px 14px}
+      .cards{grid-template-columns:1fr}
+      .card{min-height:auto;padding:22px 20px}
+      .metricsGrid{grid-template-columns:1fr}
+      .metric{padding:18px}
+      .numbersGrid{grid-template-columns:1fr}
+      .numCard{padding:24px 18px}
+      .numValue{font-size:clamp(28px,8vw,36px)}
+      .explainGrid{grid-template-columns:1fr}
+      .explainCard{padding:22px 20px}
+      .stackItem{padding:16px}
+      .downloadPanel{flex-direction:column;text-align:center;padding:24px 20px}
+      .downloadPanel .actions{width:100%;flex-direction:column}
+      .downloadPanel .actions .btn{width:100%;justify-content:center}
+      .topbar .row{grid-template-columns:1fr auto;gap:10px;padding:12px 0}
+      .logoImg{height:32px}
+      .brandName{font-size:13px;letter-spacing:1px}
+      .actions{gap:6px}
+      .actions .btn.primary{padding:8px 14px;font-size:12px}
+      .langBtn{width:24px;height:17px}
+      .sectionHeader h2{font-size:clamp(22px,5.5vw,30px)}
+      .sectionHeader .hint{font-size:14px}
+      .eyebrow{font-size:11px;letter-spacing:.2em}
+      .benefitStrip{gap:8px}
+      .benefitChip{padding:10px 14px;font-size:12px}
+      .infoBox{padding:16px 18px}
+      .infoBox h4{font-size:14px}
+      .infoBox p{font-size:12.5px}
+      details{padding:14px 18px}
+      summary{font-size:13px;gap:10px}
+      details p{margin:10px 0 0 32px;font-size:12.5px}
+      .foot{flex-direction:column;text-align:center;gap:18px}
+      .modal{border-radius:20px}
+      .modalHead{padding:16px 18px 12px}
+      .modalBody{padding:16px 18px}
+      .modalActions{flex-direction:column}
+      .modalActions .btn{width:100%;justify-content:center}
+    }
+    @media(max-width:380px){
+      .wrap{padding:0 14px}
+      .hero{padding:48px 0 32px}
+      .headline{font-size:28px}
+      .actions .btn.primary{font-size:11px;padding:7px 12px}
+    }
+    @media(prefers-reduced-motion:reduce){
+      [data-reveal]{opacity:1;transform:none;transition:none}
+      .heroRobot{animation:none}
+      .launchBadge::before{animation:none}
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Ambient lighting -->
+  <div class="ambientOrb orb1" aria-hidden="true"></div>
+  <div class="ambientOrb orb2" aria-hidden="true"></div>
+  <div class="ambientOrb orb3" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="wrap">
+      <div class="row">
+        <a class="brand" href="#top" aria-label="WSTrader">
+          <img class="logoImg" src="logo.png" alt="Logo WSTrader" />
+          <span class="brandName"><span class="brandFirst">W</span>STRADER</span>
+        </a>
+
+        <nav class="nav" aria-label="Navegacao">
+          <a href="#numeros" data-i18n="nav.numbers">Resultados</a>
+          <a href="pricing.html" data-i18n="nav.pricing">Preço</a>
+          <a href="#download" data-i18n="nav.download">Baixar</a>
+        </nav>
+
+        <div class="actions">
+          <img class="langBtn" id="langBtn"
+               src="https://flagcdn.com/w40/us.png"
+               alt="Switch language"
+               title="English">
+          <a class="btn primary" id="btnCompraTop" href="pricing.html" data-i18n="cta.try">Assinar agora</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- ======================== HERO ======================== -->
+    <section class="hero">
+      <div class="wrap heroGrid">
+        <div class="heroContent">
+          <p class="eyebrow" data-reveal data-i18n="hero.eyebrow">IA de última geração</p>
+
+          <h1 class="headline" data-reveal style="--delay:.06s">
+            <span data-i18n="hero.title1">IA que </span><span class="accent" data-i18n="hero.accent">opera sozinha</span><span data-i18n="hero.title2"> e evolui com o tempo.</span>
+          </h1>
+
+          <p class="lead" data-reveal style="--delay:.12s" data-i18n="hero.lead">
+            Conecte, defina sua meta e deixe a <strong>IA WSTrader</strong> trabalhar por você.
+          </p>
+
+          <div class="heroActions" data-reveal style="--delay:.18s">
+            <a class="btn primary" id="btnCompraHero" href="pricing.html" data-i18n="hero.cta1">Assinar — R$199,99/mês</a>
+            <a class="btn" id="btnBaixarHero" href="#" data-i18n="hero.cta3">Download (em breve)</a>
+          </div>
+
+          <div class="launchBadge" data-reveal style="--delay:.24s" data-i18n="hero.badge">
+            Lançamento: <strong>01/03/2026</strong>
+          </div>
+        </div>
+
+        <div class="heroVisual" data-reveal style="--delay:.12s">
+          <div class="visualFrame">
+            <div class="glowOrb" aria-hidden="true"></div>
+            <img class="heroRobot" src="hero.png" alt="Robô do WSTrader" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ======================== DIFERENCIAIS ======================== -->
+    <section class="section" id="diferenciais">
+      <div class="wrap">
+        <div class="sectionHeader">
+          <p class="eyebrow" data-i18n="diff.eyebrow">Diferenciais</p>
+          <h2 data-i18n="diff.title">A IA WSTrader de última geração trabalha por você.</h2>
+          <p class="hint" data-i18n="diff.hint">
+            Tecnologia proprietária que analisa, decide e executa — sem complicação.
+          </p>
+        </div>
+
+        <div class="grid cards">
+          <article class="card" data-reveal style="--delay:.05s">
+            <div class="cardIcon">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 10.59 2.3 2.3-1.42 1.42L11 13V7h2Z"/>
+              </svg>
+            </div>
+            <h3 data-i18n="diff.card1.title">Aprendizado contínuo</h3>
+            <p data-i18n="diff.card1.desc">A IA WSTrader aprende com cada operação e se torna mais precisa ao longo do tempo. Quanto mais opera, melhor ficam as decisões.</p>
+          </article>
+
+          <article class="card" data-reveal style="--delay:.10s">
+            <div class="cardIcon">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M3 5h18l-7 8v5l-4 2v-7L3 5Z"/>
+              </svg>
+            </div>
+            <h3 data-i18n="diff.card2.title">Filtro inteligente</h3>
+            <p data-i18n="diff.card2.desc">A IA analisa o cenário antes de cada entrada. Se as condições não forem favoráveis, ela não opera — protegendo seu capital automaticamente.</p>
+          </article>
+
+          <article class="card" data-reveal style="--delay:.15s">
+            <div class="cardIcon">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M12 3 4 7v6c0 5 3.4 9.6 8 11 4.6-1.4 8-6 8-11V7l-8-4Zm0 18c-3-1.2-6-4.8-6-9V8l6-3 6 3v4c0 4.2-3 7.8-6 9Z"/>
+              </svg>
+            </div>
+            <h3 data-i18n="diff.card3.title">Execução autônoma</h3>
+            <p data-i18n="diff.card3.desc">Conecte, defina sua meta e stop loss — a IA cuida do resto. Ela opera sozinha, 24 horas por dia se necessário, e para ao atingir a meta.</p>
+          </article>
+
+          <article class="card" data-reveal style="--delay:.20s">
+            <div class="cardIcon">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3v3l4-3h9a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm-7 9h-2V7h2Zm0 4h-2v-2h2Z"/>
+              </svg>
+            </div>
+            <h3 data-i18n="diff.card4.title">Painel em tempo real</h3>
+            <p data-i18n="diff.card4.desc">Acompanhe cada decisão da IA no painel: ativo analisado, direção, resultado e progresso da meta. Tudo visível e transparente.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ======================== NÚMEROS & BENEFÍCIOS ======================== -->
+    <section class="section" id="numeros">
+      <div class="wrap">
+        <div class="sectionHeader">
+          <p class="eyebrow" data-i18n="nums.eyebrow">Números que importam</p>
+          <h2 data-i18n="nums.title">Resultados que falam por si.</h2>
+          <p class="hint" data-i18n="nums.hint">
+            A IA WSTrader opera em ciclos contínuos — cada operação torna o sistema mais inteligente.
+          </p>
+        </div>
+
+        <div class="numbersGrid">
+          <div class="numCard" data-reveal style="--delay:.05s">
+            <div class="numIcon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div class="numValue" data-i18n="nums.n1.value">24/7</div>
+            <div class="numLabel" data-i18n="nums.n1.label">Operação contínua</div>
+            <div class="numDesc" data-i18n="nums.n1.desc">A IA nunca para. Opera dia e noite sem cansaço, sem emoção e sem erro humano.</div>
+          </div>
+
+          <div class="numCard" data-reveal style="--delay:.10s">
+            <div class="numIcon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+            </div>
+            <div class="numValue" data-i18n="nums.n2.value">+1000</div>
+            <div class="numLabel" data-i18n="nums.n2.label">Análises por dia</div>
+            <div class="numDesc" data-i18n="nums.n2.desc">Milhares de cenários avaliados para encontrar apenas as melhores oportunidades.</div>
+          </div>
+
+          <div class="numCard" data-reveal style="--delay:.15s">
+            <div class="numIcon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div class="numValue" data-i18n="nums.n3.value">100%</div>
+            <div class="numLabel" data-i18n="nums.n3.label">Autônoma</div>
+            <div class="numDesc" data-i18n="nums.n3.desc">Não precisa de intervenção. A IA decide, executa e gerencia o risco sozinha.</div>
+          </div>
+
+          <div class="numCard" data-reveal style="--delay:.20s">
+            <div class="numIcon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="numValue" data-i18n="nums.n4.value">∞</div>
+            <div class="numLabel" data-i18n="nums.n4.label">Aprendizado infinito</div>
+            <div class="numDesc" data-i18n="nums.n4.desc">Cada operação alimenta a memória da IA. Ela nunca esquece e sempre melhora.</div>
+          </div>
+        </div>
+
+        <div class="benefitStrip" data-reveal style="--delay:.26s">
+          <div class="benefitChip">
+            <span class="chipIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span data-i18n="nums.chip1">Sem configuração técnica</span>
+          </div>
+          <div class="benefitChip">
+            <span class="chipIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span data-i18n="nums.chip2">Conta DEMO grátis</span>
+          </div>
+          <div class="benefitChip">
+            <span class="chipIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span data-i18n="nums.chip3">Meta e Stop automáticos</span>
+          </div>
+          <div class="benefitChip">
+            <span class="chipIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span data-i18n="nums.chip4">3 corretoras suportadas</span>
+          </div>
+          <div class="benefitChip">
+            <span class="chipIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span data-i18n="nums.chip5">Painel em tempo real</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ======================== EXPLICAÇÃO DETALHADA ======================== -->
+    <section class="section" id="explicacao">
+      <div class="wrap">
+        <div class="sectionHeader">
+          <p class="eyebrow" data-i18n="explain.eyebrow">Entenda o sistema</p>
+          <h2 data-i18n="explain.title">Como o WSTrader funciona na prática</h2>
+          <p class="hint" data-i18n="explain.hint">
+            Simples, direto e sem complicação. Veja como começar a usar em 3 passos.
+          </p>
+        </div>
+
+        <div class="explainGrid">
+          <div class="explainCard" data-reveal style="--delay:.05s">
+            <div class="step">1</div>
+            <h4 data-i18n="explain.s1.title">Conecte sua conta</h4>
+            <p data-i18n="explain.s1.desc">
+              Abra o WSTrader, insira suas credenciais da corretora e escolha conta DEMO (treino) ou REAL. Defina sua meta diária e o limite de perda. Clique em conectar e pronto.
+            </p>
+            <ul>
+              <li data-i18n="explain.s1.li1">Suporta IQ Option, Bullex e CasaTrader</li>
+              <li data-i18n="explain.s1.li2">Configure meta e stop em poucos cliques</li>
+              <li data-i18n="explain.s1.li3">Comece no DEMO para testar sem risco</li>
+            </ul>
+            <div class="tagLabel"><span class="tagDot"></span> <span data-i18n="explain.s1.tag">Conexão segura</span></div>
+          </div>
+
+          <div class="explainCard" data-reveal style="--delay:.12s">
+            <div class="step">2</div>
+            <h4 data-i18n="explain.s2.title">A IA analisa e decide</h4>
+            <p data-i18n="explain.s2.desc">
+              A IA WSTrader de última geração lê o mercado em tempo real, identifica as melhores oportunidades e decide automaticamente quando entrar. Só opera quando as condições são favoráveis.
+            </p>
+            <ul>
+              <li data-i18n="explain.s2.li1">Inteligência artificial avançada e proprietária</li>
+              <li data-i18n="explain.s2.li2">Filtro automático de cenários desfavoráveis</li>
+              <li data-i18n="explain.s2.li3">Só entra quando a IA tem alta confiança</li>
+            </ul>
+            <div class="tagLabel"><span class="tagDot"></span> <span data-i18n="explain.s2.tag">IA WSTrader de última geração</span></div>
+          </div>
+
+          <div class="explainCard" data-reveal style="--delay:.18s">
+            <div class="step">3</div>
+            <h4 data-i18n="explain.s3.title">Opera e aprende sozinha</h4>
+            <p data-i18n="explain.s3.desc">
+              A IA envia as ordens automaticamente. Após cada resultado, ela aprende: reforça o que funcionou e ajusta o que não deu certo. Bateu a meta? O bot para sozinho.
+            </p>
+            <ul>
+              <li data-i18n="explain.s3.li1">Aprende e melhora a cada operação</li>
+              <li data-i18n="explain.s3.li2">Para automaticamente ao atingir a meta</li>
+              <li data-i18n="explain.s3.li3">Pausa inteligente após sequência de perdas</li>
+            </ul>
+            <div class="tagLabel"><span class="tagDot"></span> <span data-i18n="explain.s3.tag">Meta diária + Stop automático</span></div>
+          </div>
+        </div>
+
+        <div class="infoBox" data-reveal style="--delay:.24s">
+          <h4 data-i18n="explain.info.title">💡 Quanto mais tempo ligada, melhor ela fica</h4>
+          <p data-i18n="explain.info.desc">
+            A IA WSTrader acumula experiência a cada operação. Com o tempo, ela aprende o que funciona melhor em cada ativo e horário, descarta oportunidades ruins automaticamente e refina suas decisões para buscar mais consistência. É como ter um operador incansável que nunca esquece o que aprendeu.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ======================== FLUXO DE DECISÃO ======================== -->
+    <section class="section" id="como">
+      <div class="wrap split">
+        <div>
+          <p class="eyebrow" data-i18n="how.eyebrow">Fluxo de decisão</p>
+          <h2 style="font-family:'Space Grotesk',sans-serif;font-size:clamp(26px,3vw,40px);letter-spacing:-.02em;font-weight:700;margin-top:12px" data-i18n="how.title">A IA evolui a cada operação.</h2>
+          <p class="lead" style="margin-top:12px" data-i18n="how.lead">
+            A IA WSTrader passa por observação, análise, execução e aprendizado. Cada ciclo torna o sistema mais inteligente.
+          </p>
+        </div>
+
+        <div class="stackList">
+          <div class="stackItem" data-reveal style="--delay:.06s">
+            <span class="dot"></span>
+            <div>
+              <h4 data-i18n="how.s1.title">Observação</h4>
+              <p data-i18n="how.s1.desc">A IA lê o mercado em tempo real e coleta dados de preço, movimento e contexto para tomar decisões informadas.</p>
+            </div>
+          </div>
+          <div class="stackItem" data-reveal style="--delay:.12s">
+            <span class="dot"></span>
+            <div>
+              <h4 data-i18n="how.s2.title">Análise inteligente</h4>
+              <p data-i18n="how.s2.desc">A IA WSTrader de última geração avalia as condições e só segue adiante quando identifica uma oportunidade com alta confiança.</p>
+            </div>
+          </div>
+          <div class="stackItem" data-reveal style="--delay:.18s">
+            <span class="dot"></span>
+            <div>
+              <h4 data-i18n="how.s3.title">Execução autônoma</h4>
+              <p data-i18n="how.s3.desc">Quando tudo está alinhado, a IA executa a operação automaticamente. Sem atraso, sem interferência manual necessária.</p>
+            </div>
+          </div>
+          <div class="stackItem" data-reveal style="--delay:.24s">
+            <span class="dot"></span>
+            <div>
+              <h4 data-i18n="how.s4.title">Aprendizado contínuo</h4>
+              <p data-i18n="how.s4.desc">Após cada operação, a IA aprende com o resultado e se ajusta para melhorar nas próximas decisões. Quanto mais opera, mais inteligente fica.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ======================== MOTOR IA ======================== -->
+    <section class="section" id="motor">
+      <div class="wrap">
+        <div class="sectionHeader">
+          <p class="eyebrow" data-i18n="engine.eyebrow">Motor IA</p>
+          <h2 data-i18n="engine.title">IA WSTrader: tecnologia proprietária de última geração.</h2>
+          <p class="hint" data-i18n="engine.hint">
+            Um motor inteligente que analisa, filtra e executa com precisão crescente.
+          </p>
+        </div>
+
+        <div class="metricsGrid">
+          <div class="metric" data-reveal style="--delay:.05s">
+            <h4 data-i18n="engine.m1.title">Dados</h4>
+            <p data-i18n="engine.m1.value">Leitura em tempo real</p>
+            <span data-i18n="engine.m1.desc">A IA processa múltiplos indicadores do mercado simultaneamente para tomar a melhor decisão.</span>
+          </div>
+          <div class="metric" data-reveal style="--delay:.10s">
+            <h4 data-i18n="engine.m2.title">Inteligência</h4>
+            <p data-i18n="engine.m2.value">IA de última geração</p>
+            <span data-i18n="engine.m2.desc">Tecnologia proprietária WSTrader com aprendizado contínuo e adaptação automática ao mercado.</span>
+          </div>
+          <div class="metric" data-reveal style="--delay:.15s">
+            <h4 data-i18n="engine.m3.title">Execução</h4>
+            <p data-i18n="engine.m3.value">Totalmente autônoma</p>
+            <span data-i18n="engine.m3.desc">Opera automaticamente com meta diária e stop loss. Pausa após sequência de perdas para proteger o capital.</span>
+          </div>
+          <div class="metric" data-reveal style="--delay:.20s">
+            <h4 data-i18n="engine.m4.title">Evolução</h4>
+            <p data-i18n="engine.m4.value">Melhora a cada dia</p>
+            <span data-i18n="engine.m4.desc">A IA se recalibra automaticamente com base nos resultados. Mais operações = decisões mais precisas.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ======================== DOWNLOAD ======================== -->
+    <section class="section" id="download">
+      <div class="wrap">
+        <div class="downloadPanel" data-reveal>
+          <div>
+            <h3 data-i18n="dl.title">Download do WSTrader (Windows)</h3>
+            <p data-i18n="dl.desc">Após assinar, baixe o instalador e comece a usar.</p>
+          </div>
+          <div class="actions">
+            <a class="btn soon" id="btnBaixar" href="#" aria-disabled="true" data-i18n="dl.btn.download">Download (em breve)</a>
+            <a class="btn primary" id="btnCompraDownload" href="pricing.html" data-i18n="dl.btn.buy">Ver preço</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ======================== FAQ ======================== -->
+    <section class="section" id="faq">
+      <div class="wrap">
+        <div class="sectionHeader">
+          <p class="eyebrow">FAQ</p>
+          <h2 data-i18n="faq.title">Perguntas frequentes</h2>
+          <p class="hint" data-i18n="faq.hint">Se precisar, fale com o suporte no Telegram.</p>
+        </div>
+
+        <div class="faq" data-reveal>
+          <details>
+            <summary data-i18n="faq.q1">Quando será o lançamento?</summary>
+            <p data-i18n="faq.a1">Lançamento previsto para 01/03/2026. Quem estiver na lista de espera receberá acesso antecipado.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q2">A IA opera de forma autônoma?</summary>
+            <p data-i18n="faq.a2">Sim. Após conectar e configurar meta e stop, a IA WSTrader de última geração analisa o mercado, identifica oportunidades e executa as operações automaticamente. Você acompanha tudo pelo painel.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q3">Quanto mais tempo ligada, melhor fica?</summary>
+            <p data-i18n="faq.a3">Sim. A IA aprende com cada resultado — reforça o que funciona e ajusta o que não funciona. Com mais experiência acumulada, a precisão e a consistência melhoram naturalmente.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q4">Quais corretoras são compatíveis?</summary>
+            <p data-i18n="faq.a4">IQ Option, Bullex e CasaTrader. Cada corretora pode ser configurada com conta DEMO ou REAL, com meta e stop independentes.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q5">Preciso saber operar para usar?</summary>
+            <p data-i18n="faq.a5">Não. A IA opera sozinha — basta conectar, definir meta e stop, e deixar rodando. O painel mostra tudo de forma clara.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q6">E se eu perder a conexão?</summary>
+            <p data-i18n="faq.a6">O sistema detecta desconexões e tenta reconectar automaticamente. Os dados do dia ficam salvos e são restaurados sem perda de progresso.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q7">O que é a IA WSTrader?</summary>
+            <p data-i18n="faq.a7">É a inteligência artificial proprietária de última geração do WSTrader. Ela analisa o mercado, toma decisões e aprende continuamente para melhorar suas operações ao longo do tempo.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q8">Vai ter Forex?</summary>
+            <p data-i18n="faq.a8">Forex está no planejamento e será liberado em uma versão futura. Fique na lista de espera para ser avisado.</p>
+          </details>
+          <details>
+            <summary data-i18n="faq.q9">Quanto custa e como assinar?</summary>
+            <p data-i18n="faq.a9">Confira todos os detalhes do plano, preço e formas de pagamento na <a href="pricing.html" style="color:var(--brand2);text-decoration:underline">página de preços</a>.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================== FOOTER ======================== -->
+    <footer>
+      <div class="wrap foot">
+        <div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--text);letter-spacing:1px">WSTRADER</div>
+          <div class="small">&copy; <span id="year"></span> IA de última geração</div>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+          <a id="lnkTelegramFooter" href="#" target="_blank" rel="noopener">Telegram</a>
+          <span class="small" style="opacity:.4">&bull;</span>
+          <a id="lnkPayFooter" href="https://buy.stripe.com/fZe3e38sxfr28Le9AG" target="_blank" rel="noopener" data-i18n="footer.pay">Assinar</a>
+          <span class="small" style="opacity:.4">&bull;</span>
+          <a href="https://billing.stripe.com/p/login/00g6oQcPN8tl3VC9AA" target="_blank" rel="noopener" data-i18n="footer.manage">Gerenciar conta</a>
+        </div>
+      </div>
+
+      <div class="wrap" style="margin-top:28px;padding-top:24px;border-top:1px solid rgba(255,255,255,.06)">
+        <p style="font-size:11px;color:rgba(232,236,244,.35);line-height:1.7;text-align:center;max-width:900px;margin:0 auto" data-i18n="footer.disclaimer">
+          As Transações oferecidas por este site podem ser executadas apenas por adultos totalmente competentes. As Transações com instrumentos financeiros oferecidos no Site envolvem riscos substanciais e a operação pode ser muito arriscada. Se você fizer Transações com os instrumentos financeiros oferecidos neste Site, poderá sofrer perdas substanciais ou até mesmo perder tudo em sua Conta. Antes de decidir iniciar as Transações com os instrumentos financeiros oferecidos no Site, você deve revisar o Contrato de Serviço e as Informações de Divulgação de Riscos.
+        </p>
+      </div>
+    </footer>
+  </main>
+
+  <!-- ======================== MODAL ======================== -->
+  <div class="modalOverlay" id="overlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modalHead">
+        <div class="modalTitle" id="modalTitle">
+          <span data-i18n="modal.title">WSTrader Pro</span>
+        </div>
+        <button class="xBtn" id="close" type="button" aria-label="Fechar">&times;</button>
+      </div>
+
+      <div class="modalBody">
+        <div class="badge">
+          <span data-i18n="modal.badge">Disponível agora</span>
+        </div>
+
+        <p data-i18n="modal.p1">
+          O <strong>WSTrader</strong> está disponível por <strong>R$199,99/mês</strong>.
+          Assine e comece a operar com IA de última geração.
+        </p>
+
+        <p style="margin-top:10px" data-i18n="modal.p2">
+          Pagamento seguro via <strong>Stripe</strong>. Cancele a qualquer momento.
+        </p>
+
+        <div class="modalActions">
+          <a class="btn primary" id="btnCompraModal" href="https://buy.stripe.com/fZe3e38sxfr28Le9AG" target="_blank" rel="noopener" data-i18n="modal.cta1">Assinar — R$199,99/mês</a>
+          <a class="btn" id="btnLista" href="#" target="_blank" rel="noopener" data-i18n="modal.cta.telegram">Falar no Telegram</a>
+          <button class="btn" id="ok" type="button" data-i18n="modal.cta2">Fechar</button>
+        </div>
+
+        <div class="fineprint" data-i18n="modal.fine">
+          Datas e disponibilidade podem mudar conforme capacidade de atendimento e evolução do produto.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const TELEGRAM_URL = "https://t.me/WstraderFlow_bot";
+    const STRIPE_URL = "https://buy.stripe.com/fZe3e38sxfr28Le9AG";
+    const STRIPE_PORTAL = "https://billing.stripe.com/p/login/00g6oQcPN8tl3VC9AA";
+    const DOWNLOAD_URL = "https://github.com/whsouza22/wstrader-update/releases/download/v2.3/WsTrader_Setup_2.3.exe";
+    const DOWNLOAD_AVAILABLE = true;
+    const LAUNCH_DATE = new Date("2026-03-01T00:00:00");
+    const IS_LAUNCHED = new Date() >= LAUNCH_DATE;
+
+    /* ===================== i18n COMPLETO ===================== */
+    const I18N = {
+      pt: {
+        "nav.trade": "Negociação",
+        "nav.numbers": "Resultados",
+        "nav.how": "Como funciona",
+        "nav.pricing": "Preço",
+        "nav.download": "Baixar o app",
+        "nav.help": "Ajuda",
+        "cta.try": "Assinar agora",
+
+        "hero.eyebrow": "IA de última geração",
+        "hero.title1": "IA que ",
+        "hero.accent": "opera sozinha",
+        "hero.title2": " e evolui com o tempo.",
+        "hero.lead": "Conecte, defina sua meta e deixe a <strong>IA WSTrader</strong> trabalhar por você.",
+        "hero.cta1": "Assinar — R$199,99/mês",
+        "hero.cta3": "Download (em breve)",
+        "hero.badge": "Lançamento: <strong>01/03/2026</strong>",
+
+        "diff.eyebrow": "Diferenciais",
+        "diff.title": "A IA WSTrader de última geração trabalha por você.",
+        "diff.hint": "Tecnologia proprietária que analisa, decide e executa — sem complicação.",
+        "diff.card1.title": "Aprendizado contínuo",
+        "diff.card1.desc": "A IA WSTrader aprende com cada operação e se torna mais precisa ao longo do tempo. Quanto mais opera, melhor ficam as decisões.",
+        "diff.card2.title": "Filtro inteligente",
+        "diff.card2.desc": "A IA analisa o cenário antes de cada entrada. Se as condições não forem favoráveis, ela não opera — protegendo seu capital automaticamente.",
+        "diff.card3.title": "Execução autônoma",
+        "diff.card3.desc": "Conecte, defina sua meta e stop loss — a IA cuida do resto. Ela opera sozinha, 24 horas por dia se necessário, e para ao atingir a meta.",
+        "diff.card4.title": "Painel em tempo real",
+        "diff.card4.desc": "Acompanhe cada decisão da IA no painel: ativo analisado, direção, resultado e progresso da meta. Tudo visível e transparente.",
+
+        "nums.eyebrow": "Números que importam",
+        "nums.title": "Resultados que falam por si.",
+        "nums.hint": "A IA WSTrader opera em ciclos contínuos — cada operação torna o sistema mais inteligente.",
+        "nums.n1.value": "24/7",
+        "nums.n1.label": "Operação contínua",
+        "nums.n1.desc": "A IA nunca para. Opera dia e noite sem cansaço, sem emoção e sem erro humano.",
+        "nums.n2.value": "+1000",
+        "nums.n2.label": "Análises por dia",
+        "nums.n2.desc": "Milhares de cenários avaliados para encontrar apenas as melhores oportunidades.",
+        "nums.n3.value": "100%",
+        "nums.n3.label": "Autônoma",
+        "nums.n3.desc": "Não precisa de intervenção. A IA decide, executa e gerencia o risco sozinha.",
+        "nums.n4.value": "∞",
+        "nums.n4.label": "Aprendizado infinito",
+        "nums.n4.desc": "Cada operação alimenta a memória da IA. Ela nunca esquece e sempre melhora.",
+        "nums.chip1": "Sem configuração técnica",
+        "nums.chip2": "Conta DEMO grátis",
+        "nums.chip3": "Meta e Stop automáticos",
+        "nums.chip4": "3 corretoras suportadas",
+        "nums.chip5": "Painel em tempo real",
+
+        "explain.eyebrow": "Entenda o sistema",
+        "explain.title": "Como o WSTrader funciona na prática",
+        "explain.hint": "Simples, direto e sem complicação. Veja como começar a usar em 3 passos.",
+        "explain.s1.title": "Conecte sua conta",
+        "explain.s1.desc": "Abra o WSTrader, insira suas credenciais da corretora e escolha conta DEMO (treino) ou REAL. Defina sua meta diária e o limite de perda. Clique em conectar e pronto.",
+        "explain.s1.li1": "Suporta IQ Option, Bullex e CasaTrader",
+        "explain.s1.li2": "Configure meta e stop em poucos cliques",
+        "explain.s1.li3": "Comece no DEMO para testar sem risco",
+        "explain.s1.tag": "Conexão segura",
+        "explain.s2.title": "A IA analisa e decide",
+        "explain.s2.desc": "A IA WSTrader de última geração lê o mercado em tempo real, identifica as melhores oportunidades e decide automaticamente quando entrar. Só opera quando as condições são favoráveis.",
+        "explain.s2.li1": "Inteligência artificial avançada e proprietária",
+        "explain.s2.li2": "Filtro automático de cenários desfavoráveis",
+        "explain.s2.li3": "Só entra quando a IA tem alta confiança",
+        "explain.s2.tag": "IA WSTrader de última geração",
+        "explain.s3.title": "Opera e aprende sozinha",
+        "explain.s3.desc": "A IA envia as ordens automaticamente. Após cada resultado, ela aprende: reforça o que funcionou e ajusta o que não deu certo. Bateu a meta? O bot para sozinho.",
+        "explain.s3.li1": "Aprende e melhora a cada operação",
+        "explain.s3.li2": "Para automaticamente ao atingir a meta",
+        "explain.s3.li3": "Pausa inteligente após sequência de perdas",
+        "explain.s3.tag": "Meta diária + Stop automático",
+        "explain.info.title": "💡 Quanto mais tempo ligada, melhor ela fica",
+        "explain.info.desc": "A IA WSTrader acumula experiência a cada operação. Com o tempo, ela aprende o que funciona melhor em cada ativo e horário, descarta oportunidades ruins automaticamente e refina suas decisões para buscar mais consistência. É como ter um operador incansável que nunca esquece o que aprendeu.",
+
+        "how.eyebrow": "Fluxo de decisão",
+        "how.title": "A IA evolui a cada operação.",
+        "how.lead": "A IA WSTrader passa por observação, análise, execução e aprendizado. Cada ciclo torna o sistema mais inteligente.",
+        "how.s1.title": "Observação",
+        "how.s1.desc": "A IA lê o mercado em tempo real e coleta dados de preço, movimento e contexto para tomar decisões informadas.",
+        "how.s2.title": "Análise inteligente",
+        "how.s2.desc": "A IA WSTrader de última geração avalia as condições e só segue adiante quando identifica uma oportunidade com alta confiança.",
+        "how.s3.title": "Execução autônoma",
+        "how.s3.desc": "Quando tudo está alinhado, a IA executa a operação automaticamente. Sem atraso, sem interferência manual necessária.",
+        "how.s4.title": "Aprendizado contínuo",
+        "how.s4.desc": "Após cada operação, a IA aprende com o resultado e se ajusta para melhorar nas próximas decisões. Quanto mais opera, mais inteligente fica.",
+
+        "engine.eyebrow": "Motor IA",
+        "engine.title": "IA WSTrader: tecnologia proprietária de última geração.",
+        "engine.hint": "Um motor inteligente que analisa, filtra e executa com precisão crescente.",
+        "engine.m1.title": "Dados",
+        "engine.m1.value": "Leitura em tempo real",
+        "engine.m1.desc": "A IA processa múltiplos indicadores do mercado simultaneamente para tomar a melhor decisão.",
+        "engine.m2.title": "Inteligência",
+        "engine.m2.value": "IA de última geração",
+        "engine.m2.desc": "Tecnologia proprietária WSTrader com aprendizado contínuo e adaptação automática ao mercado.",
+        "engine.m3.title": "Execução",
+        "engine.m3.value": "Totalmente autônoma",
+        "engine.m3.desc": "Opera automaticamente com meta diária e stop loss. Pausa após sequência de perdas para proteger o capital.",
+        "engine.m4.title": "Evolução",
+        "engine.m4.value": "Melhora a cada dia",
+        "engine.m4.desc": "A IA se recalibra automaticamente com base nos resultados. Mais operações = decisões mais precisas.",
+
+        "dl.title": "Download do WSTrader (Windows)",
+        "dl.desc": "Após assinar, baixe o instalador e comece a usar.",
+        "dl.btn.download": "Download (em breve)",
+        "dl.btn.buy": "Ver preço",
+
+        "faq.title": "Perguntas frequentes",
+        "faq.hint": "Se precisar, fale com o suporte no Telegram.",
+        "faq.q1": "Quando será o lançamento?",
+        "faq.a1": "Lançamento previsto para 01/03/2026. Quem estiver na lista de espera receberá acesso antecipado.",
+        "faq.q2": "A IA opera de forma autônoma?",
+        "faq.a2": "Sim. Após conectar e configurar meta e stop, a IA WSTrader de última geração analisa o mercado, identifica oportunidades e executa as operações automaticamente. Você acompanha tudo pelo painel.",
+        "faq.q3": "Quanto mais tempo ligada, melhor fica?",
+        "faq.a3": "Sim. A IA aprende com cada resultado — reforça o que funciona e ajusta o que não funciona. Com mais experiência acumulada, a precisão e a consistência melhoram naturalmente.",
+        "faq.q4": "Quais corretoras são compatíveis?",
+        "faq.a4": "IQ Option, Bullex e CasaTrader. Cada corretora pode ser configurada com conta DEMO ou REAL, com meta e stop independentes.",
+        "faq.q5": "Preciso saber operar para usar?",
+        "faq.a5": "Não. A IA opera sozinha — basta conectar, definir meta e stop, e deixar rodando. O painel mostra tudo de forma clara.",
+        "faq.q6": "E se eu perder a conexão?",
+        "faq.a6": "O sistema detecta desconexões e tenta reconectar automaticamente. Os dados do dia ficam salvos e são restaurados sem perda de progresso.",
+        "faq.q7": "O que é a IA WSTrader?",
+        "faq.a7": "É a inteligência artificial proprietária de última geração do WSTrader. Ela analisa o mercado, toma decisões e aprende continuamente para melhorar suas operações ao longo do tempo.",
+        "faq.q8": "Vai ter Forex?",
+        "faq.a8": "Forex está no planejamento e será liberado em uma versão futura. Fique na lista de espera para ser avisado.",
+        "faq.q9": "Quanto custa e como assinar?",
+        "faq.a9": "Confira todos os detalhes do plano, preço e formas de pagamento na <a href='pricing.html' style='color:var(--brand2);text-decoration:underline'>página de preços</a>.",
+
+        "footer.pay": "Assinar",
+        "footer.manage": "Gerenciar conta",
+        "footer.disclaimer": "As Transações oferecidas por este site podem ser executadas apenas por adultos totalmente competentes. As Transações com instrumentos financeiros oferecidos no Site envolvem riscos substanciais e a operação pode ser muito arriscada. Se você fizer Transações com os instrumentos financeiros oferecidos neste Site, poderá sofrer perdas substanciais ou até mesmo perder tudo em sua Conta. Antes de decidir iniciar as Transações com os instrumentos financeiros oferecidos no Site, você deve revisar o Contrato de Serviço e as Informações de Divulgação de Riscos.",
+
+        "modal.title": "WSTrader Pro",
+        "modal.badge": "Disponível agora",
+        "modal.p1": "O <strong>WSTrader</strong> está disponível por <strong>R$199,99/mês</strong>. Assine e comece a operar com IA de última geração.",
+        "modal.p2": "Pagamento seguro via <strong>Stripe</strong>. Cancele a qualquer momento.",
+        "modal.cta1": "Assinar — R$199,99/mês",
+        "modal.cta.telegram": "Falar no Telegram",
+        "modal.cta2": "Fechar",
+        "modal.fine": "Pagamento processado pelo Stripe. Você pode cancelar a qualquer momento pelo portal do assinante."
+      },
+
+      en: {
+        "nav.trade": "Trading",
+        "nav.numbers": "Results",
+        "nav.how": "How it works",
+        "nav.pricing": "Pricing",
+        "nav.download": "Get the app",
+        "nav.help": "Help",
+        "cta.try": "Subscribe now",
+
+        "hero.eyebrow": "Next-gen AI",
+        "hero.title1": "AI that ",
+        "hero.accent": "trades on its own",
+        "hero.title2": " and evolves over time.",
+        "hero.lead": "Connect, set your target and let <strong>WSTrader AI</strong> work for you.",
+        "hero.cta1": "Subscribe — R$199.99/mo",
+        "hero.cta3": "Download (coming soon)",
+        "hero.badge": "Launch: <strong>Mar 01, 2026</strong>",
+
+        "diff.eyebrow": "Key features",
+        "diff.title": "Next-gen WSTrader AI works for you.",
+        "diff.hint": "Proprietary technology that analyzes, decides and executes — hassle-free.",
+        "diff.card1.title": "Continuous learning",
+        "diff.card1.desc": "WSTrader AI learns from every trade and becomes more precise over time. The more it trades, the better its decisions become.",
+        "diff.card2.title": "Smart filter",
+        "diff.card2.desc": "The AI assesses conditions before each entry. If conditions are unfavorable, it doesn't trade — protecting your capital automatically.",
+        "diff.card3.title": "Autonomous execution",
+        "diff.card3.desc": "Connect, set your target and stop loss — the AI handles the rest. It trades on its own, 24/7 if needed, and stops when the target is reached.",
+        "diff.card4.title": "Real-time panel",
+        "diff.card4.desc": "Follow every AI decision on the panel: analyzed asset, direction, result and target progress. Everything visible and transparent.",
+
+        "nums.eyebrow": "Numbers that matter",
+        "nums.title": "Results that speak for themselves.",
+        "nums.hint": "WSTrader AI operates in continuous cycles — each trade makes the system smarter.",
+        "nums.n1.value": "24/7",
+        "nums.n1.label": "Continuous operation",
+        "nums.n1.desc": "The AI never stops. It trades day and night without fatigue, emotion or human error.",
+        "nums.n2.value": "+1000",
+        "nums.n2.label": "Analyses per day",
+        "nums.n2.desc": "Thousands of scenarios evaluated to find only the best opportunities.",
+        "nums.n3.value": "100%",
+        "nums.n3.label": "Autonomous",
+        "nums.n3.desc": "No intervention needed. The AI decides, executes and manages risk on its own.",
+        "nums.n4.value": "∞",
+        "nums.n4.label": "Infinite learning",
+        "nums.n4.desc": "Each trade feeds the AI's memory. It never forgets and always improves.",
+        "nums.chip1": "No technical setup",
+        "nums.chip2": "Free DEMO account",
+        "nums.chip3": "Auto target & stop",
+        "nums.chip4": "3 supported brokers",
+        "nums.chip5": "Real-time panel",
+
+        "explain.eyebrow": "Understand the system",
+        "explain.title": "How WSTrader works in practice",
+        "explain.hint": "Simple, direct and hassle-free. See how to get started in 3 steps.",
+        "explain.s1.title": "Connect your account",
+        "explain.s1.desc": "Open WSTrader, enter your broker credentials and choose DEMO (practice) or REAL account. Set your daily target and loss limit. Click connect and you're ready.",
+        "explain.s1.li1": "Supports IQ Option, Bullex and CasaTrader",
+        "explain.s1.li2": "Set target and stop in a few clicks",
+        "explain.s1.li3": "Start with DEMO to test risk-free",
+        "explain.s1.tag": "Secure connection",
+        "explain.s2.title": "The AI analyzes and decides",
+        "explain.s2.desc": "The next-generation WSTrader AI reads the market in real time, identifies the best opportunities and automatically decides when to enter. It only trades when conditions are favorable.",
+        "explain.s2.li1": "Advanced proprietary artificial intelligence",
+        "explain.s2.li2": "Automatic filter for unfavorable scenarios",
+        "explain.s2.li3": "Only enters when AI has high confidence",
+        "explain.s2.tag": "Next-gen WSTrader AI",
+        "explain.s3.title": "Trades and learns on its own",
+        "explain.s3.desc": "The AI sends orders automatically. After each result, it learns: reinforces what worked and adjusts what didn't. Hit the target? The bot stops automatically.",
+        "explain.s3.li1": "Learns and improves with every trade",
+        "explain.s3.li2": "Automatically stops when target is reached",
+        "explain.s3.li3": "Smart pause after loss streaks",
+        "explain.s3.tag": "Daily target + Auto stop",
+        "explain.info.title": "💡 The longer it runs, the better it gets",
+        "explain.info.desc": "WSTrader AI accumulates experience with every trade. Over time, it learns what works best for each asset and time, automatically discards bad opportunities and refines its decisions for more consistency. Like having a tireless operator who never forgets what they learned.",
+
+        "how.eyebrow": "Decision flow",
+        "how.title": "The AI evolves with every trade.",
+        "how.lead": "WSTrader AI goes through observation, analysis, execution and learning. Each cycle makes the system smarter.",
+        "how.s1.title": "Observation",
+        "how.s1.desc": "The AI reads the market in real time and collects price, movement and context data to make informed decisions.",
+        "how.s2.title": "Smart analysis",
+        "how.s2.desc": "The next-gen WSTrader AI evaluates conditions and only proceeds when it identifies an opportunity with high confidence.",
+        "how.s3.title": "Autonomous execution",
+        "how.s3.desc": "When everything is aligned, the AI executes the trade automatically. No delay, no manual intervention needed.",
+        "how.s4.title": "Continuous learning",
+        "how.s4.desc": "After each trade, the AI learns from the result and adjusts to improve future decisions. The more it trades, the smarter it gets.",
+
+        "engine.eyebrow": "AI Engine",
+        "engine.title": "WSTrader AI: proprietary next-generation technology.",
+        "engine.hint": "An intelligent engine that analyzes, filters and executes with increasing precision.",
+        "engine.m1.title": "Data",
+        "engine.m1.value": "Real-time reading",
+        "engine.m1.desc": "The AI processes multiple market indicators simultaneously to make the best decision.",
+        "engine.m2.title": "Intelligence",
+        "engine.m2.value": "Next-gen AI",
+        "engine.m2.desc": "Proprietary WSTrader technology with continuous learning and automatic market adaptation.",
+        "engine.m3.title": "Execution",
+        "engine.m3.value": "Fully autonomous",
+        "engine.m3.desc": "Automatic trading with daily target and stop loss. Pauses after loss streaks to protect capital.",
+        "engine.m4.title": "Evolution",
+        "engine.m4.value": "Improves every day",
+        "engine.m4.desc": "The AI recalibrates automatically based on results. More trades = more precise decisions.",
+
+        "dl.title": "Download WSTrader (Windows)",
+        "dl.desc": "After subscribing, download the installer and start using it.",
+        "dl.btn.download": "Download (coming soon)",
+        "dl.btn.buy": "See pricing",
+
+        "faq.title": "Frequently Asked Questions",
+        "faq.hint": "Need help? Reach out via Telegram support.",
+        "faq.q1": "When is the launch?",
+        "faq.a1": "Expected launch date is March 01, 2026. Waitlist members will receive early access.",
+        "faq.q2": "Does the AI trade autonomously?",
+        "faq.a2": "Yes. After connecting and setting your target and stop, the next-gen WSTrader AI analyzes the market, identifies opportunities and executes trades automatically. You follow everything on the panel.",
+        "faq.q3": "Does it get better over time?",
+        "faq.a3": "Yes. The AI learns from every result — reinforces what works and adjusts what doesn't. With more accumulated experience, precision and consistency improve naturally.",
+        "faq.q4": "Which brokers are supported?",
+        "faq.a4": "IQ Option, Bullex and CasaTrader. Each broker can be configured with DEMO or REAL accounts, with independent targets and stops.",
+        "faq.q5": "Do I need trading experience?",
+        "faq.a5": "No. The AI trades on its own — just connect, set your target and stop, and let it run. The panel shows everything clearly.",
+        "faq.q6": "What if I lose connection?",
+        "faq.a6": "The system detects disconnections and attempts to reconnect automatically. Daily data is saved and restored with no progress lost.",
+        "faq.q7": "What is WSTrader AI?",
+        "faq.a7": "It's WSTrader's proprietary next-generation artificial intelligence. It analyzes the market, makes decisions and continuously learns to improve your trades over time.",
+        "faq.q8": "Will Forex be available?",
+        "faq.a8": "Forex is planned and will be released in a future version. Stay on the waitlist to be notified.",
+        "faq.q9": "How much does it cost and how to subscribe?",
+        "faq.a9": "Check all plan details, pricing and payment methods on the <a href='pricing.html' style='color:var(--brand2);text-decoration:underline'>pricing page</a>.",
+
+        "footer.pay": "Subscribe",
+        "footer.manage": "Manage account",
+        "footer.disclaimer": "Transactions offered by this site may only be executed by fully competent adults. Transactions with financial instruments offered on the Site involve substantial risks and trading may be very risky. If you make Transactions with the financial instruments offered on this Site, you may suffer substantial losses or even lose everything in your Account. Before deciding to start Transactions with the financial instruments offered on the Site, you should review the Service Agreement and Risk Disclosure Information.",
+
+        "modal.title": "WSTrader Pro",
+        "modal.badge": "Available now",
+        "modal.p1": "<strong>WSTrader</strong> is available for <strong>R$199.99/month</strong>. Subscribe and start trading with next-gen AI.",
+        "modal.p2": "Secure payment via <strong>Stripe</strong>. Cancel anytime.",
+        "modal.cta1": "Subscribe — R$199.99/mo",
+        "modal.cta.telegram": "Talk on Telegram",
+        "modal.cta2": "Close",
+        "modal.fine": "Payment processed by Stripe. You can cancel anytime through the subscriber portal."
+      }
+    };
+
+    function applyLang(lang){
+      const dict = I18N[lang] || I18N.pt;
+      document.querySelectorAll("[data-i18n]").forEach(el=>{
+        const key = el.getAttribute("data-i18n");
+        if(dict[key]){
+          if(dict[key].includes("<")){
+            el.innerHTML = dict[key];
+          } else {
+            el.textContent = dict[key];
+          }
+        }
+      });
+      const langBtn = document.getElementById("langBtn");
+      if(langBtn){
+        if(lang === "pt"){
+          langBtn.src = "https://flagcdn.com/w40/us.png";
+          langBtn.alt = "Switch to English";
+          langBtn.title = "English";
+        } else {
+          langBtn.src = "https://flagcdn.com/w40/br.png";
+          langBtn.alt = "Mudar para Português";
+          langBtn.title = "Português";
+        }
+      }
+      document.documentElement.lang = lang === "en" ? "en" : "pt-BR";
+      localStorage.setItem("wstrader_lang", lang);
+    }
+
+    let currentLang = "pt";
+    const storedLang = localStorage.getItem("wstrader_lang");
+    const browserLang = (navigator.language || "").toLowerCase().startsWith("pt") ? "pt" : "en";
+    currentLang = storedLang || browserLang;
+    applyLang(currentLang);
+
+    document.getElementById("langBtn").addEventListener("click", ()=>{
+      currentLang = currentLang === "pt" ? "en" : "pt";
+      applyLang(currentLang);
+    });
+
+    // Telegram links
+    ["btnSuporteTop","lnkTelegramFooter","btnLista"].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.href = TELEGRAM_URL;
+    });
+
+    // Stripe buy buttons (now point to pricing.html)
+    ["btnCompraTop","btnCompraHero","btnCompraDownload"].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el){
+        if(IS_LAUNCHED){
+          el.href = "pricing.html";
+        } else {
+          el.href = "#";
+          el.classList.add("soon");
+          el.setAttribute("aria-disabled","true");
+          el.style.opacity = ".5";
+          el.style.pointerEvents = "none";
+          const lang = currentLang;
+          el.textContent = lang === "en" ? "Available March 1st" : "Disponível 01/03";
+        }
+      }
+    });
+    ["btnCompraModal"].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el){
+        if(IS_LAUNCHED){
+          el.href = STRIPE_URL;
+        } else {
+          el.href = "#";
+          el.style.opacity = ".5";
+          el.style.pointerEvents = "none";
+        }
+      }
+    });
+
+    // Download buttons
+    ["btnBaixar","btnBaixarHero"].forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      if(IS_LAUNCHED && DOWNLOAD_AVAILABLE && DOWNLOAD_URL){
+        el.href = DOWNLOAD_URL;
+        el.classList.remove("soon");
+        el.removeAttribute("aria-disabled");
+      }else{
+        el.href = "#";
+        el.classList.add("soon");
+        el.setAttribute("aria-disabled","true");
+        el.addEventListener("click", (ev)=>{ ev.preventDefault(); openModal(); });
+      }
+    });
+
+    // Modal
+    const overlay = document.getElementById("overlay");
+    const closeBtn = document.getElementById("close");
+    const okBtn = document.getElementById("ok");
+
+    function openModal(){
+      overlay.style.display = "flex";
+      overlay.setAttribute("aria-hidden","false");
+      document.body.style.overflow = "hidden";
+    }
+    function closeModal(){
+      overlay.style.display = "none";
+      overlay.setAttribute("aria-hidden","true");
+      document.body.style.overflow = "";
+    }
+
+    document.querySelectorAll("[data-open='waitlist']").forEach(btn=>{ btn.addEventListener("click", openModal) });
+    closeBtn.addEventListener("click", closeModal);
+    okBtn.addEventListener("click", closeModal);
+    overlay.addEventListener("click", (e)=>{ if(e.target === overlay) closeModal() });
+    document.addEventListener("keydown", (e)=>{ if(e.key === "Escape" && overlay.style.display === "flex") closeModal() });
+
+    // Reveal animations
+    const revealEls = document.querySelectorAll("[data-reveal]");
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if(prefersReducedMotion){
+      revealEls.forEach(el=>el.classList.add("is-visible"));
+    }else{
+      const obs = new IntersectionObserver((entries)=>{
+        entries.forEach(entry=>{
+          if(entry.isIntersecting){ entry.target.classList.add("is-visible"); obs.unobserve(entry.target) }
+        });
+      }, { threshold: 0.12 });
+      revealEls.forEach(el=>obs.observe(el));
+    }
+
+    // Card mouse glow effect
+    document.querySelectorAll(".card").forEach(card=>{
+      card.addEventListener("mousemove", (e)=>{
+        const rect = card.getBoundingClientRect();
+        card.style.setProperty("--mx", ((e.clientX - rect.left) / rect.width * 100) + "%");
+        card.style.setProperty("--my", ((e.clientY - rect.top) / rect.height * 100) + "%");
+      });
+    });
+
+    document.getElementById("year").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1837 @@
+{
+  "items": [
+    {
+      "timestamp": "2026-02-04T11:50:00.996437",
+      "ativo": "EURUSD-OTC",
+      "direction": "PUT",
+      "stake": 89.2553,
+      "pnl": -89.26,
+      "exp_min": 1,
+      "score": 0.8500000000000001,
+      "atr": 0.0006135714285714673,
+      "sr_type": "RESISTENCIA",
+      "sr_level": 1.171575,
+      "sr_toques": 5,
+      "sr_dist_atr": 0.11408614668220501,
+      "reasons": [
+        "RES(lvl=1.17158,toques=5,sinais=vermelho+topo+topo_distante+topo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-04T12:13:00.704055",
+      "ativo": "EURGBP-OTC",
+      "direction": "PUT",
+      "stake": 88.36280000000001,
+      "pnl": -88.36,
+      "exp_min": 1,
+      "score": 1.0,
+      "atr": 0.00033357142857142516,
+      "sr_type": "RESISTENCIA",
+      "sr_level": 0.8603068181818183,
+      "sr_toques": 11,
+      "sr_dist_atr": 0.054506521315574624,
+      "reasons": [
+        "RES(lvl=0.86031,toques=11,sinais=vermelho+topo+topo_distante+topo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-04T12:19:00.849383",
+      "ativo": "EURGBP-OTC",
+      "direction": "PUT",
+      "stake": 87.4791,
+      "pnl": -87.48,
+      "exp_min": 1,
+      "score": 0.8,
+      "atr": 0.00023999999999999418,
+      "sr_type": "RESISTENCIA",
+      "sr_level": 0.8605475,
+      "sr_toques": 4,
+      "sr_dist_atr": 0.010416666666735162,
+      "reasons": [
+        "RES(lvl=0.86055,toques=4,sinais=vermelho+topo+topo_distante+topo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-04T12:47:00.896380",
+      "ativo": "USDCHF-OTC",
+      "direction": "CALL",
+      "stake": 88.08290000000001,
+      "pnl": -88.08,
+      "exp_min": 1,
+      "score": 1.0,
+      "atr": 0.0002549999999999735,
+      "sr_type": "SUPORTE",
+      "sr_level": 0.783430625,
+      "sr_toques": 16,
+      "sr_dist_atr": 0.10049019607855592,
+      "reasons": [
+        "SUP(lvl=0.78343,toques=16,sinais=verde+fundo+fundo_distante+fundo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-04T13:39:00.908695",
+      "ativo": "GBPJPY-OTC",
+      "direction": "CALL",
+      "stake": 87.95200000000001,
+      "pnl": -87.95,
+      "exp_min": 1,
+      "score": 0.6,
+      "atr": 0.0906592857142832,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "simple_trend",
+        "m5_dir=CALL",
+        "m1_conf=2/3",
+        "padrao=sem_padrao"
+      ]
+    },
+    {
+      "timestamp": "2026-02-04T14:08:01.289856",
+      "ativo": "EURGBP-OTC",
+      "direction": "CALL",
+      "stake": 87.8213,
+      "pnl": -87.82,
+      "exp_min": 5,
+      "score": 0.455,
+      "atr": 0.00029928571428572415,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "fallback_simple",
+        "ema_slope=0.000088",
+        "mom=3/5",
+        "m5=NEUTRAL(0.00)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-04T15:48:00.706415",
+      "ativo": "GBPJPY-OTC",
+      "direction": "CALL",
+      "stake": 86.9431,
+      "pnl": -86.94,
+      "exp_min": 5,
+      "score": 1.0,
+      "atr": 0.20144071428571766,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "MA16_OK",
+        "MACD_OK",
+        "RSI_OK"
+      ],
+      "market_trend_10": "bullish",
+      "greens_10": 7,
+      "reds_10": 3,
+      "streak_ratio": 0.6,
+      "motivos": [],
+      "market_context": {},
+      "entry_quality": {},
+      "ai_summary": "\n📊 ANÁLISE DE LOSS - GBPJPY-OTC\n==================================================\n\n💰 Stake: $86.94\n📈 Direção: CALL\n📉 Resultado: LOSS\n\n🔍 PROBLEMAS IDENTIFICADOS:\n\n1. Velas anteriores desalinhadas com direção da operação\n\n💡 RECOMENDAÇÕES:\n\n1. Aguardar pelo menos 3 de 5 velas alinhadas antes de operar\n\n📊 CONTEXTO DE MERCADO:\n- Tendência: N/A\n- Velas verdes/vermelhas: 0/0\n- Volatilidade: N/A\n- Consolidação: Não\n- ATR: 0.00000\n\n🎯 QUALIDADE DA ENTRADA:\n- Força da vela: N/A\n- Alinhamento: 0.0%\n- Momentum: N/A\n",
+      "ai_loss_reason": {
+        "motivo": "openai_indisponivel",
+        "sugestao": ""
+      }
+    },
+    {
+      "timestamp": "2026-02-04T16:43:00.600999",
+      "ativo": "EURJPY-OTC",
+      "direction": "CALL",
+      "stake": 86.0736,
+      "pnl": -86.07,
+      "exp_min": 5,
+      "score": 0.7957596830596634,
+      "atr": 0.1140299999999976,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "MA16_OK",
+        "MACD_OK",
+        "RSI_OK",
+        "TREND_OK"
+      ],
+      "market_trend_10": "bullish",
+      "greens_10": 6,
+      "reds_10": 4,
+      "streak_ratio": 0.6,
+      "motivos": [],
+      "market_context": {},
+      "entry_quality": {},
+      "ai_summary": "\n📊 ANÁLISE DE LOSS - EURJPY-OTC\n==================================================\n\n💰 Stake: $86.07\n📈 Direção: CALL\n📉 Resultado: LOSS\n\n🔍 PROBLEMAS IDENTIFICADOS:\n\n1. Velas anteriores desalinhadas com direção da operação\n\n💡 RECOMENDAÇÕES:\n\n1. Aguardar pelo menos 3 de 5 velas alinhadas antes de operar\n\n📊 CONTEXTO DE MERCADO:\n- Tendência: N/A\n- Velas verdes/vermelhas: 0/0\n- Volatilidade: N/A\n- Consolidação: Não\n- ATR: 0.00000\n\n🎯 QUALIDADE DA ENTRADA:\n- Força da vela: N/A\n- Alinhamento: 0.0%\n- Momentum: N/A\n",
+      "ai_loss_reason": {
+        "motivo": "openai_indisponivel",
+        "sugestao": ""
+      }
+    },
+    {
+      "timestamp": "2026-02-04T17:13:00.529229",
+      "ativo": "GBPJPY-OTC",
+      "direction": "PUT",
+      "stake": 85.2129,
+      "pnl": -85.21,
+      "exp_min": 5,
+      "score": 1.0,
+      "atr": 0.18716928571428834,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "MA16_OK",
+        "MACD_OK",
+        "RSI_OK",
+        "TREND_OK"
+      ],
+      "market_trend_10": "bearish",
+      "greens_10": 4,
+      "reds_10": 6,
+      "streak_ratio": 0.6,
+      "motivos": [],
+      "market_context": {},
+      "entry_quality": {},
+      "ai_summary": "\n📊 ANÁLISE DE LOSS - GBPJPY-OTC\n==================================================\n\n💰 Stake: $85.21\n📈 Direção: PUT\n📉 Resultado: LOSS\n\n🔍 PROBLEMAS IDENTIFICADOS:\n\n1. Velas anteriores desalinhadas com direção da operação\n\n💡 RECOMENDAÇÕES:\n\n1. Aguardar pelo menos 3 de 5 velas alinhadas antes de operar\n\n📊 CONTEXTO DE MERCADO:\n- Tendência: N/A\n- Velas verdes/vermelhas: 0/0\n- Volatilidade: N/A\n- Consolidação: Não\n- ATR: 0.00000\n\n🎯 QUALIDADE DA ENTRADA:\n- Força da vela: N/A\n- Alinhamento: 0.0%\n- Momentum: N/A\n",
+      "ai_loss_reason": {
+        "motivo": "openai_indisponivel",
+        "sugestao": ""
+      }
+    },
+    {
+      "timestamp": "2026-02-04T17:48:00.700916",
+      "ativo": "GBPJPY-OTC",
+      "direction": "PUT",
+      "stake": 88.05120000000001,
+      "pnl": -88.05,
+      "exp_min": 5,
+      "score": 1.0,
+      "atr": 0.21521285714286112,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "MA16_OK",
+        "MACD_OK",
+        "RSI_OK",
+        "TREND_OK"
+      ],
+      "market_trend_10": "bearish",
+      "greens_10": 4,
+      "reds_10": 6,
+      "streak_ratio": 0.6,
+      "motivos": [],
+      "market_context": {
+        "trend": "bearish",
+        "green_candles": 8,
+        "red_candles": 12,
+        "price_change_percent": -0.3259727883200952,
+        "atr": 0.21043571428571844,
+        "volatility": "low",
+        "volume_ratio": 1.081646379366502,
+        "is_consolidating": false,
+        "near_resistance": false,
+        "near_support": true,
+        "current_price": 214.185565,
+        "resistance": 215.350055,
+        "support": 214.071665
+      },
+      "entry_quality": {
+        "entry_body_ratio": 0.3648408466634834,
+        "entry_quality": "weak",
+        "alignment_ratio": 0.6,
+        "momentum_direction": "correct",
+        "prev_candles_aligned": 3,
+        "prev_candles_total": 5
+      },
+      "ai_summary": "\n📊 ANÁLISE DE LOSS - GBPJPY-OTC\n==================================================\n\n💰 Stake: $88.05\n📈 Direção: PUT\n📉 Resultado: LOSS\n\n🔍 PROBLEMAS IDENTIFICADOS:\n\n1. Operação PUT próxima de suporte forte\n2. Vela de entrada fraca: corpo pequeno com muito wick\n\n💡 RECOMENDAÇÕES:\n\n1. Evitar PUT próximo de suporte - maior probabilidade de bounce\n2. Aguardar velas com corpo forte (>70% do range) para entrada\n\n📊 CONTEXTO DE MERCADO:\n- Tendência: bearish\n- Velas verdes/vermelhas: 8/12\n- Volatilidade: low\n- Consolidação: Não\n- ATR: 0.21044\n\n🎯 QUALIDADE DA ENTRADA:\n- Força da vela: weak\n- Alinhamento: 60.0%\n- Momentum: correct\n",
+      "ai_loss_reason": {
+        "motivo": "openai_indisponivel",
+        "sugestao": ""
+      }
+    },
+    {
+      "timestamp": "2026-02-04T17:53:00.834799",
+      "ativo": "GBPJPY-OTC",
+      "direction": "PUT",
+      "stake": 87.1707,
+      "pnl": -87.17,
+      "exp_min": 5,
+      "score": 1.0,
+      "atr": 0.2141892857142896,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "MA16_OK",
+        "MACD_OK",
+        "RSI_OK",
+        "TREND_OK"
+      ],
+      "market_trend_10": "neutral",
+      "greens_10": 5,
+      "reds_10": 5,
+      "streak_ratio": 0.6,
+      "motivos": [],
+      "market_context": {
+        "trend": "bearish",
+        "green_candles": 9,
+        "red_candles": 11,
+        "price_change_percent": -0.17401047784344306,
+        "atr": 0.212444285714292,
+        "volatility": "low",
+        "volume_ratio": 1.1313195980289574,
+        "is_consolidating": false,
+        "near_resistance": false,
+        "near_support": false,
+        "current_price": 214.326115,
+        "resistance": 215.350055,
+        "support": 214.071665
+      },
+      "entry_quality": {
+        "entry_body_ratio": 0.8340196599360469,
+        "entry_quality": "strong",
+        "alignment_ratio": 0.4,
+        "momentum_direction": "correct",
+        "prev_candles_aligned": 2,
+        "prev_candles_total": 5
+      },
+      "ai_summary": "\n📊 ANÁLISE DE LOSS - GBPJPY-OTC\n==================================================\n\n💰 Stake: $87.17\n📈 Direção: PUT\n📉 Resultado: LOSS\n\n🔍 PROBLEMAS IDENTIFICADOS:\n\n1. Velas anteriores desalinhadas com direção da operação\n\n💡 RECOMENDAÇÕES:\n\n1. Aguardar pelo menos 3 de 5 velas alinhadas antes de operar\n\n📊 CONTEXTO DE MERCADO:\n- Tendência: bearish\n- Velas verdes/vermelhas: 9/11\n- Volatilidade: low\n- Consolidação: Não\n- ATR: 0.21244\n\n🎯 QUALIDADE DA ENTRADA:\n- Força da vela: strong\n- Alinhamento: 40.0%\n- Momentum: correct\n",
+      "ai_loss_reason": {
+        "motivo": "openai_indisponivel",
+        "sugestao": ""
+      }
+    },
+    {
+      "timestamp": "2026-02-04T17:58:00.793919",
+      "ativo": "GBPJPY-OTC",
+      "direction": "PUT",
+      "stake": 86.29889999999999,
+      "pnl": -86.3,
+      "exp_min": 5,
+      "score": 1.0,
+      "atr": 0.21360071428572017,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "MA16_OK",
+        "MACD_OK",
+        "RSI_OK",
+        "TREND_OK"
+      ],
+      "market_trend_10": "bullish",
+      "greens_10": 6,
+      "reds_10": 4,
+      "streak_ratio": 0.8,
+      "motivos": [
+        "contra_tendencia_curta",
+        "sequencia_forte_80%"
+      ],
+      "market_context": {
+        "trend": "neutral",
+        "green_candles": 10,
+        "red_candles": 10,
+        "price_change_percent": -0.23846931406262323,
+        "atr": 0.21091000000000446,
+        "volatility": "low",
+        "volume_ratio": 1.0866653128970074,
+        "is_consolidating": false,
+        "near_resistance": false,
+        "near_support": false,
+        "current_price": 214.286895,
+        "resistance": 215.350055,
+        "support": 214.071665
+      },
+      "entry_quality": {
+        "entry_body_ratio": 0.3118980738360316,
+        "entry_quality": "weak",
+        "alignment_ratio": 0.4,
+        "momentum_direction": "correct",
+        "prev_candles_aligned": 2,
+        "prev_candles_total": 5
+      },
+      "ai_summary": "\n📊 ANÁLISE DE LOSS - GBPJPY-OTC\n==================================================\n\n💰 Stake: $86.30\n📈 Direção: PUT\n📉 Resultado: LOSS\n\n🔍 PROBLEMAS IDENTIFICADOS:\n\n1. Vela de entrada fraca: corpo pequeno com muito wick\n2. Velas anteriores desalinhadas com direção da operação\n\n💡 RECOMENDAÇÕES:\n\n1. Aguardar velas com corpo forte (>70% do range) para entrada\n2. Aguardar pelo menos 3 de 5 velas alinhadas antes de operar\n\n📊 CONTEXTO DE MERCADO:\n- Tendência: neutral\n- Velas verdes/vermelhas: 10/10\n- Volatilidade: low\n- Consolidação: Não\n- ATR: 0.21091\n\n🎯 QUALIDADE DA ENTRADA:\n- Força da vela: weak\n- Alinhamento: 40.0%\n- Momentum: correct\n",
+      "ai_loss_reason": {
+        "motivo": "openai_indisponivel",
+        "sugestao": ""
+      }
+    },
+    {
+      "timestamp": "2026-02-04T18:03:00.495427",
+      "ativo": "GBPJPY-OTC",
+      "direction": "PUT",
+      "stake": 85.436,
+      "pnl": -85.44,
+      "exp_min": 5,
+      "score": 0.9457051336629846,
+      "atr": 0.21346071428571836,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "MA16_OK",
+        "MACD_OK",
+        "RSI_OK",
+        "TREND_OK"
+      ],
+      "market_trend_10": "bullish",
+      "greens_10": 6,
+      "reds_10": 4,
+      "streak_ratio": 0.8,
+      "motivos": [
+        "contra_tendencia_curta",
+        "sequencia_forte_80%"
+      ],
+      "market_context": {
+        "trend": "neutral",
+        "green_candles": 10,
+        "red_candles": 10,
+        "price_change_percent": -0.11359013675353052,
+        "atr": 0.20573928571428926,
+        "volatility": "low",
+        "volume_ratio": 1.1564434550925777,
+        "is_consolidating": false,
+        "near_resistance": false,
+        "near_support": false,
+        "current_price": 214.519415,
+        "resistance": 215.350055,
+        "support": 214.071665
+      },
+      "entry_quality": {
+        "entry_body_ratio": 0.9957533548496085,
+        "entry_quality": "strong",
+        "alignment_ratio": 0.2,
+        "momentum_direction": "correct",
+        "prev_candles_aligned": 1,
+        "prev_candles_total": 5
+      },
+      "ai_summary": "\n📊 ANÁLISE DE LOSS - GBPJPY-OTC\n==================================================\n\n💰 Stake: $85.44\n📈 Direção: PUT\n📉 Resultado: LOSS\n\n🔍 PROBLEMAS IDENTIFICADOS:\n\n1. Velas anteriores desalinhadas com direção da operação\n\n💡 RECOMENDAÇÕES:\n\n1. Aguardar pelo menos 3 de 5 velas alinhadas antes de operar\n\n📊 CONTEXTO DE MERCADO:\n- Tendência: neutral\n- Velas verdes/vermelhas: 10/10\n- Volatilidade: low\n- Consolidação: Não\n- ATR: 0.20574\n\n🎯 QUALIDADE DA ENTRADA:\n- Força da vela: strong\n- Alinhamento: 20.0%\n- Momentum: correct\n",
+      "ai_loss_reason": {
+        "motivo": "openai_indisponivel",
+        "sugestao": ""
+      }
+    },
+    {
+      "timestamp": "2026-02-04T19:59:00.554072",
+      "ativo": "EURJPY-OTC",
+      "direction": "CALL",
+      "stake": 82.8984,
+      "pnl": -82.9,
+      "exp_min": 1,
+      "score": 0.7565545558590939,
+      "atr": 0.05700142857143119,
+      "sr_type": "SUP",
+      "sr_level": 184.83197366666667,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "candle_mid_call",
+        "sup_dist=0.34ATR",
+        "zigzag=0.62",
+        "trend=CALL(1.55)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T07:47:00.712323",
+      "ativo": "GBPJPY-OTC",
+      "direction": "CALL",
+      "stake": 82.76700000000001,
+      "pnl": -82.77,
+      "exp_min": 1,
+      "score": 1.0,
+      "atr": 0.08808142857142391,
+      "sr_type": "SUPORTE",
+      "sr_level": 214.6215188461538,
+      "sr_toques": 13,
+      "sr_dist_atr": 0.01778074983114554,
+      "reasons": [
+        "SUP(lvl=214.62152,toques=13,sinais=verde+longe_fundo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T09:24:00.647770",
+      "ativo": "USDZAR-OTC",
+      "direction": "PUT",
+      "stake": 80.9914,
+      "pnl": -80.99,
+      "exp_min": 1,
+      "score": 0.75,
+      "atr": 0.0033421428571424527,
+      "sr_type": "RESISTENCIA",
+      "sr_level": 16.071815000000004,
+      "sr_toques": 5,
+      "sr_dist_atr": 0.011968369308166905,
+      "reasons": [
+        "RES(lvl=16.07182,toques=5,sinais=vermelho+longe_topo+topo_distante)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T09:49:00.872939",
+      "ativo": "EURUSD-OTC",
+      "direction": "CALL",
+      "stake": 80.8631,
+      "pnl": -80.86,
+      "exp_min": 1,
+      "score": 1.0,
+      "atr": 0.0006664285714286075,
+      "sr_type": "SUPORTE",
+      "sr_level": 1.1649791176470587,
+      "sr_toques": 17,
+      "sr_dist_atr": 0.05119475442914146,
+      "reasons": [
+        "SUP(lvl=1.16498,toques=17,sinais=verde+longe_fundo+fundo_distante)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T10:32:01.079476",
+      "ativo": "USDZAR-OTC",
+      "direction": "CALL",
+      "stake": 99.0,
+      "pnl": -99.0,
+      "exp_min": 1,
+      "score": 1.0,
+      "atr": 0.0033064285714287578,
+      "sr_type": "SUPORTE",
+      "sr_level": 16.071005000000003,
+      "sr_toques": 25,
+      "sr_dist_atr": 0.10585439619924197,
+      "reasons": [
+        "SUP(lvl=16.07101,toques=25,sinais=verde+fundo+fundo_distante+fundo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T10:39:00.894947",
+      "ativo": "GBPUSD-OTC",
+      "direction": "CALL",
+      "stake": 98.01,
+      "pnl": -98.01,
+      "exp_min": 1,
+      "score": 1.0,
+      "atr": 0.000522142857142852,
+      "sr_type": "SUPORTE",
+      "sr_level": 1.370095,
+      "sr_toques": 9,
+      "sr_dist_atr": 0.1340629274966091,
+      "reasons": [
+        "SUP(lvl=1.37010,toques=9,sinais=verde+fundo+fundo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T13:50:00.835806",
+      "ativo": "AUDCAD-OTC",
+      "direction": "CALL",
+      "stake": 101.7072,
+      "pnl": -101.71,
+      "exp_min": 1,
+      "score": 0.55,
+      "atr": 0.00022357142857144202,
+      "sr_type": "SUPORTE",
+      "sr_level": 0.957365,
+      "sr_toques": 5,
+      "sr_dist_atr": 0.08945686900966875,
+      "reasons": [
+        "SUP(lvl=0.95737,toques=5,sinais=verde+exausto+longe_fundo+fundo_distante)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T15:07:00.931377",
+      "ativo": "EURJPY-OTC",
+      "direction": "PUT",
+      "stake": 100.6901,
+      "pnl": -100.69,
+      "exp_min": 1,
+      "score": 0.7000000000000002,
+      "atr": 0.04640071428571397,
+      "sr_type": "RESISTENCIA",
+      "sr_level": 182.70654166666668,
+      "sr_toques": 6,
+      "sr_dist_atr": 0.05941000497741916,
+      "reasons": [
+        "RES(lvl=182.70654,toques=6,sinais=vermelho+exausto+topo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T15:43:00.766812",
+      "ativo": "USDHKD-OTC",
+      "direction": "CALL",
+      "stake": 100.53040000000001,
+      "pnl": -100.53,
+      "exp_min": 1,
+      "score": 0.7000000000000001,
+      "atr": 0.0022014285714283383,
+      "sr_type": "SUPORTE",
+      "sr_level": 7.8526325,
+      "sr_toques": 4,
+      "sr_dist_atr": 0.04656067488629345,
+      "reasons": [
+        "SUP(lvl=7.85263,toques=4,sinais=verde+longe_fundo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T17:06:00.542726",
+      "ativo": "EURUSD-OTC",
+      "direction": "PUT",
+      "stake": 100.37110000000001,
+      "pnl": -100.37,
+      "exp_min": 1,
+      "score": 0.8000000000000002,
+      "atr": 0.0007107142857142312,
+      "sr_type": "RESISTENCIA",
+      "sr_level": 1.16987,
+      "sr_toques": 4,
+      "sr_dist_atr": 0.049246231155792866,
+      "reasons": [
+        "RES(lvl=1.16987,toques=4,sinais=vermelho+topo)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T17:54:00.540375",
+      "ativo": "GBPJPY-OTC",
+      "direction": "CALL",
+      "stake": 99.3674,
+      "pnl": -99.37,
+      "exp_min": 1,
+      "score": 0.62565934065934,
+      "atr": 0.08566642857142881,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "rf_proxy(p_up=0.63,vol=0.71,wick=0.64)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T18:35:00.503861",
+      "ativo": "GBPJPY-OTC",
+      "direction": "CALL",
+      "stake": 98.37370000000001,
+      "pnl": -98.37,
+      "exp_min": 1,
+      "score": 0.5837036072721657,
+      "atr": 0.07997071428571141,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "rf_proxy(p_up=0.58,act_z=0.40,wick=0.56,chop=0.50)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T18:41:00.652947",
+      "ativo": "GBPJPY-OTC",
+      "direction": "CALL",
+      "stake": 97.39,
+      "pnl": -97.39,
+      "exp_min": 1,
+      "score": 0.5904015178214788,
+      "atr": 0.09361571428571226,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "rf_proxy(p_up=0.59,act_z=0.24,wick=0.78,chop=0.70)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T21:23:00.468504",
+      "ativo": "EURJPY-OTC",
+      "direction": "CALL",
+      "stake": 96.4161,
+      "pnl": -96.42,
+      "exp_min": 1,
+      "score": 0.75,
+      "atr": 0.05176642857143016,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "TREND(CALL,adx=26,sinais=adx(26)+corpo_forte+ema_gap(1.4)+verde+tend_alta)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T21:33:00.543705",
+      "ativo": "EURGBP-OTC",
+      "direction": "PUT",
+      "stake": 100.0,
+      "pnl": -100.0,
+      "exp_min": 1,
+      "score": 0.8,
+      "atr": 0.00025928571428571586,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "TREND(PUT,adx=26,sinais=adx(26)+engolfo_baixa+vermelho+tend_baixa)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T21:58:00.511008",
+      "ativo": "EURGBP-OTC",
+      "direction": "CALL",
+      "stake": 99.8415,
+      "pnl": -99.84,
+      "exp_min": 1,
+      "score": 0.7,
+      "atr": 0.0002621428571428457,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=estrela_manha+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T22:45:00.655592",
+      "ativo": "GBPJPY-OTC",
+      "direction": "PUT",
+      "stake": 102.5717,
+      "pnl": -102.57,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.002256428571428667,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T23:02:00.666932",
+      "ativo": "GBPUSD-OTC",
+      "direction": "PUT",
+      "stake": 104.1575,
+      "pnl": -104.16,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.00025571428571427183,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T23:32:00.720051",
+      "ativo": "AIG-OTC",
+      "direction": "CALL",
+      "stake": 151.6623,
+      "pnl": -151.66,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.12092857142857127,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T23:43:00.570358",
+      "ativo": "GBPJPY-OTC",
+      "direction": "CALL",
+      "stake": 103.1159,
+      "pnl": -103.12,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0042192857142856,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T23:49:00.948307",
+      "ativo": "USDZAR-OTC",
+      "direction": "PUT",
+      "stake": 102.0848,
+      "pnl": -102.08,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.0006435714285714259,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=harami_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T23:51:00.731134",
+      "ativo": "EURJPY-OTC",
+      "direction": "CALL",
+      "stake": 101.06389999999999,
+      "pnl": -101.06,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.057074999999997544,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-05T23:58:00.660611",
+      "ativo": "AUDCAD-OTC",
+      "direction": "PUT",
+      "stake": 101.7614,
+      "pnl": -101.76,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.003254999999999849,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T00:02:00.584924",
+      "ativo": "EURUSD-OTC",
+      "direction": "CALL",
+      "stake": 100.7438,
+      "pnl": -100.74,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.003057857142857096,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T07:27:00.489054",
+      "ativo": "EURGBP-OTC",
+      "direction": "PUT",
+      "stake": 101.4391,
+      "pnl": -101.44,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.00028571428571427804,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T07:32:00.536675",
+      "ativo": "GBPUSD-OTC",
+      "direction": "PUT",
+      "stake": 101.2783,
+      "pnl": -101.28,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.00031285714285713854,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T07:43:00.632925",
+      "ativo": "USDZAR-OTC",
+      "direction": "PUT",
+      "stake": 100.26549999999999,
+      "pnl": -100.27,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.04791714285714071,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T08:49:00.401656",
+      "ativo": "USDINR-OTC",
+      "direction": "PUT",
+      "stake": 99.2629,
+      "pnl": -99.26,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0018349999999999836,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T09:01:00.623452",
+      "ativo": "USDZAR-OTC",
+      "direction": "CALL",
+      "stake": 98.2703,
+      "pnl": -98.27,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.001955714285714283,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+estrela_manha+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T09:54:00.754510",
+      "ativo": "USDCHF-OTC",
+      "direction": "CALL",
+      "stake": 97.2876,
+      "pnl": -97.29,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.04108785714285749,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T10:55:00.686265",
+      "ativo": "AUDCAD-OTC",
+      "direction": "PUT",
+      "stake": 97.959,
+      "pnl": -97.96,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.00027857142857143753,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T13:18:03.837298",
+      "ativo": "GBPUSD-OTC",
+      "direction": "CALL",
+      "stake": 101.2018,
+      "pnl": -101.2,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.0004949999999999598,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T13:24:03.909609",
+      "ativo": "USDZAR-OTC",
+      "direction": "CALL",
+      "stake": 101.0514,
+      "pnl": -101.05,
+      "exp_min": 1,
+      "score": 0.8099999999999999,
+      "atr": 0.0021442857142856147,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=estrela_manha+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T13:27:03.212159",
+      "ativo": "GBPUSD-OTC",
+      "direction": "PUT",
+      "stake": 100.04090000000001,
+      "pnl": -100.04,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.07938642857143309,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T13:29:03.506281",
+      "ativo": "AUDCAD-OTC",
+      "direction": "PUT",
+      "stake": 99.0405,
+      "pnl": -99.04,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.003567857142857075,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=harami_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T13:35:03.265210",
+      "ativo": "USDSGD-OTC",
+      "direction": "CALL",
+      "stake": 98.0501,
+      "pnl": -98.05,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.00021999999999999003,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T13:38:04.913243",
+      "ativo": "USDSGD-OTC",
+      "direction": "CALL",
+      "stake": 97.0696,
+      "pnl": -97.07,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0015435714285714378,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T13:56:04.863080",
+      "ativo": "EURGBP-OTC",
+      "direction": "CALL",
+      "stake": 96.0989,
+      "pnl": -96.1,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0030414285714291467,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T13:58:04.488985",
+      "ativo": "EURJPY-OTC",
+      "direction": "CALL",
+      "stake": 95.1379,
+      "pnl": -95.14,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0021500000000000646,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T14:13:03.661162",
+      "ativo": "GBPUSD-OTC",
+      "direction": "CALL",
+      "stake": 95.67110000000001,
+      "pnl": -95.67,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.05643999999999697,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T16:44:03.591116",
+      "ativo": "EURGBP-OTC",
+      "direction": "PUT",
+      "stake": 99.70790000000001,
+      "pnl": -99.71,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0004871428571428606,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T16:48:04.233963",
+      "ativo": "USDSGD-OTC",
+      "direction": "CALL",
+      "stake": 99.55969999999999,
+      "pnl": -99.56,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.029357142857142953,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+martelo+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T16:52:03.219237",
+      "ativo": "USDZAR-OTC",
+      "direction": "CALL",
+      "stake": 98.5641,
+      "pnl": -98.56,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.00020142857142858256,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T17:07:03.884469",
+      "ativo": "USDCHF-OTC",
+      "direction": "CALL",
+      "stake": 100.97879999999999,
+      "pnl": -100.98,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0002357142857142756,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T17:25:03.248665",
+      "ativo": "USDZAR-OTC",
+      "direction": "CALL",
+      "stake": 99.8204,
+      "pnl": -99.82,
+      "exp_min": 1,
+      "score": 0.8099999999999999,
+      "atr": 0.03507142857143058,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=estrela_manha+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T17:52:03.711955",
+      "ativo": "USDCHF-OTC",
+      "direction": "PUT",
+      "stake": 103.1452,
+      "pnl": -103.15,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.0006778571428571427,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=harami_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T18:02:03.351871",
+      "ativo": "USDSGD-OTC",
+      "direction": "PUT",
+      "stake": 102.9919,
+      "pnl": -102.99,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0018371428571428547,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T18:06:04.785442",
+      "ativo": "EURUSD-OTC",
+      "direction": "CALL",
+      "stake": 102.8389,
+      "pnl": -102.84,
+      "exp_min": 1,
+      "score": 0.8099999999999999,
+      "atr": 0.00021428571428570655,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=estrela_manha+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T18:11:03.297901",
+      "ativo": "EURUSD-OTC",
+      "direction": "CALL",
+      "stake": 102.68610000000001,
+      "pnl": -102.69,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.03242857142857097,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T18:14:03.575395",
+      "ativo": "USDCHF-OTC",
+      "direction": "CALL",
+      "stake": 101.6592,
+      "pnl": -101.66,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.00023499999999999316,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T18:20:03.104548",
+      "ativo": "USDHKD-OTC",
+      "direction": "CALL",
+      "stake": 101.5082,
+      "pnl": -101.51,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.03485714285714384,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T20:06:03.361093",
+      "ativo": "GBPUSD-OTC",
+      "direction": "CALL",
+      "stake": 103.9949,
+      "pnl": -103.99,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.03049999999999845,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T20:11:04.402135",
+      "ativo": "GBPJPY-OTC",
+      "direction": "PUT",
+      "stake": 102.955,
+      "pnl": -102.96,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.003742857142856794,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T20:14:02.862539",
+      "ativo": "USDINR-OTC",
+      "direction": "CALL",
+      "stake": 101.92540000000001,
+      "pnl": -101.93,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0018435714285714047,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-06T20:20:02.075572",
+      "ativo": "AUDCAD-OTC",
+      "direction": "PUT",
+      "stake": 101.774,
+      "pnl": -101.77,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.001989999999999968,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T07:46:02.724442",
+      "ativo": "USDZAR-OTC",
+      "direction": "CALL",
+      "stake": 101.62280000000001,
+      "pnl": -101.62,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0002442857142857286,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T07:58:02.157048",
+      "ativo": "USDZAR-OTC",
+      "direction": "PUT",
+      "stake": 102.34450000000001,
+      "pnl": -102.34,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.07402500000000398,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T08:06:03.503945",
+      "ativo": "EURGBP-OTC",
+      "direction": "CALL",
+      "stake": 101.3211,
+      "pnl": -101.32,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.00047357142857143826,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+martelo+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T08:57:02.657517",
+      "ativo": "GBPJPY-OTC",
+      "direction": "CALL",
+      "stake": 100.3079,
+      "pnl": -100.31,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.03085714285714301,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T09:06:03.382443",
+      "ativo": "EURGBP-OTC",
+      "direction": "PUT",
+      "stake": 100.15879999999999,
+      "pnl": -100.16,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.08828571428571357,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T09:13:02.991805",
+      "ativo": "EURUSD-OTC",
+      "direction": "PUT",
+      "stake": 100.01,
+      "pnl": -100.01,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.10273214285714362,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T09:33:03.442622",
+      "ativo": "USDCHF-OTC",
+      "direction": "CALL",
+      "stake": 100.7202,
+      "pnl": -100.72,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0005321428571428541,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T09:36:03.044359",
+      "ativo": "GBPUSD-OTC",
+      "direction": "CALL",
+      "stake": 99.713,
+      "pnl": -99.71,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.08812214285714706,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T09:43:05.052667",
+      "ativo": "USDHKD-OTC",
+      "direction": "CALL",
+      "stake": 98.7158,
+      "pnl": -98.72,
+      "exp_min": 1,
+      "score": 0.8099999999999999,
+      "atr": 0.06528999999999437,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=estrela_manha+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T10:08:00.514273",
+      "ativo": "USDINR-OTC",
+      "direction": "PUT",
+      "stake": 99.4169,
+      "pnl": -99.42,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.033571428571427475,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T10:12:00.507276",
+      "ativo": "EURUSD-OTC",
+      "direction": "CALL",
+      "stake": 99.2692,
+      "pnl": -99.27,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.0007728571428571307,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T10:14:00.759035",
+      "ativo": "GBPJPY-OTC",
+      "direction": "CALL",
+      "stake": 98.2765,
+      "pnl": -98.28,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.00024000000000001003,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=piercing+verde)"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T10:17:00.984005",
+      "ativo": "USDCHF-OTC",
+      "direction": "PUT",
+      "stake": 97.2937,
+      "pnl": -97.29,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.00020142857142856668,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ],
+      "market_trend_10": "bearish",
+      "greens_10": 4,
+      "reds_10": 6,
+      "streak_ratio": 0.5,
+      "motivos": []
+    },
+    {
+      "timestamp": "2026-02-07T10:18:00.796832",
+      "ativo": "USDSGD-OTC",
+      "direction": "CALL",
+      "stake": 96.3208,
+      "pnl": -96.32,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.0005192857142857221,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=harami_alta+verde)"
+      ],
+      "market_trend_10": "bullish",
+      "greens_10": 6,
+      "reds_10": 4,
+      "streak_ratio": 0.6666666666666666,
+      "motivos": []
+    },
+    {
+      "timestamp": "2026-02-07T10:19:00.763197",
+      "ativo": "EURUSD-OTC",
+      "direction": "PUT",
+      "stake": 95.3576,
+      "pnl": -95.36,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.0007850000000000198,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ],
+      "market_trend_10": "neutral",
+      "greens_10": 5,
+      "reds_10": 5,
+      "streak_ratio": 0.6666666666666666,
+      "motivos": []
+    },
+    {
+      "timestamp": "2026-02-07T10:23:00.607746",
+      "ativo": "GBPUSD-OTC",
+      "direction": "CALL",
+      "stake": 93.46,
+      "pnl": -93.46,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.05051642857142724,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=engolfo_baixa+vermelho)"
+      ],
+      "market_trend_10": "bearish",
+      "greens_10": 3,
+      "reds_10": 7,
+      "streak_ratio": 0.6666666666666666,
+      "motivos": [
+        "contra_tendencia_curta"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T10:28:00.660411",
+      "ativo": "USDHKD-OTC",
+      "direction": "CALL",
+      "stake": 95.74959999999999,
+      "pnl": -95.75,
+      "exp_min": 1,
+      "score": 0.7999999999999999,
+      "atr": 0.002206428571428593,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(PUT,sinais=harami_baixa+vermelho)"
+      ],
+      "market_trend_10": "bearish",
+      "greens_10": 3,
+      "reds_10": 7,
+      "streak_ratio": 0.6666666666666666,
+      "motivos": [
+        "contra_tendencia_curta"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T10:29:00.505605",
+      "ativo": "USDZAR-OTC",
+      "direction": "PUT",
+      "stake": 94.79209999999999,
+      "pnl": -94.79,
+      "exp_min": 1,
+      "score": 0.82,
+      "atr": 0.00029214285714285985,
+      "sr_type": null,
+      "sr_level": null,
+      "sr_toques": null,
+      "sr_dist_atr": null,
+      "reasons": [
+        "PATTERN(CALL,sinais=engolfo_alta+verde)"
+      ],
+      "market_trend_10": "neutral",
+      "greens_10": 5,
+      "reds_10": 5,
+      "streak_ratio": 0.6666666666666666,
+      "motivos": []
+    },
+    {
+      "timestamp": "2026-02-07T11:41:00.660716",
+      "ativo": "EURGBP-OTC",
+      "direction": "CALL",
+      "stake": 96.2863,
+      "pnl": -96.29,
+      "exp_min": 1,
+      "score": 0.7,
+      "atr": 0.00024928571428571377,
+      "sr_type": "SUPORTE",
+      "sr_level": 0.868235,
+      "sr_toques": 2,
+      "sr_dist_atr": 0.08022922636111192,
+      "reasons": [
+        "SR_PURO(SUP=0.86823,toques=2,dist=0.08ATR)"
+      ],
+      "market_trend_10": "neutral",
+      "greens_10": 5,
+      "reds_10": 5,
+      "streak_ratio": 0.5,
+      "motivos": []
+    },
+    {
+      "timestamp": "2026-02-07T11:47:00.964645",
+      "ativo": "EURGBP-OTC",
+      "direction": "PUT",
+      "stake": 95.3234,
+      "pnl": -95.32,
+      "exp_min": 1,
+      "score": 0.75,
+      "atr": 0.00024928571428572174,
+      "sr_type": "RESISTENCIA",
+      "sr_level": 0.8684799999999999,
+      "sr_toques": 2,
+      "sr_dist_atr": 0.020057306589943317,
+      "reasons": [
+        "SR_PURO(RES=0.86848,toques=2,dist=0.02ATR)"
+      ],
+      "market_trend_10": "neutral",
+      "greens_10": 5,
+      "reds_10": 5,
+      "streak_ratio": 0.6666666666666666,
+      "motivos": []
+    },
+    {
+      "timestamp": "2026-02-07T12:01:00.657704",
+      "ativo": "EURUSD-OTC",
+      "direction": "CALL",
+      "stake": 93.42649999999999,
+      "pnl": -93.43,
+      "exp_min": 1,
+      "score": 0.7,
+      "atr": 0.000590714285714254,
+      "sr_type": "RESISTENCIA",
+      "sr_level": 1.162435,
+      "sr_toques": 2,
+      "sr_dist_atr": 0.016928657799010406,
+      "reasons": [
+        "SR_PURO(RES=1.16244,toques=2,dist=0.02ATR)"
+      ],
+      "market_trend_10": "bearish",
+      "greens_10": 4,
+      "reds_10": 6,
+      "streak_ratio": 0.8333333333333334,
+      "motivos": [
+        "contra_tendencia_curta"
+      ]
+    },
+    {
+      "timestamp": "2026-02-07T13:54:00.493039",
+      "ativo": "AUDCAD-OTC",
+      "direction": "CALL",
+      "stake": 94.89920000000001,
+      "pnl": -94.9,
+      "exp_min": 1,
+      "score": 0.8,
+      "atr": 0.000274285714285711,
+      "sr_type": "SUPORTE",
+      "sr_level": 0.9629583333333334,
+      "sr_toques": 3,
+      "sr_dist_atr": 0.04861111111102538,
+      "reasons": [
+        "SR_PURO(SUP=0.96296,toques=3,dist=0.05ATR)"
+      ],
+      "market_trend_10": "bullish",
+      "greens_10": 6,
+      "reds_10": 4,
+      "streak_ratio": 0.6666666666666666,
+      "motivos": []
+    },
+    {
+      "timestamp": "2026-02-07T13:58:00.524195",
+      "ativo": "AUDCAD-OTC",
+      "direction": "CALL",
+      "stake": 93.95030000000001,
+      "pnl": -93.95,
+      "exp_min": 1,
+      "score": 0.8,
+      "atr": 0.00026999999999999247,
+      "sr_type": "SUPORTE",
+      "sr_level": 0.9629825000000001,
+      "sr_toques": 4,
+      "sr_dist_atr": 0.19444444444407893,
+      "reasons": [
+        "SR_PURO(SUP=0.96298,toques=4,dist=0.19ATR)"
+      ],
+      "market_trend_10": "bullish",
+      "greens_10": 6,
+      "reds_10": 4,
+      "streak_ratio": 0.5,
+      "motivos": []
+    },
+    {
+      "timestamp": "2026-02-07T14:06:00.469416",
+      "ativo": "AUDCAD-OTC",
+      "direction": "CALL",
+      "stake": 93.0108,
+      "pnl": -93.01,
+      "exp_min": 1,
+      "score": 0.75,
+      "atr": 0.0002507142857142946,
+      "sr_type": "SUPORTE",
+      "sr_level": 0.962995,
+      "sr_toques": 5,
+      "sr_dist_atr": 0.0797720797717139,
+      "reasons": [
+        "SR_PURO(SUP=0.96300,toques=5,dist=0.08ATR)"
+      ],
+      "market_trend_10": "bullish",
+      "greens_10": 6,
+      "reds_10": 4,
+      "streak_ratio": 0.6666666666666666,
+      "motivos": []
+    }
+  ]
+}

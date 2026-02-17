@@ -1,0 +1,293 @@
+{
+  "system_info": {
+    "name": "WS Trader",
+    "version": "1.0.8",
+    "description": "Plataforma inteligente de trading com IA para operações automatizadas",
+    "features": [
+      "Operações automatizadas com IA avançada",
+      "Suporte para IQ Option e Bullex",
+      "Contas Demo (treino) e Real",
+      "Análise de mercado em tempo real",
+      "Gestão automática de risco",
+      "Relatórios detalhados em HTML",
+      "Histórico completo em JSON",
+      "Estatísticas e métricas de desempenho",
+      "Suporte via chat com IA"
+    ],
+    "requirements": {
+      "subscription": "Assinatura ativa necessária",
+      "min_balance": 10.0,
+      "internet": "Conexão estável com a internet"
+    }
+  },
+  "brokers": {
+    "IQ Option": {
+      "name": "IQ Option",
+      "code": "iqoption",
+      "description": "Corretora líder em opções binárias e digitais",
+      "website": "https://iqoption.com",
+      "account_types": ["DEMO", "REAL"],
+      "min_deposit": 10.0,
+      "min_stake": 1.0,
+      "max_stake": 100000.0,
+      "assets": [
+        "EURUSD",
+        "GBPUSD",
+        "USDJPY",
+        "AUDUSD",
+        "USDCAD",
+        "EURGBP",
+        "EURJPY"
+      ],
+      "features": [
+        "Plataforma web e mobile",
+        "Depósitos e saques rápidos",
+        "Suporte 24/7",
+        "Conta demo ilimitada",
+        "Torneios e bônus"
+      ]
+    },
+    "Bullex": {
+      "name": "Bullex",
+      "code": "bullex",
+      "description": "Corretora moderna de opções digitais",
+      "website": "https://bullex.com",
+      "account_types": ["DEMO", "REAL"],
+      "min_deposit": 10.0,
+      "min_stake": 1.0,
+      "max_stake": 50000.0,
+      "assets": [
+        "EURUSD",
+        "GBPUSD",
+        "USDJPY",
+        "BTCUSD",
+        "ETHUSD"
+      ],
+      "features": [
+        "Interface moderna e intuitiva",
+        "Criptomoedas disponíveis",
+        "Conta demo gratuita",
+        "Saque em 24h"
+      ]
+    }
+  },
+  "account_types": {
+    "DEMO": {
+      "name": "Conta Demo",
+      "description": "Conta de treino com dinheiro virtual",
+      "balance": 10000.0,
+      "benefits": [
+        "Sem risco financeiro",
+        "Dinheiro virtual ilimitado",
+        "Mesmas condições de mercado",
+        "Perfeito para aprender e testar estratégias"
+      ],
+      "limitations": [
+        "Lucros não podem ser sacados",
+        "Apenas para fins educacionais"
+      ]
+    },
+    "REAL": {
+      "name": "Conta Real",
+      "description": "Conta com dinheiro real",
+      "benefits": [
+        "Lucros reais que podem ser sacados",
+        "Acesso a todos os recursos",
+        "Bônus e promoções exclusivas"
+      ],
+      "risks": [
+        "Risco de perda de capital",
+        "Requer gestão de risco adequada",
+        "Emoções podem afetar decisões"
+      ],
+      "warnings": [
+        "⚠️ Opere apenas com dinheiro que você pode perder",
+        "⚠️ Nunca invista mais do que 5% do capital por operação",
+        "⚠️ Use sempre stop loss e take profit",
+        "⚠️ Estude e pratique antes de operar com dinheiro real"
+      ]
+    }
+  },
+  "commands": {
+    "execute": {
+      "patterns": [
+        "executar",
+        "iniciar",
+        "começar",
+        "rodar",
+        "ligar",
+        "ativar",
+        "start"
+      ],
+      "description": "Inicia operação automática do bot",
+      "examples": [
+        "executar iq option",
+        "iniciar bullex em conta demo",
+        "rodar em conta real",
+        "começar a operar"
+      ],
+      "requires_confirmation": true
+    },
+    "stop": {
+      "patterns": [
+        "parar",
+        "desligar",
+        "cancelar",
+        "interromper",
+        "stop",
+        "encerrar"
+      ],
+      "description": "Para a operação do bot",
+      "examples": [
+        "parar bot",
+        "desligar",
+        "cancelar operação"
+      ],
+      "requires_confirmation": false
+    },
+    "results": {
+      "patterns": [
+        "resultados",
+        "estatísticas",
+        "desempenho",
+        "lucro",
+        "prejuízo",
+        "win rate",
+        "taxa de acerto",
+        "balanço"
+      ],
+      "description": "Mostra estatísticas e resultados das operações",
+      "examples": [
+        "mostrar meus resultados",
+        "qual meu win rate",
+        "quanto lucrei hoje",
+        "estatísticas"
+      ]
+    },
+    "report": {
+      "patterns": [
+        "relatório",
+        "relatorio",
+        "gerar relatório",
+        "exportar",
+        "export",
+        "salvar dados"
+      ],
+      "description": "Gera relatórios em HTML ou JSON",
+      "examples": [
+        "gerar relatório",
+        "exportar em json",
+        "criar relatório html"
+      ]
+    },
+    "help": {
+      "patterns": [
+        "ajuda",
+        "help",
+        "como funciona",
+        "o que é",
+        "explique",
+        "dúvida",
+        "não entendi",
+        "tutorial"
+      ],
+      "description": "Fornece ajuda e explicações sobre o sistema",
+      "examples": [
+        "como funciona",
+        "o que é iq option",
+        "explique conta demo",
+        "preciso de ajuda"
+      ]
+    },
+    "support": {
+      "patterns": [
+        "suporte",
+        "problema",
+        "erro",
+        "bug",
+        "não funciona",
+        "ajuda técnica",
+        "contato"
+      ],
+      "description": "Acessa suporte técnico",
+      "examples": [
+        "falar com suporte",
+        "tenho um problema",
+        "reportar erro"
+      ]
+    }
+  },
+  "strategies": {
+    "conservative": {
+      "name": "Conservadora",
+      "description": "Estratégia com baixo risco e retornos moderados",
+      "risk_level": "baixo",
+      "stake_percent": 1.0,
+      "max_daily_loss": 5.0,
+      "target_win_rate": 60.0
+    },
+    "moderate": {
+      "name": "Moderada",
+      "description": "Estratégia equilibrada entre risco e retorno",
+      "risk_level": "médio",
+      "stake_percent": 2.0,
+      "max_daily_loss": 10.0,
+      "target_win_rate": 65.0
+    },
+    "aggressive": {
+      "name": "Agressiva",
+      "description": "Estratégia com maior risco e potencial de retorno alto",
+      "risk_level": "alto",
+      "stake_percent": 5.0,
+      "max_daily_loss": 20.0,
+      "target_win_rate": 70.0
+    }
+  },
+  "faq": {
+    "O que é o WS Trader?": "O WS Trader é uma plataforma inteligente que usa IA avançada para operar automaticamente no mercado de opções binárias e digitais. Nossa IA analisa o mercado em tempo real e executa operações com alta precisão.",
+    "Como funciona a IA?": "Nossa IA utiliza algoritmos de machine learning e análise técnica para identificar padrões no mercado. Ela analisa múltiplos indicadores simultaneamente e toma decisões baseadas em probabilidades estatísticas.",
+    "É seguro usar?": "Sim! O WS Trader possui múltiplas camadas de segurança, incluindo gestão automática de risco, stop loss, e nunca arrisca mais do que o configurado. Além disso, você pode começar em conta demo para praticar sem risco.",
+    "Qual o valor mínimo para começar?": "Você pode começar com apenas R$ 10 em conta real. Porém, recomendamos começar em conta demo para se familiarizar com o sistema.",
+    "Posso perder dinheiro?": "Sim, trading envolve riscos e você pode perder parte ou todo seu capital investido. Por isso, sempre opere com dinheiro que você pode perder e use nossa conta demo para praticar primeiro.",
+    "Como funciona a conta demo?": "A conta demo oferece dinheiro virtual ilimitado para você praticar sem risco financeiro. As condições de mercado são idênticas à conta real, permitindo testar estratégias com segurança.",
+    "Quanto tempo leva para ver resultados?": "Resultados variam conforme a estratégia e condições de mercado. Alguns usuários veem resultados positivos em dias, outros em semanas. Paciência e consistência são fundamentais.",
+    "Posso usar em mais de uma corretora?": "Sim! O WS Trader suporta IQ Option e Bullex, e em breve adicionaremos mais corretoras. Você pode alternar entre elas facilmente.",
+    "Como funciona o suporte?": "Oferecemos suporte via chat com IA 24/7 e email. Nossa IA pode resolver a maioria das dúvidas instantaneamente, mas você também pode falar com humanos se necessário.",
+    "Preciso ficar monitorando?": "Não! O bot opera de forma totalmente automatizada. Você pode definir metas de lucro e stop loss, e o bot trabalha sozinho respeitando seus limites."
+  },
+  "glossary": {
+    "Opções Binárias": "Tipo de operação financeira onde você prevê se o preço de um ativo vai subir (CALL) ou descer (PUT) em um tempo determinado.",
+    "CALL": "Previsão de que o preço vai SUBIR. Também chamado de 'compra'.",
+    "PUT": "Previsão de que o preço vai DESCER. Também chamado de 'venda'.",
+    "Stake": "Valor investido em cada operação. Também chamado de 'valor da aposta'.",
+    "Payout": "Percentual de retorno em caso de acerto. Por exemplo, 80% de payout significa que você ganha 80% do valor investido.",
+    "Win Rate": "Taxa de acerto. Percentual de operações vencedoras sobre o total.",
+    "Stop Loss": "Limite de perda. Quando atingido, o bot para automaticamente.",
+    "Take Profit": "Meta de lucro. Quando atingida, o bot para automaticamente.",
+    "Timeframe": "Período de tempo da operação (1min, 5min, 15min, etc).",
+    "Asset": "Ativo financeiro sendo operado (EUR/USD, BTC/USD, etc).",
+    "Martingale": "Estratégia de recuperação onde se dobra o valor após uma perda (ALTO RISCO).",
+    "Soros": "Estratégia de recuperação progressiva mais conservadora que Martingale."
+  },
+  "tips": [
+    "💡 Sempre comece em conta demo para aprender sem riscos",
+    "💡 Nunca invista mais do que 5% do seu capital por operação",
+    "💡 Defina sempre um stop loss para proteger seu capital",
+    "💡 Não opere com dinheiro que você precisa para despesas essenciais",
+    "💡 Estude os ativos e mercados antes de operar",
+    "💡 Emoções são inimigas do trader - deixe a IA trabalhar",
+    "💡 Seja consistente - resultados vêm com o tempo",
+    "💡 Acompanhe seus resultados e aprenda com eles",
+    "💡 Diversifique - não opere apenas um ativo",
+    "💡 Respeite seus limites de lucro e perda diários"
+  ],
+  "warnings": [
+    "⚠️ Trading envolve risco de perda de capital",
+    "⚠️ Resultados passados não garantem resultados futuros",
+    "⚠️ Opere apenas com dinheiro que você pode perder",
+    "⚠️ Nunca use martingale agressivo em conta real",
+    "⚠️ Não opere sob influência de emoções",
+    "⚠️ Verifique sempre se sua conexão está estável",
+    "⚠️ Mantenha sua assinatura ativa para continuar operando"
+  ]
+}

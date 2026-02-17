@@ -1,0 +1,61 @@
+{
+  "last_update": "2026-02-12T22:46:30",
+  "raw_signals": 4,
+  "raw_accuracy": 0.5,
+  "filtered_signals": 2,
+  "filtered_accuracy": 1.0,
+  "thresholds": {
+    "min_score": 0.52,
+    "min_context": 0.45
+  },
+  "analysis": {
+    "avg_ctx_win": 0.5234159478673861,
+    "avg_ctx_loss": 0.4225587210362264,
+    "avg_score_win": 0.95,
+    "avg_score_loss": 0.8333044183218484
+  },
+  "filtros_por_ativo": {
+    "USDCHF-OTC": {
+      "min_ctx": 0.4160009439165695,
+      "min_score": 0.5,
+      "taxa": 1.0,
+      "sinais": 2,
+      "wins": 2,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "EURJPY-OTC": {
+      "min_ctx": 0.45,
+      "min_score": 0.52,
+      "taxa": 0.5,
+      "sinais": 0,
+      "habilitado": true,
+      "motivo": "poucos_sinais"
+    },
+    "USDSGD-OTC": {
+      "min_ctx": 0.45,
+      "min_score": 0.52,
+      "taxa": 0.5,
+      "sinais": 1,
+      "habilitado": true,
+      "motivo": "poucos_sinais"
+    },
+    "EURGBP-OTC": {
+      "min_ctx": 0.45,
+      "min_score": 0.52,
+      "taxa": 0.5,
+      "sinais": 0,
+      "habilitado": true,
+      "motivo": "poucos_sinais"
+    },
+    "USDINR-OTC": {
+      "min_ctx": 0.45,
+      "min_score": 0.52,
+      "taxa": 0.5,
+      "sinais": 1,
+      "habilitado": true,
+      "motivo": "poucos_sinais"
+    }
+  },
+  "ai_learned_from_backtest": true
+}

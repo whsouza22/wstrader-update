@@ -1,0 +1,19 @@
+# Requisitos para WS_NEURAL_BRAIN.py
+# IA de Verdade com Rede Neural + Ensemble
+
+# Core
+iqoptionapi
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Neural Network (TensorFlow)
+tensorflow>=2.10.0
+
+# Machine Learning (Scikit-learn)
+scikit-learn>=1.0.0
+
+# Instalação:
+# pip install -r requirements_neural.txt
+
+# Ou instale individualmente:
+# pip install tensorflow scikit-learn pandas numpy iqoptionapi

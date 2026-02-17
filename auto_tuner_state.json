@@ -1,0 +1,415 @@
+{
+  "last_update": "2026-02-17T10:49:44",
+  "raw_signals": 56,
+  "raw_accuracy": 0.44642857142857145,
+  "filtered_signals": 5,
+  "filtered_accuracy": 0.8,
+  "thresholds": {
+    "min_score": 0.55,
+    "min_context": 0.6
+  },
+  "analysis": {
+    "avg_ctx_win": 0.5832,
+    "avg_ctx_loss": 0.6019354838709678,
+    "avg_score_win": 0.47834926493612234,
+    "avg_score_loss": 0.4277912112756513
+  },
+  "filtros_por_ativo": {
+    "MCDON-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.4583333333333333,
+      "sinais": 24,
+      "wins": 11,
+      "habilitado": true,
+      "motivo": "taxa_moderada_46%"
+    },
+    "SUIUSD-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.4,
+      "taxa": 0.5,
+      "sinais": 5,
+      "wins": 2,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "NIKE-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.0,
+      "sinais": 4,
+      "wins": 0,
+      "habilitado": false,
+      "motivo": "taxa_baixa_0%"
+    },
+    "EU50-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.45,
+      "taxa": 0.5,
+      "sinais": 2,
+      "wins": 1,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "DYDXUSD-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.45,
+      "taxa": 0.6666666666666666,
+      "sinais": 14,
+      "wins": 9,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "EOSUSD-OTC": {
+      "min_ctx": 0.7,
+      "min_score": 0.5,
+      "taxa": 0.5,
+      "sinais": 2,
+      "wins": 1,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "SNAP-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.4,
+      "taxa": 0.5,
+      "sinais": 4,
+      "wins": 2,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "INTEL-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.4,
+      "taxa": 0.6666666666666666,
+      "sinais": 8,
+      "wins": 5,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "GBPCAD-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.4,
+      "taxa": 0.5,
+      "sinais": 11,
+      "wins": 5,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "FETUSD-OTC": {
+      "min_ctx": 0.4,
+      "min_score": 0.55,
+      "taxa": 0.75,
+      "sinais": 17,
+      "wins": 10,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "USDSEK-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.6666666666666666,
+      "sinais": 3,
+      "wins": 2,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "USDTRY-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.5454545454545454,
+      "sinais": 11,
+      "wins": 6,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "ALIBABA-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.35294117647058826,
+      "sinais": 17,
+      "wins": 6,
+      "habilitado": false,
+      "motivo": "taxa_baixa_35%"
+    },
+    "BIDU-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.4,
+      "sinais": 10,
+      "wins": 4,
+      "habilitado": false,
+      "motivo": "taxa_baixa_40%"
+    },
+    "CITI-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.6,
+      "sinais": 15,
+      "wins": 9,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "MSFT-OTC": {
+      "min_ctx": 0.4,
+      "min_score": 0.5,
+      "taxa": 0.5,
+      "sinais": 11,
+      "wins": 5,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "XRPUSD-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.14285714285714285,
+      "sinais": 7,
+      "wins": 1,
+      "habilitado": false,
+      "motivo": "taxa_baixa_14%"
+    },
+    "GER30-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.6,
+      "taxa": 0.5,
+      "sinais": 7,
+      "wins": 2,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "CADJPY-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.5,
+      "taxa": 0.6666666666666666,
+      "sinais": 15,
+      "wins": 7,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "EURCHF-OTC": {
+      "min_ctx": 0.7,
+      "min_score": 0.4,
+      "taxa": 1.0,
+      "sinais": 9,
+      "wins": 4,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "AUDJPY-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.4,
+      "taxa": 1.0,
+      "sinais": 5,
+      "wins": 3,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "COKE-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.5,
+      "taxa": 0.8,
+      "sinais": 12,
+      "wins": 7,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "USDHKD-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.45,
+      "taxa": 0.8,
+      "sinais": 10,
+      "wins": 5,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "HBARUSD-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.45,
+      "taxa": 0.6,
+      "sinais": 10,
+      "wins": 6,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "EURGBP-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.55,
+      "taxa": 0.375,
+      "sinais": 8,
+      "wins": 3,
+      "habilitado": false,
+      "motivo": "taxa_baixa_38%"
+    },
+    "RAYDIUMUSD-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.45,
+      "taxa": 1.0,
+      "sinais": 14,
+      "wins": 8,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "JPM-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.55,
+      "taxa": 0.6666666666666666,
+      "sinais": 15,
+      "wins": 5,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "PENGUUSD-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.45,
+      "taxa": 0.5,
+      "sinais": 4,
+      "wins": 1,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "USDSGD-OTC": {
+      "min_ctx": 0.4,
+      "min_score": 0.4,
+      "taxa": 0.6666666666666666,
+      "sinais": 9,
+      "wins": 6,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "TAOUSD-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.3333333333333333,
+      "sinais": 9,
+      "wins": 3,
+      "habilitado": false,
+      "motivo": "taxa_baixa_33%"
+    },
+    "EURUSD-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.45,
+      "taxa": 0.5,
+      "sinais": 2,
+      "wins": 1,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "US30-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.3333333333333333,
+      "sinais": 3,
+      "wins": 1,
+      "habilitado": false,
+      "motivo": "taxa_baixa_33%"
+    },
+    "AUDUSD-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.5,
+      "taxa": 1.0,
+      "sinais": 14,
+      "wins": 7,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "UK100-OTC": {
+      "min_ctx": 0.4,
+      "min_score": 0.55,
+      "taxa": 0.4444444444444444,
+      "sinais": 9,
+      "wins": 4,
+      "habilitado": true,
+      "motivo": "taxa_moderada_44%"
+    },
+    "USDNOK-OTC": {
+      "min_ctx": 0.49,
+      "min_score": 0.5,
+      "taxa": 0.55,
+      "sinais": 11,
+      "wins": 5,
+      "habilitado": true,
+      "motivo": "ok_win"
+    },
+    "EURCAD-OTC": {
+      "min_ctx": 0.7,
+      "min_score": 0.55,
+      "taxa": 0.5,
+      "sinais": 6,
+      "wins": 3,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "AUDNZD-OTC": {
+      "min_ctx": 0.7,
+      "min_score": 0.55,
+      "taxa": 0.4,
+      "sinais": 10,
+      "wins": 4,
+      "habilitado": false,
+      "motivo": "taxa_baixa_40%"
+    },
+    "USDCAD-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.4,
+      "taxa": 0.2,
+      "sinais": 5,
+      "wins": 1,
+      "habilitado": false,
+      "motivo": "taxa_baixa_20%"
+    },
+    "USNDAQ100-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.4,
+      "taxa": 0.25,
+      "sinais": 10,
+      "wins": 2,
+      "habilitado": false,
+      "motivo": "taxa_baixa_25%"
+    },
+    "USDZAR-OTC": {
+      "min_ctx": 0.5,
+      "min_score": 0.4,
+      "taxa": 0.6666666666666666,
+      "sinais": 9,
+      "wins": 4,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "JP225-OTC": {
+      "min_ctx": 0.7,
+      "min_score": 0.5,
+      "taxa": 1.0,
+      "sinais": 26,
+      "wins": 17,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "EURJPY-OTC": {
+      "min_ctx": 0.3,
+      "min_score": 0.4,
+      "taxa": 0.5,
+      "sinais": 1,
+      "habilitado": true,
+      "motivo": "poucos_sinais"
+    },
+    "AUDCHF-OTC": {
+      "min_ctx": 0.4,
+      "min_score": 0.4,
+      "taxa": 0.6666666666666666,
+      "sinais": 5,
+      "wins": 2,
+      "habilitado": true,
+      "motivo": "ok"
+    },
+    "US2000-OTC": {
+      "min_ctx": 0.6,
+      "min_score": 0.55,
+      "taxa": 0.5714285714285714,
+      "sinais": 14,
+      "wins": 8,
+      "habilitado": true,
+      "motivo": "ok"
+    }
+  },
+  "ai_learned_from_backtest": true
+}

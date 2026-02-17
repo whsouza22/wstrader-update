@@ -1,0 +1,21 @@
+{
+  "padroes_loss": {
+    "{\"hora\": \"13\", \"pernada_a\": 0, \"pernada_b\": 0, \"retraction\": 0.5, \"tendencia\": \"simple_trend\", \"volatilidade\": \"alta\"}": 1,
+    "{\"hora\": \"14\", \"pernada_a\": 0, \"pernada_b\": 0, \"retraction\": 0.5, \"tendencia\": \"fallback_simple\", \"volatilidade\": \"normal\"}": 1,
+    "{\"hora\": \"15\", \"pernada_a\": 0, \"pernada_b\": 0, \"retraction\": 0.5, \"tendencia\": \"MA16_OK\", \"volatilidade\": \"alta\"}": 1,
+    "{\"hora\": \"16\", \"pernada_a\": 0, \"pernada_b\": 0, \"retraction\": 0.5, \"tendencia\": \"MA16_OK\", \"volatilidade\": \"alta\"}": 1,
+    "{\"hora\": \"17\", \"pernada_a\": 0, \"pernada_b\": 0, \"retraction\": 0.5, \"tendencia\": \"MA16_OK\", \"volatilidade\": \"alta\"}": 4,
+    "{\"hora\": \"18\", \"pernada_a\": 0, \"pernada_b\": 0, \"retraction\": 0.5, \"tendencia\": \"MA16_OK\", \"volatilidade\": \"alta\"}": 1,
+    "{\"hora\": \"19\", \"pernada_a\": 0, \"pernada_b\": 0, \"retraction\": 0.5, \"tendencia\": \"candle_mid_call\", \"volatilidade\": \"alta\"}": 1
+  },
+  "padroes_win": {
+    "{\"hora\": \"13\", \"pernada_a\": 0, \"pernada_b\": 0, \"retraction\": 0.5, \"tendencia\": \"simple_trend\", \"volatilidade\": \"normal\"}": 1,
+    "{\"hora\": \"17\", \"pernada_a\": 0, \"pernada_b\": 0, \"retraction\": 0.5, \"tendencia\": \"MA16_OK\", \"volatilidade\": \"alta\"}": 5
+  },
+  "contextos_ruins": [],
+  "contextos_bons": [],
+  "hora_ruim": [
+    "17"
+  ],
+  "hora_boa": []
+}

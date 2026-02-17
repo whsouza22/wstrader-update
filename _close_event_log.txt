@@ -1,0 +1,3 @@
+Event class=WindowEvent | type=<WindowEventType.RESIZED: 'resized'> | data=None | name='event' | target=2
+Event class=WindowEvent | type=<WindowEventType.CLOSE: 'close'> | data=None | name='event' | target=2
+>>> CLOSE DETECTED!
