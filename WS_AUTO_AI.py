@@ -2773,6 +2773,8 @@ def main():
         if res > 0:
             wins += 1
             log.info(paint(f"[{ativo}] ✅ WIN {res:.2f}$", C.G))
+            # Enviar resultado para stdout (capturado pela tela)
+            print(f">>> RESULTADO: WIN {res:.2f}", flush=True)
             # Reset counters após WIN
             consecutive_losses[ativo] = 0
             global_consecutive_losses = 0
@@ -2788,6 +2790,8 @@ def main():
                 filtro["motivo"] = "ok_win"
         elif res < 0:
             log.info(paint(f"[{ativo}] ❌ LOSS {res:.2f}$", C.R))
+            # Enviar resultado para stdout (capturado pela tela)
+            print(f">>> RESULTADO: LOSS {abs(res):.2f}", flush=True)
             # Incrementar contadores de LOSS
             consecutive_losses[ativo] = consecutive_losses.get(ativo, 0) + 1
             global_consecutive_losses += 1

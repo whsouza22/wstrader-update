@@ -2775,7 +2775,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
                             pass
                         
                         # DETECÇÃO DE WIN/LOSS - FORMATOS MÚLTIPLOS (processa internamente, não mostra na tela)
-                        elif "WIN" in clean and ("$" in clean or "RESULTADO" in clean):
+                        elif "WIN" in clean and re.search(r'WIN\s+[+-]?\d+[.,]\d+', clean):
                             valor_match = re.search(r'WIN\s+([+-]?\d+[.,]\d+)', clean)
                             if valor_match:
                                 valor = float(valor_match.group(1).replace(',', '.'))
@@ -2819,7 +2819,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
                                                 logger.warning(f"Erro ao parar broker: {e}")
                                     threading.Thread(target=stop_after_meta, daemon=True).start()
                         
-                        elif "LOSS" in clean and ("$" in clean or "RESULTADO" in clean):
+                        elif "LOSS" in clean and re.search(r'LOSS\s+[+-]?\d+[.,]\d+', clean):
                             valor_match = re.search(r'LOSS\s+([+-]?\d+[.,]\d+)', clean)
                             # Capturar ativo do LOSS se presente
                             ativo_loss_match = re.search(r'\[(\S+-OTC)\]', clean)
@@ -4110,7 +4110,8 @@ def chat_screen(page: ft.Page, email: str, password: str):
 
     def _get_ai_stats_chat(broker_key=None):
         """Lê stats da IA para a corretora ativa.
-        Retorna (total_trades, total_wr, live_trades, live_wr)."""
+        Retorna (total_trades, total_wr, live_trades, live_wr).
+        Combina dados LGBM + session do dia para melhor representação."""
         bk = broker_key or get_active_broker()
         if not bk:
             best_total, best_wr, best_live, best_lwr = 0, 0.0, 0, 0.0
@@ -4118,9 +4119,34 @@ def chat_screen(page: ft.Page, email: str, password: str):
                 total, wr, live, lwr = _read_ai_training_stats(suffix)
                 if total > best_total:
                     best_total, best_wr, best_live, best_lwr = total, wr, live, lwr
+            # Se LGBM está vazio, usar stats do dia como fallback
+            if best_total == 0:
+                acct = account_type["value"]
+                session_wins = daily_stats.get(acct, {}).get("wins", 0)
+                session_losses = daily_stats.get(acct, {}).get("losses", 0)
+                session_total = session_wins + session_losses
+                if session_total > 0:
+                    session_wr = (session_wins / session_total) * 100.0
+                    return session_total, session_wr, session_total, session_wr
             return best_total, best_wr, best_live, best_lwr
         suffix = _broker_suffix_map.get(bk, "m1")
-        return _read_ai_training_stats(suffix)
+        lgbm_total, lgbm_wr, lgbm_live, lgbm_lwr = _read_ai_training_stats(suffix)
+        # Combinar com stats da sessão do dia para a corretora ativa
+        acct = account_type["value"]
+        session_wins = daily_stats_broker.get(bk, {}).get(acct, {}).get("wins", 0)
+        session_losses = daily_stats_broker.get(bk, {}).get(acct, {}).get("losses", 0)
+        session_total = session_wins + session_losses
+        # Se LGBM tem dados, usar LGBM + adicionar session live
+        if lgbm_total > 0:
+            combined_live = lgbm_live + session_total
+            combined_live_wins = int(lgbm_lwr * lgbm_live / 100.0) + session_wins if lgbm_live > 0 else session_wins
+            combined_lwr = (combined_live_wins / combined_live * 100.0) if combined_live > 0 else lgbm_lwr
+            return lgbm_total + session_total, lgbm_wr, combined_live, combined_lwr
+        # Se LGBM vazio, usar apenas session
+        if session_total > 0:
+            session_wr = (session_wins / session_total) * 100.0
+            return session_total, session_wr, session_total, session_wr
+        return 0, 0.0, 0, 0.0
 
     def _get_ai_phase_chat(total_trades, win_rate, broker_key=None):
         """Retorna fase baseado em trades + win rate — cor por corretora"""

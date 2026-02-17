@@ -355,11 +355,10 @@ exit
             logger.info("Fechando aplicativo para atualizacao...")
             try:
                 page.window.prevent_close = False
+                page.window.visible = False
                 page.update()
-                page.window.destroy()
             except Exception:
                 pass
-            await asyncio.sleep(1.0)
             os._exit(0)
 
         except requests.exceptions.RequestException as e:
@@ -581,6 +580,13 @@ async def main(page: ft.Page):
             is_close = ('close' in str(e.data).lower())
         if is_close:
             logger.info("Janela fechada pelo usuário. Encerrando...")
+            # Esconder janela imediatamente para evitar tela "Working..."
+            try:
+                page.window.prevent_close = False
+                page.window.visible = False
+                page.update()
+            except Exception:
+                pass
             kill_all_bot_processes()
             os._exit(0)
 
