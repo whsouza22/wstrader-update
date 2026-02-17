@@ -161,7 +161,7 @@ logger = logging.getLogger(__name__)
 WINDOW_ICON_FILENAME = "ws_ai_trader_corrigido.ico"
 
 # Versão padrão do aplicativo
-CURRENT_VERSION = "2.4" # DOM Forex zones + Bayes+LGBM ensemble all brokers
+CURRENT_VERSION = "2.5" # Fix close instantaneo + melhorias gerais
 
 # URL do JSON para verificação de atualizações
 VERSION_URL = "https://whsouza22.github.io/wstrader-update/version.json"
@@ -580,13 +580,7 @@ async def main(page: ft.Page):
             is_close = ('close' in str(e.data).lower())
         if is_close:
             logger.info("Janela fechada pelo usuário. Encerrando...")
-            # Esconder janela imediatamente para evitar tela "Working..."
-            try:
-                page.window.prevent_close = False
-                page.window.visible = False
-                page.update()
-            except Exception:
-                pass
+            # Fechar imediatamente sem page.update() para evitar tela "Working..."
             kill_all_bot_processes()
             os._exit(0)
 
