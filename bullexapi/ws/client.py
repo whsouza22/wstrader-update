@@ -188,5 +188,9 @@ class WebsocketClient(object):
         :param close_status_code: Status code for close connection.
         :param close_msg: Message explaining why connection was closed.
         """
-        logging.debug("WebSocketClient closed connection.")
+        logger = logging.getLogger(__name__)
+        logger.warning(f"WebSocketClient closed connection. code={close_status_code} msg={close_msg}")
         self.connected = False
+        global_value.check_websocket_if_connect = 0
+        global_value.check_websocket_if_error = True
+        global_value.websocket_error_reason = f"Connection closed (code={close_status_code})."

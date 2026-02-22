@@ -190,8 +190,10 @@ class WebsocketClient(object):
         global_value.check_websocket_if_connect = 1
 
     @staticmethod
-    def on_close(wss):  # pylint: disable=unused-argument
+    def on_close(wss, close_status_code=None, close_msg=None):  # pylint: disable=unused-argument
         """Method to process websocket close."""
         logger = logging.getLogger(__name__)
-        logger.debug("Websocket connection closed.")
+        logger.warning(f"Websocket connection closed. code={close_status_code} msg={close_msg}")
         global_value.check_websocket_if_connect = 0
+        global_value.check_websocket_if_error = True
+        global_value.websocket_error_reason = f"Connection closed (code={close_status_code})."

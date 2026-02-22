@@ -38,7 +38,7 @@ a = Analysis(
         'ws_auto_ai_engine', 'loss_analyzer', 'loss_analyzer_ai',
         'pattern_detector', 'smart_memory', 'regime_filter', 'risk_control',
         'neural_model', 'multi_agent_consensus', 'trend_structure_ai',
-        'logistic_online',
+        'logistic_online', 'ai_loss_memory', 'sr_precision_strategy',
         'operations_manager', 'backend_server', 'backend_license_endpoint', 'license_manager',
         'license_activation_screen',
         'chat_screen_new', 'Login_Screen', 'trading_bot', 'tutorial_screen',

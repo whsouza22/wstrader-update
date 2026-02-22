@@ -1,5 +1,5 @@
 {
-  "version": "2.5",
-  "changelog": "v2.5 - Fechamento instantaneo ao clicar no X (sem tela Working)",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v2.5/WsTrader_Setup_2.5.exe"
+  "version": "2.6",
+  "changelog": "v2.6 - Filtros IA simplificados, WR 75% backtest, AI Loss Memory, melhorias gerais",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v2.6/WsTrader_Setup_2.6.exe"
 }

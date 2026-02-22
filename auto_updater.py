@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 class AutoUpdater:
     """Gerenciador de auto-atualização silenciosa"""
 
+    # GitHub Releases API - busca sempre a versão mais recente publicada
+    GITHUB_RELEASES_API = "https://api.github.com/repos/whsouza22/wstrader-update/releases/latest"
+
     def __init__(self, current_version: str, version_url: str):
         self.current_version = current_version
         self.version_url = version_url
@@ -43,36 +46,85 @@ class AutoUpdater:
     def check_for_update(self) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
         """
         Verifica se há atualização disponível.
+        Consulta version.json E GitHub Releases API, pega SEMPRE a versão mais recente.
         Retorna: (has_update, new_version, changelog, download_url)
         """
         try:
             self._report_progress(0.0, "Verificando atualizacoes...")
-            response = requests.get(self.version_url, timeout=15)
-            response.raise_for_status()
+            
+            best_version = None
+            best_download = None
+            best_changelog = ""
 
-            data = response.json()
-            latest_version = data.get("version", "")
-            changelog = data.get("changelog", "")
-            download_url = data.get("download_link") or data.get("installer_url", "")
+            # === FONTE 1: version.json ===
+            try:
+                response = requests.get(self.version_url, timeout=15)
+                response.raise_for_status()
+                data = response.json()
 
-            # Limpa URL
-            if download_url:
-                download_url = download_url.replace("\n", "").replace(" ", "").strip()
-                if download_url.startswith("https//"):
-                    download_url = download_url.replace("https//", "https://", 1)
+                # Suporta formato com array de versões
+                if "versions" in data and isinstance(data["versions"], list):
+                    for v_entry in data["versions"]:
+                        v_str = v_entry.get("version", "")
+                        v_url = v_entry.get("download_url") or v_entry.get("download_link") or v_entry.get("installer_url", "")
+                        if v_str and v_url:
+                            if best_version is None or self._parse_version(v_str) > self._parse_version(best_version):
+                                best_version = v_str
+                                best_download = v_url
+                                best_changelog = v_entry.get("changelog", "")
 
-            if not latest_version or not download_url:
+                # Suporta formato flat (atual)
+                if "version" in data:
+                    v_str = data["version"]
+                    v_url = data.get("download_url") or data.get("download_link") or data.get("installer_url", "")
+                    if v_str and v_url:
+                        if best_version is None or self._parse_version(v_str) > self._parse_version(best_version):
+                            best_version = v_str
+                            best_download = v_url
+                            best_changelog = data.get("changelog", "")
+
+            except Exception as e:
+                logger.warning(f"Erro ao buscar version.json: {e}")
+
+            # === FONTE 2: GitHub Releases API (sempre tem a última release) ===
+            try:
+                gh_resp = requests.get(self.GITHUB_RELEASES_API, timeout=10, 
+                                       headers={"Accept": "application/vnd.github.v3+json"})
+                if gh_resp.status_code == 200:
+                    gh_data = gh_resp.json()
+                    gh_tag = gh_data.get("tag_name", "")
+                    gh_version = gh_tag.lstrip("vV")
+                    
+                    if gh_version:
+                        if best_version is None or self._parse_version(gh_version) > self._parse_version(best_version):
+                            for asset in gh_data.get("assets", []):
+                                if asset.get("name", "").lower().endswith(".exe"):
+                                    best_version = gh_version
+                                    best_download = asset["browser_download_url"]
+                                    best_changelog = gh_data.get("body", "")
+                                    logger.info(f"GitHub Releases: encontrada v{gh_version} (mais recente)")
+                                    break
+            except Exception as e:
+                logger.warning(f"Erro ao buscar GitHub Releases: {e}")
+
+            if not best_version or not best_download:
                 logger.warning("Dados de versao incompletos no servidor")
                 return False, None, None, None
 
-            has_update = self._parse_version(latest_version) > self._parse_version(self.current_version)
+            # Limpa URL
+            if best_download:
+                best_download = best_download.replace("\n", "").replace(" ", "").strip()
+                if best_download.startswith("https//"):
+                    best_download = best_download.replace("https//", "https://", 1)
+
+            has_update = self._parse_version(best_version) > self._parse_version(self.current_version)
 
             if has_update:
-                logger.info(f"Nova versao disponivel: {latest_version} (atual: {self.current_version})")
+                logger.info(f"Nova versao disponivel: {best_version} (atual: {self.current_version})")
             else:
                 logger.info(f"Versao {self.current_version} esta atualizada")
 
-            return has_update, latest_version, changelog, download_url
+            return has_update, best_version, best_changelog, best_download
 
         except Exception as e:
             logger.error(f"Erro ao verificar atualizacao: {e}")

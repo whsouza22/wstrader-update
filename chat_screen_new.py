@@ -315,7 +315,7 @@ try:
     from config_keys import OPENAI_API_KEY
 except ImportError:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-client = OpenAI(api_key=OPENAI_API_KEY, timeout=15.0)  # Timeout de 15 segundos
+client = OpenAI(api_key=OPENAI_API_KEY, timeout=30.0, max_retries=3)  # Timeout de 30 segundos com 3 retries
 
 SYSTEM_INSTRUCTIONS_PT = """Você é o assistente da WS Trader AI, uma plataforma de trading automatizado desenvolvida pela WS Trader (wstrader.io).
 
@@ -730,7 +730,7 @@ def get_ai_response(user_message: str, conversation_history: list, system_instru
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
-            max_tokens=300,  # Reduzido para respostas mais rápidas
+            max_tokens=500,
             temperature=0.7,
         )
         return resp.choices[0].message.content
@@ -1273,10 +1273,10 @@ def chat_screen(page: ft.Page, email: str, password: str):
         page.overlay.append(confetti_overlay)
         page.update()
 
-        # Fechar automaticamente apos 5 segundos
+        # Fechar automaticamente apos 30 segundos (ou clique do usuario)
         def auto_close():
             import time as t
-            t.sleep(5)
+            t.sleep(30)
             close_confetti()
 
         threading.Thread(target=auto_close, daemon=True).start()
@@ -2774,98 +2774,21 @@ def chat_screen(page: ft.Page, email: str, password: str):
                             # NÃO mostrar na tela
                             pass
                         
-                        # DETECÇÃO DE WIN/LOSS - FORMATOS MÚLTIPLOS (processa internamente, não mostra na tela)
+                        # DETECÇÃO DE WIN/LOSS via STDERR — IGNORAR para evitar duplicação
+                        # O resultado é contado APENAS via stdout ">>> RESULTADO:" (fonte única de verdade)
                         elif "WIN" in clean and re.search(r'WIN\s+[+-]?\d+[.,]\d+', clean):
-                            valor_match = re.search(r'WIN\s+([+-]?\d+[.,]\d+)', clean)
-                            if valor_match:
-                                valor = float(valor_match.group(1).replace(',', '.'))
-                                # Atualizar valores POR CORRETORA E CONTA (usando broker_acct, não account_type global)
-                                _add_ganhos(broker_key, valor, broker_acct)
-                                ganhos_acumulados["value"] = _get_ganhos(broker_key, broker_acct)  # Compatibilidade
-                                check_reset_daily_stats()
-                                daily_stats_broker[broker_key][broker_acct]["wins"] += 1
-                                daily_stats[broker_acct]["wins"] += 1
-                                logger.info(f"[WIN] {broker_key} {broker_acct}: ${valor:.2f} | Acumulado: ${_get_ganhos(broker_key, broker_acct):.2f}")
-                                _save_daily_report_data(broker_key, _get_broker_wins(broker_key, broker_acct), _get_broker_losses(broker_key, broker_acct), _get_ganhos(broker_key, broker_acct), broker_acct)
-                                save_meta_lockout_broker(broker_key)  # Manter meta_lockout.json sincronizado
-                                ui(refresh_sidebar)
-                                ui(update_accuracy_chart)
-                                ui(_refresh_report_charts)
-                                ui(_update_ai_phase_ui)
-                                meta_bk = meta_diaria_broker.get(broker_key, 0.0)
-                                if meta_bk > 0 and _get_ganhos(broker_key, broker_acct) >= meta_bk and not _get_meta_batida(broker_key, broker_acct):
-                                    _set_meta_batida(broker_key, True, broker_acct)
-                                    meta_batida_hoje["value"] = True  # Compatibilidade
-                                    save_meta_lockout_broker()  # Salvar lockout por broker
-                                    logger.info(f"[META] 🎉 {broker_key} {broker_acct} META BATIDA! Ganhos: ${_get_ganhos(broker_key, broker_acct):.2f} >= Meta: ${meta_bk:.2f}")
-                                    # Mostrar popup de celebração
-                                    ui(show_confetti_animation)
-                                    # Parar o bot automaticamente após bater a meta
-                                    def stop_after_meta():
-                                        import time as t
-                                        t.sleep(0.5)  # Pequena espera
-                                        nome_bk = {"iq_option": "IQ Option", "bullex": "Bullex", "casatrader": "CasaTrader"}.get(broker_key, broker_key)
-                                        ui(add_status_message, f"Meta {nome_bk} alcançada! 🎉 IA pausada.", COLORS["text"])
-                                        # Termina o processo do broker
-                                        proc = broker_processes.get(broker_key)
-                                        if proc and proc.poll() is None:
-                                            try:
-                                                proc.terminate()
-                                                broker_processes[broker_key] = None
-                                                broker_connected[broker_key] = False
-                                                broker_connecting["value"] = False
-                                                ui(refresh_sidebar)
-                                            except Exception as e:
-                                                logger.warning(f"Erro ao parar broker: {e}")
-                                    threading.Thread(target=stop_after_meta, daemon=True).start()
+                            # NÃO contar aqui — será contado via stdout ">>> RESULTADO: WIN"
+                            logger.debug(f"[STDERR-SKIP] WIN detectado em stderr, ignorando (conta via stdout): {clean}")
+                            pass
                         
                         elif "LOSS" in clean and re.search(r'LOSS\s+[+-]?\d+[.,]\d+', clean):
-                            valor_match = re.search(r'LOSS\s+([+-]?\d+[.,]\d+)', clean)
-                            # Capturar ativo do LOSS se presente
+                            # NÃO contar aqui — será contado via stdout ">>> RESULTADO: LOSS"
+                            # Apenas capturar dados do ativo para análise posterior
                             ativo_loss_match = re.search(r'\[(\S+-OTC)\]', clean)
-                            if valor_match:
-                                valor = float(valor_match.group(1).replace(',', '.'))
-                                if valor > 0:
-                                    valor = -valor
-                                # Atualizar valores POR CORRETORA E CONTA (usando broker_acct)
-                                _add_ganhos(broker_key, valor, broker_acct)
-                                ganhos_acumulados["value"] = _get_ganhos(broker_key, broker_acct)  # Compatibilidade
-                                check_reset_daily_stats()
-                                daily_stats_broker[broker_key][broker_acct]["losses"] += 1
-                                daily_stats[broker_acct]["losses"] += 1
-                                logger.info(f"[LOSS] {broker_key} {broker_acct}: ${valor:.2f} | Acumulado: ${_get_ganhos(broker_key, broker_acct):.2f}")
-                                _save_daily_report_data(broker_key, _get_broker_wins(broker_key, broker_acct), _get_broker_losses(broker_key, broker_acct), _get_ganhos(broker_key, broker_acct), broker_acct)
-                                save_meta_lockout_broker(broker_key)  # Manter meta_lockout.json sincronizado
-                                ui(refresh_sidebar)
-                                ui(update_accuracy_chart)
-                                ui(_refresh_report_charts)
-                                ui(_update_ai_phase_ui)
-                                
-                                # Salvar LOSS para análise com informações capturadas
-                                ativo_loss = ativo_loss_match.group(1) if ativo_loss_match else ultima_operacao.get("ativo", "")
-                                motivo = ""
-                                if ultima_operacao.get("tendencia") == "CONTRA":
-                                    motivo = "Operou contra a tendência"
-                                elif ultima_operacao.get("score", "").replace("%", ""):
-                                    try:
-                                        score_val = int(ultima_operacao.get("score", "0").replace("%", ""))
-                                        if score_val < 60:
-                                            motivo = f"Score baixo ({score_val}%)"
-                                    except:
-                                        pass
-                                
-                                save_loss_for_analysis(
-                                    valor=valor,
-                                    ativo=ativo_loss,
-                                    direcao=ultima_operacao.get("direcao", ""),
-                                    padrao=ultima_operacao.get("padrao", ""),
-                                    tendencia=ultima_operacao.get("tendencia", ""),
-                                    motivo=motivo
-                                )
-                                
-                                # Limpar última operação após salvar
-                                ultima_operacao.clear()
-                                ultima_operacao.update({"ativo": "", "direcao": "", "padrao": "", "tendencia": "", "score": ""})
+                            if ativo_loss_match:
+                                ultima_operacao["ativo"] = ativo_loss_match.group(1)
+                            logger.debug(f"[STDERR-SKIP] LOSS detectado em stderr, ignorando (conta via stdout): {clean}")
+                            pass
                         
                         elif "EMPATE" in clean:
                             ui(add_status_message, "Empate (devolucao)", COLORS["blue"])
@@ -3014,12 +2937,40 @@ def chat_screen(page: ft.Page, email: str, password: str):
                 mensagem = f"{par} {direcao} | {valor}"
                 ui(add_status_message, mensagem, COLORS["text"])
             elif "META ATINGIDA" in clean or "META BATIDA" in clean:
-                # Meta de lucro atingida - apenas mensagem no console (sem popup)
+                # Meta de lucro atingida - parar bot + popup
                 meta_batida_hoje["value"] = True
                 _set_meta_batida(broker_key, True, broker_acct)
                 save_meta_lockout_broker()  # Salvar por broker
+                ui(show_confetti_animation)
                 nome_bk = {"iq_option": "IQ Option", "bullex": "Bullex", "casatrader": "CasaTrader"}.get(broker_key, broker_key)
-                ui(add_status_message, f"Meta {broker_acct} {nome_bk} alcançada! 🎉 Bot desligado.", COLORS["text"])
+                ui(add_status_message, f"Meta {broker_acct} {nome_bk} alcançada! 🎉 Bot parado.", COLORS["text"])
+                # === PARAR O BOT AUTOMATICAMENTE ===
+                def _stop_bot_meta_stderr():
+                    import time as _t
+                    _t.sleep(1)
+                    _proc = broker_processes.get(broker_key)
+                    if _proc and _proc.poll() is None:
+                        try:
+                            logger.info(f"[META] Parando bot {broker_key} após meta (stderr)...")
+                            _proc.terminate()
+                        except Exception as _e:
+                            logger.warning(f"[META] Erro ao parar bot: {_e}")
+                    broker_processes[broker_key] = None
+                    broker_connected[broker_key] = False
+                    broker_connecting["value"] = False
+                    broker_starting[broker_key] = False
+                    set_selected_broker(None)
+                    def _restore_meta_stderr():
+                        broker_cards_panel.visible = True
+                        try:
+                            broker_cards_panel.update()
+                        except Exception:
+                            pass
+                    ui(_restore_meta_stderr)
+                    ui(refresh_sidebar)
+                    ui(update_status_header)
+                    ui(update_send_button)
+                threading.Thread(target=_stop_bot_meta_stderr, daemon=True).start()
             elif "STOP LOSS" in clean or "STOP-LOSS" in clean:
                 # Stop loss atingido - parar bot
                 perda_match = re.search(r'Perda:\s*-?(\d+[.,]\d+)', clean)
@@ -3064,7 +3015,34 @@ def chat_screen(page: ft.Page, email: str, password: str):
                             logger.info(f"[META] 🎉 {broker_key} {broker_acct} META BATIDA! Ganhos: R${_get_ganhos(broker_key, broker_acct):.2f} >= Meta: R${meta_bk:.2f}")
                             ui(show_confetti_animation)
                             nome_bk = {"iq_option": "IQ Option", "bullex": "Bullex", "casatrader": "CasaTrader"}.get(broker_key, broker_key)
-                            ui(add_status_message, f"Meta {broker_acct} {nome_bk} alcançada! 🎉", COLORS["text"])
+                            ui(add_status_message, f"Meta {broker_acct} {nome_bk} alcançada! 🎉 Bot parado.", COLORS["text"])
+                            # === PARAR O BOT AUTOMATICAMENTE ===
+                            def _stop_bot_after_meta():
+                                import time as _t
+                                _t.sleep(1)  # Espera 1s para logs terminarem
+                                _proc = broker_processes.get(broker_key)
+                                if _proc and _proc.poll() is None:
+                                    try:
+                                        logger.info(f"[META] Parando bot {broker_key} após meta batida...")
+                                        _proc.terminate()
+                                    except Exception as _e:
+                                        logger.warning(f"[META] Erro ao parar bot: {_e}")
+                                broker_processes[broker_key] = None
+                                broker_connected[broker_key] = False
+                                broker_connecting["value"] = False
+                                broker_starting[broker_key] = False
+                                ui(set_selected_broker, None)
+                                def _restore_after_meta():
+                                    broker_cards_panel.visible = True
+                                    try:
+                                        broker_cards_panel.update()
+                                    except Exception:
+                                        pass
+                                ui(_restore_after_meta)
+                                ui(refresh_sidebar)
+                                ui(update_status_header)
+                                ui(update_send_button)
+                            threading.Thread(target=_stop_bot_after_meta, daemon=True).start()
                 elif "LOSS" in clean:
                     # Formato: >>> RESULTADO: LOSS -96.67
                     valor_match = re.search(r'LOSS\s+([+-]?\d+[.,]\d+)', clean)
@@ -3110,7 +3088,34 @@ def chat_screen(page: ft.Page, email: str, password: str):
                     save_meta_lockout_broker()  # Salvar por broker
                     ui(show_confetti_animation)
                     nome_bk = {"iq_option": "IQ Option", "bullex": "Bullex", "casatrader": "CasaTrader"}.get(broker_key, broker_key)
-                    ui(add_status_message, f"Meta {broker_acct} {nome_bk} alcançada! 🎉", COLORS["text"])
+                    ui(add_status_message, f"Meta {broker_acct} {nome_bk} alcançada! 🎉 Bot parado.", COLORS["text"])
+                    # === PARAR O BOT AUTOMATICAMENTE ===
+                    def _stop_bot_meta_stdout():
+                        import time as _t
+                        _t.sleep(1)
+                        _proc = broker_processes.get(broker_key)
+                        if _proc and _proc.poll() is None:
+                            try:
+                                logger.info(f"[META] Parando bot {broker_key} após meta (stdout)...")
+                                _proc.terminate()
+                            except Exception as _e:
+                                logger.warning(f"[META] Erro ao parar bot: {_e}")
+                        broker_processes[broker_key] = None
+                        broker_connected[broker_key] = False
+                        broker_connecting["value"] = False
+                        broker_starting[broker_key] = False
+                        set_selected_broker(None)
+                        def _restore_meta_stdout():
+                            broker_cards_panel.visible = True
+                            try:
+                                broker_cards_panel.update()
+                            except Exception:
+                                pass
+                        ui(_restore_meta_stdout)
+                        ui(refresh_sidebar)
+                        ui(update_status_header)
+                        ui(update_send_button)
+                    threading.Thread(target=_stop_bot_meta_stdout, daemon=True).start()
 
 
     def connect_iq():

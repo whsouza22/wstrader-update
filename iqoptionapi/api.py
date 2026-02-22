@@ -778,8 +778,11 @@ class IQOptionAPI(object):  # pylint: disable=too-many-instance-attributes
 
         self.websocket_client = WebsocketClient(self)
 
-        self.websocket_thread = threading.Thread(target=self.websocket.run_forever, kwargs={'sslopt': {
-                                                 "check_hostname": False, "cert_reqs": ssl.CERT_NONE, "ca_certs": "cacert.pem"}})  # for fix pyinstall error: cafile, capath and cadata cannot be all omitted
+        self.websocket_thread = threading.Thread(target=self.websocket.run_forever, kwargs={
+            'sslopt': {"check_hostname": False, "cert_reqs": ssl.CERT_NONE, "ca_certs": "cacert.pem"},
+            'ping_interval': 60,
+            'ping_timeout': 10,
+        })  # ping_interval keeps connection alive
         self.websocket_thread.daemon = True
         self.websocket_thread.start()
         while True:

@@ -21,9 +21,12 @@ class TimeSync(Base):
 
         :returns: The server timestamp.
         """
+        _timeout = 30
+        _start = time.time()
         while self.__server_timestamp==None:
+            if time.time() - _start > _timeout:
+                return None
             time.sleep(0.2)
-            pass
 
         return self.__server_timestamp / 1000
 

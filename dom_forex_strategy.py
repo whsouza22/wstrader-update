@@ -8,9 +8,9 @@ Baseado na metodologia DOM Forex Perfect Zones:
   (múltiplas reações, rejeições, clusters de preço)
 - Identifica LTA (Linha de Tendência de Alta) e LTB (Linha de Tendência de Baixa)
 - Analisa padrões de candle (rejeição, engolfo) nos níveis
-- RSI como CONFLUÊNCIA (overbought/oversold reforça rejeição na zona)
 - Confirmação de 2 velas: vela anterior toca zona, vela atual confirma direção
 - Entrada SOMENTE quando há confluência de 2+ fatores
+- SEM RSI — apenas S/R + LTA/LTB + candle patterns (price action puro)
 
 3 Setups:
 1. REJEIÇÃO DIRETA: Preço toca zona forte + candle de rejeição + LTA/LTB
@@ -25,6 +25,7 @@ import numpy as np
 import math
 import logging
 from typing import Dict, Any, List, Optional, Tuple
+from sr_precision_strategy import _candle_features
 
 log = logging.getLogger("WS_AUTO_AI")
 
@@ -40,14 +41,15 @@ SR_PROXIMITY_ATR = 0.50     # Preço dentro da zona (distância máx em ATR)
 SR_STRONG_TOUCHES = 3       # Toques para zona "forte"
 SR_VERY_STRONG = 5          # Toques para zona "muito forte"
 
-LT_MIN_POINTS = 2           # Pontos mínimos para trendline
-LT_TOLERANCE_ATR = 0.35     # Tolerância de toque na trendline
-LT_MAX_BREAK_ATR = 0.5      # Máximo de violação
-LT_PROXIMITY_ATR = 0.5      # Distância máxima da trendline
-
-RSI_PERIOD = 14             # Período do RSI
-RSI_OVERSOLD = 30           # RSI oversold (confluência CALL em suporte)
-RSI_OVERBOUGHT = 70         # RSI overbought (confluência PUT em resistência)
+# LTA/LTB e RSI REMOVIDOS da estratégia — funções mantidas para compatibilidade
+# Constantes legadas (usadas pelas funções detect_lta/detect_ltb/calculate_rsi que ainda existem)
+LT_MIN_POINTS = 2
+LT_TOLERANCE_ATR = 0.35
+LT_MAX_BREAK_ATR = 0.5
+LT_PROXIMITY_ATR = 0.5
+RSI_PERIOD = 14
+RSI_OVERSOLD = 30
+RSI_OVERBOUGHT = 70
 
 MIN_CANDLES = 100           # Mínimo de velas para análise
 
@@ -341,14 +343,13 @@ def find_nearest_sr(zones: List[Dict[str, Any]], price: float,
         if direction == "resistance" and price > z["zone_high"]:
             continue
 
-        # FIX: Quando preço está dentro ou muito perto da zona, a mesma zona
-        # passava como support E resistance, permitindo PUT em suporte.
-        # Agora filtra pelo tipo da zona quando preço está próximo.
-        if dist_edge < atr_val * 0.5:  # Preço perto ou dentro da zona
-            if direction == "support" and z["type"] == "resistance":
-                continue  # Zona é resistência, não usar como suporte
-            if direction == "resistance" and z["type"] == "support":
-                continue  # Zona é suporte, não usar como resistência
+        # FIX: SEMPRE aplicar filtro de tipo da zona.
+        # Suporte = CALL (compra), Resistência = PUT (venda).
+        # Nunca permitir PUT em zona de suporte ou CALL em zona de resistência.
+        if direction == "support" and z["type"] == "resistance":
+            continue  # Zona é resistência, não usar como suporte
+        if direction == "resistance" and z["type"] == "support":
+            continue  # Zona é suporte, não usar como resistência
 
         if dist_center < best_dist:
             best_dist = dist_center
@@ -555,26 +556,35 @@ def detect_ltb(df: pd.DataFrame, atr_val: float,
 # ═══════════════════════════════════════════════════════════════
 def analyze_candle_pattern(df: pd.DataFrame, atr_val: float) -> Dict[str, Any]:
     """
-    Analisa candle atual para sinais de rejeição.
-    Essencial para confirmar que preço está reagindo à zona.
+    Analisa candle atual com features MATEMÁTICAS (não visuais).
+    Usa _candle_features() de sr_precision_strategy para extrair ratios numéricos.
+    Classificação de padrão mantida para logging, mas quality é contínua.
     """
-    if len(df) < 3:
-        return {"pattern": "none", "direction": "NEUTRAL", "strength": 0.0,
-                "body_frac": 0.0, "rejection_wick": 0.0}
+    default = {"pattern": "none", "direction": "NEUTRAL", "strength": 0.0,
+               "body_frac": 0.0, "rejection_wick": 0.0, "upper_frac": 0.0,
+               "lower_frac": 0.0, "is_bull": False, "features": {}}
+
+    if len(df) < 3 or atr_val <= 0:
+        return default
+
+    # ── Features matemáticas (sr_precision_strategy) ──
+    feat = _candle_features(df, atr_val)
 
     c = df.iloc[-1]
     o, h, l, cl = float(c["open"]), float(c["high"]), float(c["low"]), float(c["close"])
     rng = h - l
-    if rng < 1e-9:
-        return {"pattern": "doji_flat", "direction": "NEUTRAL", "strength": 0.0,
-                "body_frac": 0.0, "rejection_wick": 0.0}
+    if rng < atr_val * 0.02:
+        default["features"] = feat
+        return default
 
     body = abs(cl - o)
-    body_frac = body / rng
-    upper_wick = h - max(o, cl)
-    lower_wick = min(o, cl) - l
-    upper_frac = upper_wick / rng
-    lower_frac = lower_wick / rng
+    body_frac = feat["body_ratio"]
+    upper_frac = feat["upper_wick_ratio"]
+    lower_frac = feat["lower_wick_ratio"]
+    close_pos = feat["close_position"]
+    body_vs_avg = feat["body_vs_avg"]
+    absorption_bull = feat["absorption_bull"]
+    absorption_bear = feat["absorption_bear"]
 
     is_bull = cl > o
     is_bear = cl < o
@@ -583,47 +593,45 @@ def analyze_candle_pattern(df: pd.DataFrame, atr_val: float) -> Dict[str, Any]:
     direction = "NEUTRAL"
     strength = 0.0
 
-    # ── HAMMER / MARTELO (CALL) ──
-    if lower_frac >= 0.55 and body_frac <= 0.40 and upper_frac <= 0.15:
+    prev = df.iloc[-2]
+    prev_o, prev_c = float(prev["open"]), float(prev["close"])
+    prev_body = abs(prev_c - prev_o)
+
+    # ── ENGOLFO BULLISH (corpo bull cobre bear anterior — matemático) ──
+    if is_bull and prev_c < prev_o and cl > prev_o and o <= prev_c:
+        pattern = "bullish_engulfing"
+        direction = "CALL"
+        strength = min(1.0, 0.55 + absorption_bull * 0.3 + min(body_vs_avg, 2.0) * 0.1)
+
+    # ── ENGOLFO BEARISH (corpo bear cobre bull anterior — matemático) ──
+    elif is_bear and prev_c > prev_o and o >= prev_c and cl <= prev_o:
+        pattern = "bearish_engulfing"
+        direction = "PUT"
+        strength = min(1.0, 0.55 + absorption_bear * 0.3 + min(body_vs_avg, 2.0) * 0.1)
+
+    # ── HAMMER / MARTELO (pavio inf dominante, close no topo) ──
+    elif lower_frac >= 0.45 and body_frac <= 0.50 and close_pos >= 0.55:
         pattern = "hammer"
         direction = "CALL"
-        strength = 0.5 + lower_frac * 0.3 + (0.1 if is_bull else 0.0)
+        strength = min(1.0, lower_frac * 0.7 + close_pos * 0.3)
 
-    # ── SHOOTING STAR (PUT) ──
-    elif upper_frac >= 0.55 and body_frac <= 0.40 and lower_frac <= 0.15:
+    # ── SHOOTING STAR (pavio sup dominante, close no fundo) ──
+    elif upper_frac >= 0.45 and body_frac <= 0.50 and close_pos <= 0.45:
         pattern = "shooting_star"
         direction = "PUT"
-        strength = 0.5 + upper_frac * 0.3 + (0.1 if is_bear else 0.0)
+        strength = min(1.0, upper_frac * 0.7 + (1.0 - close_pos) * 0.3)
 
-    # ── ENGOLFO BULLISH (CALL) ──
-    elif is_bull and body_frac >= 0.55:
-        prev = df.iloc[-2]
-        prev_body = abs(float(prev["close"]) - float(prev["open"]))
-        if float(prev["close"]) < float(prev["open"]) and body > prev_body * 1.2:
-            pattern = "bullish_engulfing"
-            direction = "CALL"
-            strength = 0.5 + body_frac * 0.3
-
-    # ── ENGOLFO BEARISH (PUT) ──
-    elif is_bear and body_frac >= 0.55:
-        prev = df.iloc[-2]
-        prev_body = abs(float(prev["close"]) - float(prev["open"]))
-        if float(prev["close"]) > float(prev["open"]) and body > prev_body * 1.2:
-            pattern = "bearish_engulfing"
-            direction = "PUT"
-            strength = 0.5 + body_frac * 0.3
-
-    # ── REJEIÇÃO BULLISH ──
-    elif is_bull and lower_frac >= 0.40 and body_frac >= 0.25:
+    # ── REJEIÇÃO BULLISH moderada (pavio inf > corpo, close acima do meio) ──
+    elif lower_frac > 0.30 and lower_frac > body_frac and close_pos >= 0.50:
         pattern = "bull_rejection"
         direction = "CALL"
-        strength = 0.3 + lower_frac * 0.3
+        strength = min(0.65, lower_frac * 0.6 + close_pos * 0.2)
 
-    # ── REJEIÇÃO BEARISH ──
-    elif is_bear and upper_frac >= 0.40 and body_frac >= 0.25:
+    # ── REJEIÇÃO BEARISH moderada (pavio sup > corpo, close abaixo do meio) ──
+    elif upper_frac > 0.30 and upper_frac > body_frac and close_pos <= 0.50:
         pattern = "bear_rejection"
         direction = "PUT"
-        strength = 0.3 + upper_frac * 0.3
+        strength = min(0.65, upper_frac * 0.6 + (1.0 - close_pos) * 0.2)
 
     # ── DOJI ──
     elif body_frac <= 0.10:
@@ -631,7 +639,7 @@ def analyze_candle_pattern(df: pd.DataFrame, atr_val: float) -> Dict[str, Any]:
         direction = "NEUTRAL"
         strength = 0.1
 
-    # ── CANDLE FORTE ──
+    # ── CANDLE FORTE (corpo > 70% range + corpo expansivo vs média) ──
     elif body_frac >= 0.70:
         if is_bull:
             pattern = "strong_bull"
@@ -639,7 +647,7 @@ def analyze_candle_pattern(df: pd.DataFrame, atr_val: float) -> Dict[str, Any]:
         else:
             pattern = "strong_bear"
             direction = "PUT"
-        strength = 0.4 + body_frac * 0.2
+        strength = min(1.0, 0.4 + body_frac * 0.2 + min(body_vs_avg, 2.0) * 0.1)
 
     strength = min(1.0, max(0.0, strength))
 
@@ -652,6 +660,7 @@ def analyze_candle_pattern(df: pd.DataFrame, atr_val: float) -> Dict[str, Any]:
         "upper_frac": upper_frac,
         "lower_frac": lower_frac,
         "is_bull": is_bull,
+        "features": feat,
     }
 
 
@@ -738,7 +747,8 @@ def calculate_confluence(
     rsi_val: float = 50.0,
 ) -> Dict[str, Any]:
     """
-    Calcula confluência — DOM Forex Perfect Zones.
+    Calcula confluência — DOM Forex Perfect Zones (S/R + LTA/LTB + Candle).
+    SEM RSI — apenas price action puro.
 
     Confluências:
     1. Preço em ZONA S/R (peso principal — até 2.5 pts)
@@ -746,8 +756,7 @@ def calculate_confluence(
     3. Padrão de candle de rejeição (até 1.0 pt)
     4. Pullback pós-rompimento (1.5 pts bônus)
     5. Qualidade de mercado (até 0.5 pt — filtra lixo)
-    6. RSI (até 0.8 pt — oversold/overbought na zona)
-    7. Toque na zona pela vela ANTERIOR (até 0.6 pt)
+    6. Toque na zona pela vela ANTERIOR (até 0.6 pt)
     """
     confluences = []
     total_weight = 0.0
@@ -834,7 +843,7 @@ def calculate_confluence(
     total_weight += sr_weight
     max_weight += 2.5
 
-    # ── 2. LTA / LTB ──
+    # ── 2. LTA / LTB (Trendlines como confluência) ──
     lt_weight = 0.0
     lt_info = None
     lt_touch = False  # candle tocou a trendline?
@@ -891,7 +900,7 @@ def calculate_confluence(
                             lt_weight += 0.4
                             confluences.append("rejeicao_LTA")
     total_weight += lt_weight
-    max_weight += 3.1  # Aumentado: 1.0 base + 0.5 forte + 0.3 prox + 0.3 zona+LT + 0.5 toque + 0.4 rejeição + 0.1 margem
+    max_weight += 3.1  # 1.0 base + 0.5 forte + 0.3 prox + 0.3 zona+LT + 0.5 toque + 0.4 rejeição + 0.1 margem
 
     # ── 3. PADRÃO DE CANDLE ──
     candle_weight = 0.0
@@ -917,27 +926,8 @@ def calculate_confluence(
     total_weight += mkt_weight
     max_weight += 0.5
 
-    # ── 6. RSI CONFLUÊNCIA ──
+    # ── 6. RSI REMOVIDO — estratégia pura S/R + candle ──
     rsi_weight = 0.0
-    if sr_zone:
-        if direction == "CALL" and rsi_val <= RSI_OVERSOLD:
-            # RSI oversold em suporte → forte confluência CALL (bounce provável)
-            rsi_weight = 0.5 + min(0.3, (RSI_OVERSOLD - rsi_val) / 30.0)
-            confluences.append(f"RSI_oversold({rsi_val:.0f})")
-        elif direction == "PUT" and rsi_val >= RSI_OVERBOUGHT:
-            # RSI overbought em resistência → forte confluência PUT
-            rsi_weight = 0.5 + min(0.3, (rsi_val - RSI_OVERBOUGHT) / 30.0)
-            confluences.append(f"RSI_overbought({rsi_val:.0f})")
-        elif direction == "CALL" and rsi_val >= RSI_OVERBOUGHT:
-            # RSI overbought mas querendo CALL? → penalizar
-            rsi_weight = -0.3
-            confluences.append(f"RSI_contra({rsi_val:.0f})")
-        elif direction == "PUT" and rsi_val <= RSI_OVERSOLD:
-            # RSI oversold mas querendo PUT? → penalizar (bounce provável)
-            rsi_weight = -0.3
-            confluences.append(f"RSI_contra({rsi_val:.0f})")
-    total_weight += rsi_weight
-    max_weight += 0.8
 
     # ── 7. CONFIRMAÇÃO DE 2 VELAS (toque anterior + candle atual confirma) ──
     prev_touch_weight = 0.0
@@ -954,49 +944,231 @@ def calculate_confluence(
     total_weight += prev_touch_weight
     max_weight += 0.6
 
-    # ── 8. PENALIDADE CONTRA-TENDÊNCIA + MOMENTUM ──
-    # FIX: Se preço vem em tendência forte contra a direção do trade,
+    # ── 8. PENALIDADE CONTRA-TENDÊNCIA + MOMENTUM + CONTINUAÇÃO ──
+    # Se preço vem em tendência forte contra a direção do trade,
     # zona/LT é mais provável de romper. Penalidade FORTE para bloquear.
     trend_penalty = 0.0
     if df_m1 is not None and len(df_m1) >= 8:
         closes_recent = df_m1["close"].astype(float).values[-8:]
+        opens_recent = df_m1["open"].astype(float).values[-8:]
         highs_recent = df_m1["high"].astype(float).values[-8:]
         lows_recent = df_m1["low"].astype(float).values[-8:]
         # Contar quantas das últimas 7 velas fecharam em queda vs alta
         n_bear = sum(1 for i in range(1, len(closes_recent)) if closes_recent[i] < closes_recent[i-1])
         n_bull = len(closes_recent) - 1 - n_bear
 
-        # ── Força do momentum: tamanho médio do corpo das velas na direção ──
-        # Velas com corpo grande = momentum real, não só contagem
-        body_sizes = []
-        for i in range(1, len(closes_recent)):
-            body = abs(closes_recent[i] - closes_recent[i-1])
-            body_sizes.append(body)
-        avg_body = sum(body_sizes) / max(len(body_sizes), 1)
-        # ATR ratio: corpo médio vs ATR — se > 0.3 = velas grandes
-        body_atr_ratio = avg_body / max(atr_val, 1e-9)
+        # ── Força do momentum: corpo REAL das velas (open vs close) ──
+        bull_bodies = []
+        bear_bodies = []
+        for i in range(len(closes_recent)):
+            body = closes_recent[i] - opens_recent[i]  # positivo = bull, negativo = bear
+            real_body = abs(body)
+            if body > 0:
+                bull_bodies.append(real_body)
+            elif body < 0:
+                bear_bodies.append(real_body)
 
-        # ── Contra-tendência básica (aplica com ou sem sr_zone) ──
-        if direction == "CALL" and n_bear >= 5:
-            # Tendência de baixa forte → suporte/LTA pode romper
-            trend_penalty = 0.8 + (n_bear - 5) * 0.4  # 0.8 a 1.6
-            if body_atr_ratio > 0.3:
-                trend_penalty += 0.5  # Velas grandes = momentum real
+        avg_bull_body = sum(bull_bodies) / max(len(bull_bodies), 1) if bull_bodies else 0
+        avg_bear_body = sum(bear_bodies) / max(len(bear_bodies), 1) if bear_bodies else 0
+        body_atr_ratio_bull = avg_bull_body / max(atr_val, 1e-9)
+        body_atr_ratio_bear = avg_bear_body / max(atr_val, 1e-9)
+
+        # ── ANÁLISE DE CONTINUAÇÃO DE TENDÊNCIA ──
+        # Verifica se as últimas velas mostram CONTINUAÇÃO (corpos crescentes na mesma direção)
+        # Se sim, é provável que a zona será rompida, não deve entrar contra.
+        last_5_bodies = []
+        for i in range(-5, 0):
+            if i + len(closes_recent) >= 0:
+                idx = i + len(closes_recent)
+                body = closes_recent[idx] - opens_recent[idx]
+                last_5_bodies.append(body)
+
+        # Contar velas consecutivas na mesma direção (das mais recentes para trás)
+        consecutive_bull = 0
+        consecutive_bear = 0
+        for i in range(len(last_5_bodies) - 1, -1, -1):
+            if last_5_bodies[i] > 0:
+                consecutive_bull += 1
+            else:
+                break
+        for i in range(len(last_5_bodies) - 1, -1, -1):
+            if last_5_bodies[i] < 0:
+                consecutive_bear += 1
+            else:
+                break
+
+        # ── Corpos crescentes = aceleração = continuação ──
+        bodies_growing = False
+        if len(last_5_bodies) >= 3:
+            # Verificar se os últimos 3 corpos na mesma direção estão crescendo
+            recent_abs = [abs(b) for b in last_5_bodies[-3:]]
+            if all(b > 0 for b in last_5_bodies[-3:]):
+                # 3 velas bull consecutivas
+                if recent_abs[-1] >= recent_abs[-2] * 0.8 and recent_abs[-2] >= recent_abs[-3] * 0.8:
+                    bodies_growing = True
+            elif all(b < 0 for b in last_5_bodies[-3:]):
+                # 3 velas bear consecutivas
+                if recent_abs[-1] >= recent_abs[-2] * 0.8 and recent_abs[-2] >= recent_abs[-3] * 0.8:
+                    bodies_growing = True
+
+        # ── Contra-tendência com threshold REDUZIDO: 3+ velas já é sinal ──
+        if direction == "CALL" and n_bear >= 3:
+            # Tendência de baixa → suporte/LTA pode romper
+            trend_penalty = 0.4 + (n_bear - 3) * 0.5  # 0.4 a 2.4
+            if body_atr_ratio_bear > 0.25:
+                trend_penalty += 0.5  # Velas bear com corpo grande
+            if consecutive_bear >= 3:
+                trend_penalty += 0.6  # 3+ velas bear CONSECUTIVAS
+                confluences.append(f"continuacao_bear({consecutive_bear})")
+            if bodies_growing:
+                trend_penalty += 0.8  # Corpos crescentes = aceleração
+                confluences.append("aceleracao_bear")
             confluences.append(f"contra_tendencia({n_bear}/7 bear)")
-        elif direction == "PUT" and n_bull >= 5:
-            # Tendência de alta forte → resistência/LTB pode romper
-            trend_penalty = 0.8 + (n_bull - 5) * 0.4  # 0.8 a 1.6
-            if body_atr_ratio > 0.3:
-                trend_penalty += 0.5
+        elif direction == "PUT" and n_bull >= 3:
+            # Tendência de alta → resistência/LTB pode romper
+            trend_penalty = 0.4 + (n_bull - 3) * 0.5  # 0.4 a 2.4
+            if body_atr_ratio_bull > 0.25:
+                trend_penalty += 0.5  # Velas bull com corpo grande
+            if consecutive_bull >= 3:
+                trend_penalty += 0.6  # 3+ velas bull CONSECUTIVAS
+                confluences.append(f"continuacao_bull({consecutive_bull})")
+            if bodies_growing:
+                trend_penalty += 0.8  # Corpos crescentes = aceleração
+                confluences.append("aceleracao_bull")
             confluences.append(f"contra_tendencia({n_bull}/7 bull)")
 
-        # ── MOMENTUM EXTREMO: 7/7 velas = BLOQUEAR (penalidade máxima) ──
-        if direction == "CALL" and n_bear >= 7:
-            trend_penalty += 1.5
+        # ── MOMENTUM EXTREMO: 5+/7 velas = BLOQUEAR (threshold reduzido de 6 para 5) ──
+        if direction == "CALL" and n_bear >= 5:
+            trend_penalty += 2.0
             confluences.append("momentum_extremo_bear")
-        elif direction == "PUT" and n_bull >= 7:
-            trend_penalty += 1.5
+        elif direction == "PUT" and n_bull >= 5:
+            trend_penalty += 2.0
             confluences.append("momentum_extremo_bull")
+
+        # ── MOMENTUM PRÉ-PADRÃO (velas ANTES do candle de entrada) ──
+        # IMPORTANTE: A última vela pode ser o candle de padrão (engulfing, hammer, etc.)
+        # que é BULLISH. Precisamos verificar as velas ANTES dele para ver o momentum real.
+        # Se as 2-3 velas antes do padrão são contra o trade → padrão está contra a força.
+        last_body = closes_recent[-1] - opens_recent[-1]  # >0 = bull, <0 = bear
+        last_body_atr = abs(last_body) / max(atr_val, 1e-9)
+
+        if len(closes_recent) >= 4:
+            # Velas ANTES do candle de padrão (penúltima, antepenúltima, etc.)
+            prev1_body = closes_recent[-2] - opens_recent[-2]  # penúltima
+            prev2_body = closes_recent[-3] - opens_recent[-3]  # antepenúltima
+            prev3_body = closes_recent[-4] - opens_recent[-4]  # 4ª antes
+            prev1_atr = abs(prev1_body) / max(atr_val, 1e-9)
+            prev2_atr = abs(prev2_body) / max(atr_val, 1e-9)
+            prev3_atr = abs(prev3_body) / max(atr_val, 1e-9)
+
+            if direction == "CALL":
+                # ── Velas antes do padrão são BEARISH → momentum ativo contra CALL ──
+                bear_before = sum(1 for b in [prev1_body, prev2_body, prev3_body] if b < 0)
+                if bear_before >= 2:
+                    # 2+ das 3 velas antes do padrão são bearish
+                    avg_bear_prev = sum(abs(b) for b in [prev1_body, prev2_body, prev3_body] if b < 0) / max(bear_before, 1)
+                    avg_bear_prev_atr = avg_bear_prev / max(atr_val, 1e-9)
+                    pen = 0.6 + bear_before * 0.3 + avg_bear_prev_atr * 0.8  # ~1.2 a 2.5+
+                    trend_penalty += pen
+                    confluences.append(f"momentum_pre_padrao_bear({bear_before}/3,corpo={avg_bear_prev_atr:.2f}ATR)")
+
+                    # Engulfing fraco: se o candle de padrão (bullish) tem corpo menor
+                    # que a média dos bearish antes → engulfing insuficiente para reverter
+                    if last_body > 0 and last_body_atr < avg_bear_prev_atr * 0.9:
+                        trend_penalty += 0.8
+                        confluences.append(f"engulfing_fraco({last_body_atr:.2f}<{avg_bear_prev_atr:.2f})")
+
+                # Penúltima vela bearish forte sozinha (mesmo se antepenúltima foi bull)
+                if prev1_body < 0 and prev1_atr > 0.30:
+                    trend_penalty += 0.5
+                    confluences.append(f"penultima_bear_forte({prev1_atr:.2f}ATR)")
+
+            elif direction == "PUT":
+                # ── Velas antes do padrão são BULLISH → momentum ativo contra PUT ──
+                bull_before = sum(1 for b in [prev1_body, prev2_body, prev3_body] if b > 0)
+                if bull_before >= 2:
+                    avg_bull_prev = sum(abs(b) for b in [prev1_body, prev2_body, prev3_body] if b > 0) / max(bull_before, 1)
+                    avg_bull_prev_atr = avg_bull_prev / max(atr_val, 1e-9)
+                    pen = 0.6 + bull_before * 0.3 + avg_bull_prev_atr * 0.8
+                    trend_penalty += pen
+                    confluences.append(f"momentum_pre_padrao_bull({bull_before}/3,corpo={avg_bull_prev_atr:.2f}ATR)")
+
+                    if last_body < 0 and last_body_atr < avg_bull_prev_atr * 0.9:
+                        trend_penalty += 0.8
+                        confluences.append(f"engulfing_fraco({last_body_atr:.2f}<{avg_bull_prev_atr:.2f})")
+
+                if prev1_body > 0 and prev1_atr > 0.30:
+                    trend_penalty += 0.5
+                    confluences.append(f"penultima_bull_forte({prev1_atr:.2f}ATR)")
+
+        # ── ÚLTIMA VELA AINDA NA DIREÇÃO DO MOMENTUM (quando NÃO é candle de padrão) ──
+        if direction == "CALL" and last_body < 0 and last_body_atr > 0.20:
+            pen = 0.5 + last_body_atr * 1.2
+            trend_penalty += pen
+            confluences.append(f"ultima_vela_bear({last_body_atr:.2f}ATR)")
+        elif direction == "PUT" and last_body > 0 and last_body_atr > 0.20:
+            pen = 0.5 + last_body_atr * 1.2
+            trend_penalty += pen
+            confluences.append(f"ultima_vela_bull({last_body_atr:.2f}ATR)")
+
+        # ── DESLOCAMENTO LÍQUIDO RECENTE (3 velas) ──
+        # Verifica se o preço se deslocou significativamente em 3 velas
+        if len(closes_recent) >= 4:
+            net_displacement_3 = closes_recent[-1] - closes_recent[-4]
+            disp_atr = abs(net_displacement_3) / max(atr_val, 1e-9)
+            if direction == "CALL" and net_displacement_3 < 0 and disp_atr > 0.6:
+                vel_pen = 0.5 + (disp_atr - 0.6) * 1.5
+                trend_penalty += vel_pen
+                confluences.append(f"velocidade_queda({disp_atr:.1f}ATR/3v)")
+            elif direction == "PUT" and net_displacement_3 > 0 and disp_atr > 0.6:
+                vel_pen = 0.5 + (disp_atr - 0.6) * 1.5
+                trend_penalty += vel_pen
+                confluences.append(f"velocidade_alta({disp_atr:.1f}ATR/3v)")
+
+        # ── DESLOCAMENTO LÍQUIDO 5 VELAS (tendência média) ──
+        if len(closes_recent) >= 6:
+            net_displacement_5 = closes_recent[-1] - closes_recent[-6]
+            disp5_atr = abs(net_displacement_5) / max(atr_val, 1e-9)
+            if direction == "CALL" and net_displacement_5 < 0 and disp5_atr > 1.0:
+                vel_pen5 = 0.6 + (disp5_atr - 1.0) * 1.2
+                trend_penalty += vel_pen5
+                confluences.append(f"tendencia_queda_5v({disp5_atr:.1f}ATR)")
+            elif direction == "PUT" and net_displacement_5 > 0 and disp5_atr > 1.0:
+                vel_pen5 = 0.6 + (disp5_atr - 1.0) * 1.2
+                trend_penalty += vel_pen5
+                confluences.append(f"tendencia_alta_5v({disp5_atr:.1f}ATR)")
+
+        # ── CLOSE-TO-CLOSE: preço caindo consistentemente ──
+        # Se os closes das últimas 3 velas estão TODOS caindo (cada < anterior)
+        if len(closes_recent) >= 4:
+            c2c_falling = (closes_recent[-2] < closes_recent[-3] and
+                           closes_recent[-3] < closes_recent[-4])
+            c2c_rising = (closes_recent[-2] > closes_recent[-3] and
+                          closes_recent[-3] > closes_recent[-4])
+            if direction == "CALL" and c2c_falling:
+                trend_penalty += 0.7
+                confluences.append("closes_caindo_3v")
+            elif direction == "PUT" and c2c_rising:
+                trend_penalty += 0.7
+                confluences.append("closes_subindo_3v")
+
+        # ── PREÇO JÁ ROMPENDO A ZONA ──
+        # Se a última vela FECHOU acima da resistência (para PUT) ou abaixo do suporte (para CALL),
+        # o preço já rompeu — não entrar contra o rompimento.
+        if sr_zone and df_m1 is not None and len(df_m1) >= 1:
+            last_close = float(df_m1.iloc[-1]["close"])
+            last_open = float(df_m1.iloc[-1]["open"])
+            zone_high = sr_zone["zone_high"]
+            zone_low = sr_zone["zone_low"]
+
+            if direction == "PUT" and last_close > zone_high and last_open < last_close:
+                # Preço FECHOU acima da resistência com vela de alta = rompimento
+                trend_penalty += 2.5
+                confluences.append("rompendo_resistencia_acima")
+            elif direction == "CALL" and last_close < zone_low and last_open > last_close:
+                # Preço FECHOU abaixo do suporte com vela de baixa = rompimento
+                trend_penalty += 2.5
+                confluences.append("rompendo_suporte_abaixo")
 
         # ── V-SHAPE RECOVERY: queda forte + alta forte = rompimento provável ──
         # Detecta: preço caiu significativamente e depois recuperou tudo com velas fortes
@@ -1038,14 +1210,14 @@ def calculate_confluence(
         # CALL em resistência após alta forte = exaustão (zona vai segurar, queda provável)
         if sr_zone:
             zone_type = sr_zone.get("type", "")
-            if direction == "PUT" and zone_type == "support" and n_bear >= 4:
-                # PUT num suporte após 4+ velas de queda = exaustão → penalizar forte
-                exhaustion_pen = 0.8 + (n_bear - 4) * 0.3  # 0.8 a 1.7
+            if direction == "PUT" and zone_type == "support" and n_bear >= 3:
+                # PUT num suporte após 3+ velas de queda = exaustão → penalizar forte
+                exhaustion_pen = 0.6 + (n_bear - 3) * 0.4  # 0.6 a 2.2
                 trend_penalty += exhaustion_pen
                 confluences.append(f"exaustao_suporte({n_bear}/7 bear)")
-            elif direction == "CALL" and zone_type == "resistance" and n_bull >= 4:
-                # CALL numa resistência após 4+ velas de alta = exaustão
-                exhaustion_pen = 0.8 + (n_bull - 4) * 0.3
+            elif direction == "CALL" and zone_type == "resistance" and n_bull >= 3:
+                # CALL numa resistência após 3+ velas de alta = exaustão
+                exhaustion_pen = 0.6 + (n_bull - 3) * 0.4
                 trend_penalty += exhaustion_pen
                 confluences.append(f"exaustao_resistencia({n_bull}/7 bull)")
 
@@ -1066,8 +1238,6 @@ def calculate_confluence(
     if pb_weight > 0:
         confluence_count += 1
     if mkt_weight > 0:
-        confluence_count += 1
-    if rsi_weight > 0:
         confluence_count += 1
     if prev_touch_weight > 0:
         confluence_count += 1
@@ -1095,20 +1265,19 @@ def calculate_confluence(
 def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
                      min_confluence: int = 2, min_score: float = 0.28) -> Dict[str, Any]:
     """
-    Gera sinal baseado em DOM Forex Perfect Zones.
+    Gera sinal baseado em DOM Forex Perfect Zones (S/R + LTA/LTB + Candle).
+    SEM RSI — apenas price action puro.
 
-    Price action + RSI confluência:
     1. Detecta Perfect Zones (S/R com peso/força)
-    2. Detecta LTA e LTB
+    2. Detecta LTA e LTB (trendlines)
     3. Analisa candle de rejeição na zona
     4. Verifica pullback pós-rompimento
-    5. RSI como confluência (oversold/overbought na zona)
-    6. Confirmação de 2 velas (toque anterior + candle atual)
-    7. Calcula confluência para CALL e PUT
-    8. Retorna melhor sinal se confluência >= 2
+    5. Confirmação de 2 velas (toque anterior + candle atual)
+    6. Calcula confluência para CALL e PUT
+    7. Retorna melhor sinal se confluência >= 2
 
     3 Setups:
-    1. REJEIÇÃO → preço toca zona + candle rejeição + LTA/LTB + RSI
+    1. REJEIÇÃO → preço toca zona + candle rejeição + LTA/LTB
     2. ROMPIMENTO → candle forte rompendo zona
     3. PULLBACK → zona rompida + preço volta + confirma
     """
@@ -1143,17 +1312,13 @@ def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
     # ── 5. QUALIDADE DO MERCADO ──
     market = analyze_market_quality(df_m1, atr_val)
 
-    # ── 5b. RSI ──
-    rsi_val = calculate_rsi(df_m1)
-
-    # ── 6. CALCULAR CONFLUÊNCIA ──
+    # ── 6. CALCULAR CONFLUÊNCIA (S/R + LTA/LTB + Candle, sem RSI) ──
     conf_call = calculate_confluence(
         sr_zone=nearest_support, lta=lta, ltb=ltb,
         candle=candle, market=market,
         direction="CALL", atr_val=atr_val,
         pullback_zone=pullback_zone if (pullback_zone and pullback_zone.get("signal_dir") == "CALL") else None,
         df_m1=df_m1,
-        rsi_val=rsi_val,
     )
 
     conf_put = calculate_confluence(
@@ -1162,7 +1327,6 @@ def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
         direction="PUT", atr_val=atr_val,
         pullback_zone=pullback_zone if (pullback_zone and pullback_zone.get("signal_dir") == "PUT") else None,
         df_m1=df_m1,
-        rsi_val=rsi_val,
     )
 
     # ── 7. DECIDIR MELHOR SINAL ──
@@ -1215,12 +1379,23 @@ def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
         any_dir = "CALL" if conf_call["score"] >= conf_put["score"] else "PUT"
         any_conf = conf_call if any_dir == "CALL" else conf_put
         any_sr = nearest_support if any_dir == "CALL" else nearest_resistance
+        any_has_sr = call_has_sr if any_dir == "CALL" else put_has_sr
+        any_has_lt_local = call_has_lt if any_dir == "CALL" else put_has_lt
+        _reject_reasons = []
+        if not any_has_sr and not any_has_lt_local:
+            _reject_reasons.append("sem_SR_ou_LT")
+        if any_conf["confluence_count"] < min_confluence:
+            _reject_reasons.append(f"conf({any_conf['confluence_count']}<{min_confluence})")
+        if any_conf["score"] < min_score:
+            _reject_reasons.append(f"score({any_conf['score']:.2f}<{min_score})")
+        if not _reject_reasons:
+            _reject_reasons.append("none_valid")
         return {
             "trade": False,
             "dir": any_dir,
             "score": any_conf["score"],
             "reasons": [
-                f"conf_insuf({any_conf['confluence_count']}<{min_confluence})",
+                *_reject_reasons,
                 *any_conf.get("confluences", [])
             ],
             "market_quality": market["quality"],
@@ -1238,14 +1413,13 @@ def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
             "entry_confidence": candle.get("strength", 0.0),
             "candle_strength": candle.get("strength", 0.0),
             "effA": market.get("directional", 0.0),
-            "rsi": rsi_val,
+            "rsi": 50.0,
             "confluence_bonus": any_conf.get("total_weight", 0.0),
             "confluence_count": any_conf.get("confluence_count", 0),
         }
 
     # ── SINAL CONFIRMADO ──
     lt_active = lta if best_dir == "CALL" else ltb
-    # Dom Forex: LT existe na direção = has_lt True (proximidade já pesa na confluência)
     has_lt = lt_active is not None
 
     # Tipo de setup
@@ -1257,28 +1431,19 @@ def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
 
     # FIX: Entrada "rejeicao" EXIGE candle confirmando a direção
     # Sem rejeição no candle = preço no meio da zona sem reação = não entrar
-    # RSI extremo pode substituir: RSI oversold em suporte ou overbought em resistência
     # Toque+rejeição na LTB/LTA também confirma (wick tocou trendline + close do lado certo)
     if setup_type == "rejeicao":
         candle_dir = candle.get("direction", "NEUTRAL")
         candle_str = candle.get("strength", 0.0)
-        # Candle deve confirmar: direção certa OU pelo menos neutro com LT forte
         candle_ok = (candle_dir == best_dir and candle_str >= 0.3)
-        lt_forte = (lt_active is not None and lt_active.get("points", 0) >= 3)
         # LTB/LTA com toque + rejeição no candle (lt_weight >= 1.9 = base + toque + rejeição)
         lt_touch_reject = (lt_active is not None and best_conf.get("lt_weight", 0) >= 1.9)
-        # RSI extremo confirma: oversold em suporte (CALL) ou overbought em resistência (PUT)
-        rsi_confirms = (
-            (best_dir == "CALL" and rsi_val <= RSI_OVERSOLD) or
-            (best_dir == "PUT" and rsi_val >= RSI_OVERBOUGHT)
-        )
-        if not candle_ok and not lt_forte and not rsi_confirms and not lt_touch_reject:
-            # Sem confirmação de candle nem LT forte → bloquear
+        if not candle_ok and not lt_touch_reject:
             best_conf["confluences"].append("sem_candle_rejeicao")
             return {
                 "trade": False,
                 "dir": best_dir,
-                "score": best_conf["score"] * 0.7,  # Penalizar score
+                "score": best_conf["score"] * 0.7,
                 "reasons": [
                     f"rejeicao_sem_candle({candle.get('pattern','?')})",
                     *best_conf.get("confluences", [])
@@ -1295,7 +1460,7 @@ def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
                 "entry_confidence": candle.get("strength", 0.0),
                 "candle_strength": candle.get("strength", 0.0),
                 "effA": market.get("directional", 0.0),
-                "rsi": rsi_val,
+                "rsi": 50.0,
                 "confluence_bonus": best_conf.get("total_weight", 0.0),
                 "confluence_count": best_conf.get("confluence_count", 0),
             }
@@ -1320,9 +1485,22 @@ def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
         "lt_confluence": lt_active["strength"] / 10.0 if lt_active else 0.0,
         "lt_proximity": lt_active["proximity"] if lt_active else 0.0,
         "lt_points": lt_active["points"] if lt_active else 0,
-        # Candle
+        # Candle — padrão + features matemáticas para IA
         "candle_pattern": candle["pattern"],
         "candle_strength": candle["strength"],
+        "candle_body_ratio": candle.get("features", {}).get("body_ratio", 0.0),
+        "candle_upper_wick": candle.get("features", {}).get("upper_wick_ratio", 0.0),
+        "candle_lower_wick": candle.get("features", {}).get("lower_wick_ratio", 0.0),
+        "candle_close_pos": candle.get("features", {}).get("close_position", 0.5),
+        "candle_body_vs_avg": candle.get("features", {}).get("body_vs_ma20", 1.0),
+        "candle_range_vs_atr": candle.get("features", {}).get("range_vs_atr", 0.5),
+        "candle_range_vs_ma20": candle.get("features", {}).get("range_vs_ma20", 1.0),
+        "candle_absorption_bull": candle.get("features", {}).get("absorption_bull", 0.0),
+        "candle_absorption_bear": candle.get("features", {}).get("absorption_bear", 0.0),
+        "candle_body_strength": candle.get("features", {}).get("body_strength", 0.0),
+        "candle_ret1": candle.get("features", {}).get("ret1", 0.0),
+        "candle_ret3": candle.get("features", {}).get("ret3", 0.0),
+        "candle_ret5": candle.get("features", {}).get("ret5", 0.0),
         # Mercado
         "market_quality": market["quality"],
         "context": market["context"],
@@ -1333,7 +1511,7 @@ def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
         "confluence_bonus": best_conf["total_weight"],
         # Legados (LGBM / Bayesiano)
         "effA": market.get("directional", 0.0),
-        "rsi": rsi_val,
+        "rsi": 50.0,
         "retr": best_sr["distance_atr"] if best_sr else 0.0,
         "A_atr": best_conf.get("total_weight", 0.0),
         "flips": market.get("chop_frac", 0.5),
@@ -1351,7 +1529,6 @@ def dom_forex_signal(df_m1: pd.DataFrame, atr_val: float,
             f"LT={'LTA' if best_dir == 'CALL' else 'LTB'}({lt_active['points']}pts)" if lt_active else "sem_LT",
             f"candle={candle['pattern']}({candle['strength']:.2f})",
             f"mkt={market['context']}({market['quality']:.2f})",
-            f"RSI={rsi_val:.0f}",
             f"conf={best_conf['confluence_count']}",
         ],
     }

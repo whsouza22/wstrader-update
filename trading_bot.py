@@ -323,6 +323,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
         options=[
             ft.dropdown.Option("IQ Option"),
             ft.dropdown.Option("Bullex"),
+            ft.dropdown.Option("CasaTrader"),
         ],
         value=selected_broker,
         bgcolor="#1f2937",
@@ -335,8 +336,9 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
     )
 
     def on_broker_change(e):
-        nonlocal selected_broker
+        nonlocal selected_broker, broker_key
         selected_broker = e.control.value
+        broker_key = selected_broker.lower().replace(" ", "_")
         logger.info(f"Corretora alterada para: {selected_broker}")
         page.title = f"WS Trader - {selected_broker}"
         page.update()
@@ -418,6 +420,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                         config.EMAIL = email
                         config.SENHA = password
                         config.CONTA = "PRACTICE" if selected_account == "DEMO" else "REAL"
+                        config.BROKER_TYPE = broker_key  # Passa a corretora selecionada
                         config.USE_DYNAMIC_STAKE = True
                         config.PERCENT_BANCA = 1.0  # 1% da banca
 

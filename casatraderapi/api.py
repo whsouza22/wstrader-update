@@ -778,10 +778,15 @@ class CasaTraderAPI(object):  # pylint: disable=too-many-instance-attributes
 
         self.websocket_client = WebsocketClient(self)
 
-        self.websocket_thread = threading.Thread(target=self.websocket.run_forever, kwargs={'sslopt': {
-                                                 "check_hostname": False, "cert_reqs": ssl.CERT_NONE, "ca_certs": "cacert.pem"}})  # for fix pyinstall error: cafile, capath and cadata cannot be all omitted
+        self.websocket_thread = threading.Thread(target=self.websocket.run_forever, kwargs={
+            'sslopt': {"check_hostname": False, "cert_reqs": ssl.CERT_NONE, "ca_certs": "cacert.pem"},
+            'ping_interval': 60,
+            'ping_timeout': 10,
+        })  # ping_interval keeps connection alive
         self.websocket_thread.daemon = True
         self.websocket_thread.start()
+        _timeout = 30  # seconds
+        _start = time.time()
         while True:
             try:
                 if global_value.check_websocket_if_error:
@@ -790,10 +795,11 @@ class CasaTraderAPI(object):  # pylint: disable=too-many-instance-attributes
                     return False, "Websocket connection closed."
                 elif global_value.check_websocket_if_connect == 1:
                     return True, None
+                if time.time() - _start > _timeout:
+                    return False, "Websocket connection timeout"
             except:
                 pass
-
-            pass
+            time.sleep(0.1)
 
     # @tokensms.setter
     def setTokenSMS(self, response):
@@ -823,8 +829,16 @@ class CasaTraderAPI(object):  # pylint: disable=too-many-instance-attributes
     def send_ssid(self):
         self.profile.msg = None
         self.ssid(global_value.SSID)  # pylint: disable=not-callable
+        _timeout = 30  # seconds
+        _start = time.time()
         while self.profile.msg == None:
-            pass
+            if time.time() - _start > _timeout:
+                logging.warning("send_ssid timeout after %ds", _timeout)
+                return False
+            if global_value.check_websocket_if_error:
+                logging.warning("send_ssid aborted: websocket error detected")
+                return False
+            time.sleep(0.1)
         if self.profile.msg == False:
             return False
         else:
@@ -876,12 +890,21 @@ class CasaTraderAPI(object):  # pylint: disable=too-many-instance-attributes
             self.session.cookies, {"ssid": global_value.SSID})
 
         self.timesync.server_timestamp = None
+        _timeout = 30  # seconds
+        _start = time.time()
         while True:
             try:
                 if self.timesync.server_timestamp != None:
                     break
+                if time.time() - _start > _timeout:
+                    logging.warning("timesync timeout after %ds", _timeout)
+                    return False, "Timesync timeout"
+                if global_value.check_websocket_if_error:
+                    logging.warning("timesync aborted: websocket error detected")
+                    return False, "Websocket error during timesync"
             except:
                 pass
+            time.sleep(0.1)
         return True, None
 
     def connect2fa(self, sms_code):

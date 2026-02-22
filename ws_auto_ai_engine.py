@@ -24,7 +24,34 @@ from WS_AUTO_AI import (
     cooldown
 )
 
+# ===================== MULTI-BROKER SUPPORT =====================
+# Importa todas as APIs disponíveis dinamicamente
 from iqoptionapi.stable_api import IQ_Option
+
+try:
+    from bullexapi.stable_api import Bullex
+except ImportError:
+    Bullex = None
+
+try:
+    from casatraderapi.stable_api import Casa_Trader
+except ImportError:
+    Casa_Trader = None
+
+
+def _get_broker_api(broker_type: str):
+    """Retorna a classe da API correta baseado no tipo de corretora"""
+    broker_type = broker_type.lower().strip().replace(" ", "_")
+    if broker_type == "bullex":
+        if Bullex is None:
+            raise ImportError("bullexapi não está instalada")
+        return Bullex, "Bullex"
+    elif broker_type in ("casatrader", "casa_trader"):
+        if Casa_Trader is None:
+            raise ImportError("casatraderapi não está instalada")
+        return Casa_Trader, "CasaTrader"
+    else:
+        return IQ_Option, "IQ Option"
 
 # Importa analisador de loss
 try:
@@ -40,6 +67,7 @@ class TradingConfig:
         self.EMAIL = ""
         self.SENHA = ""
         self.CONTA = "PRACTICE"
+        self.BROKER_TYPE = "iq_option"  # "iq_option", "bullex", "casatrader"
 
 
 class TradingEngine:
@@ -57,7 +85,9 @@ class TradingEngine:
         self.operation_callback = operation_callback
         self.result_callback = result_callback
 
-        self.iq: Optional[IQ_Option] = None
+        # Determina a API correta baseado no broker selecionado
+        self.BrokerAPIClass, self.broker_name = _get_broker_api(config.BROKER_TYPE)
+        self.iq = None
         self.running = False
 
         # Estatísticas (compatível com UI)
@@ -102,11 +132,15 @@ class TradingEngine:
             })
 
     def conectar(self) -> bool:
-        """Conecta à IQ Option"""
+        """Conecta à corretora selecionada"""
         try:
-            self._log("🔌 Conectando à IQ Option...")
+            self._log(f"🔌 Conectando à {self.broker_name}...")
 
-            self.iq = IQ_Option(self.config.EMAIL, self.config.SENHA)
+            # Configura variável de ambiente para WS_AUTO_AI usar o broker correto
+            broker_env = self.config.BROKER_TYPE.lower().strip().replace(" ", "_")
+            os.environ["BROKER_TYPE"] = broker_env
+
+            self.iq = self.BrokerAPIClass(self.config.EMAIL, self.config.SENHA)
             check, reason = self.iq.connect()
 
             if not check:
@@ -165,9 +199,20 @@ class TradingEngine:
 
             # Aguarda próximo candle
             wait_until_minus(TF_M1, DECIDIR_ANTES_FECHAR_SEC)
+            t_antes_analise = time.time()
 
             # Escolhe melhor setup (CÓDIGO ORIGINAL)
             best_trade, best_any = escolher_melhor_setup(self.iq, ativos)
+
+            # GUARD: Verifica se não passou do tempo (entrada atrasada)
+            # Se a análise demorou demais e o candle já fechou + novo abriu,
+            # a entrada seria no início do candle seguinte (fora do timing).
+            tempo_analise = time.time() - t_antes_analise
+            seg_restantes = TF_M1 - (time.time() % TF_M1)
+            if seg_restantes > DECIDIR_ANTES_FECHAR_SEC + 5:
+                # Já estamos no início do PRÓXIMO candle — entrada seria atrasada
+                self._log(f"⏰ Análise demorou {tempo_analise:.1f}s, candle já virou. Pulando entrada.")
+                return
 
             if not best_trade:
                 if best_any:

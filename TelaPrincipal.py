@@ -165,6 +165,8 @@ CURRENT_VERSION = "2.5" # Fix close instantaneo + melhorias gerais
 
 # URL do JSON para verificação de atualizações
 VERSION_URL = "https://whsouza22.github.io/wstrader-update/version.json"
+# GitHub Releases API - busca sempre a versão mais recente publicada
+GITHUB_RELEASES_API = "https://api.github.com/repos/whsouza22/wstrader-update/releases/latest"
 
 async def check_for_update(page: ft.Page, lang: str = "PT", status_column: ft.Column = None, progress_bar_control: ft.ProgressBar = None):
     """
@@ -405,29 +407,88 @@ exit
         await asyncio.sleep(0.2)
 
         # Executar request em thread separada para não bloquear a UI (evita "Working...")
-        def _fetch_version():
-            for attempt in range(3):
-                try:
-                    return requests.get(VERSION_URL, timeout=5)
-                except Exception:
-                    if attempt == 2:
-                        raise
-                    import time
-                    time.sleep(1)
-        
+        def _fetch_latest_version():
+            """Busca a versão mais recente de TODAS as fontes e retorna a maior."""
+            best_version = None
+            best_download = None
+            best_changelog = ""
+
+            # === FONTE 1: version.json (GitHub Pages) ===
+            try:
+                for attempt in range(3):
+                    try:
+                        resp = requests.get(VERSION_URL, timeout=5)
+                        resp.raise_for_status()
+                        data = resp.json()
+                        break
+                    except Exception:
+                        if attempt == 2:
+                            data = {}
+                        import time
+                        time.sleep(1)
+
+                # Suporta formato com array de versões
+                if "versions" in data and isinstance(data["versions"], list):
+                    for v_entry in data["versions"]:
+                        v_str = v_entry.get("version", "")
+                        v_url = v_entry.get("download_url") or v_entry.get("download_link") or v_entry.get("installer_url", "")
+                        if v_str and v_url:
+                            v_parsed = _parse_version(v_str)
+                            if best_version is None or v_parsed > _parse_version(best_version):
+                                best_version = v_str
+                                best_download = v_url
+                                best_changelog = v_entry.get("changelog", "")
+                
+                # Suporta formato flat (atual)
+                if "version" in data:
+                    v_str = data["version"]
+                    v_url = data.get("download_url") or data.get("download_link") or data.get("installer_url", "")
+                    if v_str and v_url:
+                        v_parsed = _parse_version(v_str)
+                        if best_version is None or v_parsed > _parse_version(best_version):
+                            best_version = v_str
+                            best_download = v_url
+                            best_changelog = data.get("changelog", "")
+
+            except Exception as e:
+                logger.warning(f"Erro ao buscar version.json: {e}")
+
+            # === FONTE 2: GitHub Releases API (sempre tem a última release) ===
+            try:
+                gh_resp = requests.get(GITHUB_RELEASES_API, timeout=10, headers={"Accept": "application/vnd.github.v3+json"})
+                if gh_resp.status_code == 200:
+                    gh_data = gh_resp.json()
+                    gh_tag = gh_data.get("tag_name", "")
+                    gh_version = gh_tag.lstrip("vV")  # Remove prefixo "v" ou "V"
+                    
+                    if gh_version:
+                        gh_parsed = _parse_version(gh_version)
+                        if best_version is None or gh_parsed > _parse_version(best_version):
+                            # Busca URL do .exe nos assets da release
+                            for asset in gh_data.get("assets", []):
+                                name = asset.get("name", "")
+                                if name.lower().endswith(".exe"):
+                                    best_version = gh_version
+                                    best_download = asset["browser_download_url"]
+                                    best_changelog = gh_data.get("body", "")
+                                    logger.info(f"GitHub Releases: encontrada v{gh_version} (mais recente)")
+                                    break
+            except Exception as e:
+                logger.warning(f"Erro ao buscar GitHub Releases: {e}")
+
+            return best_version, best_download, best_changelog
+
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, _fetch_version)
-        response.raise_for_status()
-        data = json.loads(response.text)
+        result = await loop.run_in_executor(None, _fetch_latest_version)
+        latest_version, download_link, changelog = result
 
-        download_link = data.get("download_url") or data.get("download_link") or data.get("installer_url")
-        download_link = _normalize_url(download_link)
-        if "version" not in data or not download_link:
-            logger.error(f"JSON inválido: {data}")
-            raise ValueError(t["invalid_json"].format(status=response.status_code, content=str(data)))
+        download_link = _normalize_url(download_link) if download_link else None
+        
+        if not latest_version or not download_link:
+            logger.error(f"Nenhuma versão válida encontrada")
+            raise ValueError("Dados de versão incompletos no servidor")
 
-        latest_version = data["version"]
-        changelog = data.get("changelog", "")
+        logger.info(f"Versão mais recente encontrada: {latest_version} (atual: {CURRENT_VERSION})")
 
         current_app_version = CURRENT_VERSION 
 
@@ -578,42 +639,20 @@ async def main(page: ft.Page):
         except Exception:
             pass
 
-    # ===== FECHAMENTO INSTANTÂNEO - mata tudo sem esperar =====
+    # ===== FECHAMENTO DIRETO - sem prevent_close = janela fecha instantaneamente =====
     def _cleanup_on_exit():
         try:
             kill_all_bot_processes()
         except Exception:
             pass
+        # Garantir que o processo morre mesmo
+        os._exit(0)
     atexit.register(_cleanup_on_exit)
 
-    def on_window_event(e):
-        """Intercepta o close e mata o processo inteiro instantaneamente."""
-        is_close = False
-        if hasattr(e, 'type'):
-            try:
-                is_close = (e.type == ft.WindowEventType.CLOSE)
-            except Exception:
-                pass
-        if not is_close and hasattr(e, 'data'):
-            is_close = ('close' in str(e.data).lower())
-        if is_close:
-            # Matar TUDO instantaneamente - sem page.update(), sem delay
-            try:
-                kill_all_bot_processes()
-            except Exception:
-                pass
-            # Mata o processo Python e todos os filhos (incluindo flet.exe)
-            import ctypes
-            try:
-                kernel32 = ctypes.windll.kernel32
-                handle = kernel32.OpenProcess(1, False, os.getpid())
-                kernel32.TerminateProcess(handle, 0)
-            except Exception:
-                pass
-            os._exit(0)
-
-    page.window.prevent_close = True
-    page.window.on_event = on_window_event
+    # prevent_close = False => Flet fecha a janela DIRETO ao clicar X
+    # Sem interceptar, sem "Working...", sem delay
+    # A limpeza dos subprocessos roda via atexit quando o Python encerra
+    page.window.prevent_close = False
     # ===========================================================================
 
     # Caminhos das outras imagens
@@ -1302,6 +1341,9 @@ def run_bot_from_cli(argv):
 
     try:
         module.main()
+    except getattr(module, 'MetaAtingidaException', type(None)):
+        logger.info("Bot encerrado: meta/stop atingido para %s", broker_key)
+        return 0  # Saída normal - meta atingida
     except Exception:
         logger.exception("Bot execution failed: %s", broker_key)
         return 1

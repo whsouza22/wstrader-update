@@ -29,17 +29,28 @@ BROKER_TYPE = os.getenv("BROKER_TYPE", "iq_option").lower().strip()
 
 if BROKER_TYPE == "bullex":
     from bullexapi.stable_api import Bullex as BrokerAPI
+    import bullexapi.constants as _broker_constants
     _BROKER_NAME = "Bullex"
 elif BROKER_TYPE == "casatrader":
     from casatraderapi.stable_api import Casa_Trader as BrokerAPI
+    import casatraderapi.constants as _broker_constants
     _BROKER_NAME = "CasaTrader"
 else:
     from iqoptionapi.stable_api import IQ_Option as BrokerAPI
+    import iqoptionapi.constants as _broker_constants
     _BROKER_NAME = "IQ Option"
     BROKER_TYPE = "iq_option"
 
-# DOM Forex Strategy (Perfect Zones) — para IQ Option
-from dom_forex_strategy import dom_forex_signal
+# SR Precision Strategy — S/R + Candle Features
+from sr_precision_strategy import sr_precision_signal
+
+# AI Loss Memory — IA generativa que analisa LOSSes e salva motivos
+try:
+    from ai_loss_memory import analyze_and_save_loss, get_loss_summary
+    LOSS_MEMORY_ON = True
+except ImportError:
+    LOSS_MEMORY_ON = False
+    log.warning("ai_loss_memory não encontrado — análise de LOSSes desabilitada")
 
 # LightGBM para Gradient Boosting
 try:
@@ -87,7 +98,9 @@ DECIDIR_ANTES_FECHAR_SEC = int(os.getenv("WS_DECIDIR_ANTES_FECHAR", "10"))
 N_M1 = int(os.getenv("WS_N_M1", "340"))
 
 PAYOUT_MINIMO = int(os.getenv("WS_PAYOUT_MIN", "80"))
-NUM_ATIVOS = int(os.getenv("WS_NUM_ATIVOS", "12"))
+NUM_ATIVOS = int(os.getenv("WS_NUM_ATIVOS", "40"))             # Pool inicial (busca 40)
+NUM_ATIVOS_OPERAR = int(os.getenv("WS_NUM_ATIVOS_OPERAR", "10"))  # TOP N para operar (ranking por WR)
+BACKTEST_MIN_WR_OPERAR = float(os.getenv("WS_BACKTEST_MIN_WR_OPERAR", "0.75"))  # SÓ opera ativos com WR >= 75% no backtest
 PAYOUT_REFRESH_SEC = int(os.getenv("WS_PAYOUT_REFRESH", "180"))
 
 EXP_FIXA = int(os.getenv("WS_EXP_MIN", "1"))
@@ -100,33 +113,34 @@ META_LUCRO_PERCENT = float(os.getenv("WS_META_LUCRO", "1.5"))  # para com 1.5% d
 STOP_LOSS_PERCENT = float(os.getenv("WS_STOP_LOSS", "3.0"))  # para com 3% de perda (opcional)
 USE_DYNAMIC_STAKE = (os.getenv("WS_DYNAMIC_STAKE", "1").strip() == "1")  # usar % da banca
 
-COOLDOWN_ATIVO = int(os.getenv("WS_COOLDOWN_ATIVO", "60"))  # 60 seg de cooldown base
-COOLDOWN_LOSS_ATIVO = int(os.getenv("WS_COOLDOWN_LOSS", "300"))  # 5 min após LOSS no ativo
-MAX_CONSECUTIVE_LOSS = int(os.getenv("WS_MAX_CONSEC_LOSS", "1"))  # Pausa após 1 loss
+COOLDOWN_ATIVO = int(os.getenv("WS_COOLDOWN_ATIVO", "120"))  # 2 min de cooldown base (era 5min — muito restritivo)
+COOLDOWN_LOSS_ATIVO = int(os.getenv("WS_COOLDOWN_LOSS", "120"))  # 2 min após LOSS no ativo (era 5min)
+MAX_CONSECUTIVE_LOSS = int(os.getenv("WS_MAX_CONSEC_LOSS", "3"))  # Pausa após 3 losses consecutivos (era 1 — bloqueava tudo)
+MAX_SESSION_LOSSES_NO_WIN = int(os.getenv("WS_MAX_SESSION_LOSS_NO_WIN", "6"))  # Parar bot se 6+ LOSSes sem nenhum WIN (era 3)
 RETRAIN_ON_LOSS = (os.getenv("WS_RETRAIN_ON_LOSS", "0").strip() == "1")  # DESATIVADO: usar backtest em vez de retreino
 BACKTEST_ON_LOSS = (os.getenv("WS_BACKTEST_ON_LOSS", "1").strip() == "1")  # ATIVADO: backtest 30min após LOSS para recalibrar
-PAUSE_AFTER_LOSS_SECONDS = int(os.getenv("WS_PAUSE_AFTER_LOSS", "60"))  # Pausa de 1 min após loss antes de continuar
-RETRAIN_PENALTY = float(os.getenv("WS_RETRAIN_PENALTY", "0.25"))  # Penalidade ao retreinar padrão
+PAUSE_AFTER_LOSS_SECONDS = int(os.getenv("WS_PAUSE_AFTER_LOSS", "30"))  # Pausa de 30s após loss (era 60s)
+RETRAIN_PENALTY = float(os.getenv("WS_RETRAIN_PENALTY", "0.15"))  # Penalidade ao retreinar padrão (era 0.25)
 
 # ===================== IA (ONLINE) - APRENDIZADO ADAPTATIVO =====================
 IA_ON = (os.getenv("WS_AI_ON", "1").strip() == "1")  # LIGADO: aprende bloqueando losses
 # Arquivos por broker para não conflitar
 _broker_suffix = {"iq_option": "m1", "bullex": "bullex", "casatrader": "casatrader"}.get(BROKER_TYPE, "m1")
 AI_STATS_FILE = os.getenv("WS_AI_FILE", f"ws_ai_stats_{_broker_suffix}.json")
-AI_MIN_SAMPLES = int(os.getenv("WS_AI_MIN_SAMPLES", "15"))   # 15 trades para começar a bloquear
-AI_MIN_PROB = float(os.getenv("WS_AI_MIN_PROB", "0.55"))     # probabilidade mínima (bayesiana) - AUMENTADO para 55%
-AI_MIN_WINRATE = float(os.getenv("WS_AI_MIN_WINRATE", "0.42"))  # bloqueia se winrate < 42%
-AI_CONF_MIN = float(os.getenv("WS_AI_CONF_MIN", "0.50"))     # confiança mínima na decisão
+AI_MIN_SAMPLES = int(os.getenv("WS_AI_MIN_SAMPLES", "20"))   # 20 trades para começar a bloquear (era 15 — dava pouca margem)
+AI_MIN_PROB = float(os.getenv("WS_AI_MIN_PROB", "0.52"))     # probabilidade mínima bayesiana (era 0.55 — muito restritivo)
+AI_MIN_WINRATE = float(os.getenv("WS_AI_MIN_WINRATE", "0.38"))  # bloqueia se winrate < 38% (era 42%)
+AI_CONF_MIN = float(os.getenv("WS_AI_CONF_MIN", "0.40"))     # confiança mínima na decisão (era 0.50)
 
 # ===================== LIGHTGBM ENSEMBLE =====================
 LGBM_ON = (os.getenv("WS_LGBM_ON", "1").strip() == "1") and LGBM_AVAILABLE  # LightGBM ativo
 LGBM_MODEL_FILE = os.getenv("WS_LGBM_FILE", f"ws_lgbm_model_{_broker_suffix}.pkl")
 LGBM_DATA_FILE = os.getenv("WS_LGBM_DATA", f"ws_lgbm_data_{_broker_suffix}.json")
-LGBM_N_FEATURES = 14  # Número esperado de features (score,retr,A_atr,effA,flips,pb_len,distBreak,late_ext,compression,market_quality,entry_conf,ctx_score,dir_enc,rsi_norm)
+LGBM_N_FEATURES = 22  # Features v4: 12 base + 6 candle math + 4 pipeline (ret1,ret3,ret5,range_vs_ma20)
 LGBM_MIN_SAMPLES = int(os.getenv("WS_LGBM_MIN_SAMPLES", "30"))  # Mínimo de amostras para treinar
 LGBM_RETRAIN_EVERY = int(os.getenv("WS_LGBM_RETRAIN", "10"))   # Retreina a cada N trades
-LGBM_MIN_PROB = float(os.getenv("WS_LGBM_MIN_PROB", "0.58"))   # Probabilidade mínima do LGBM - balanceado
-LGBM_WARMUP_PROB = float(os.getenv("WS_LGBM_WARMUP_PROB", "0.55"))  # Threshold durante warmup (55% - balanceado)
+LGBM_MIN_PROB = float(os.getenv("WS_LGBM_MIN_PROB", "0.54"))   # Probabilidade mínima do LGBM (era 0.58 — muito restritivo)
+LGBM_WARMUP_PROB = float(os.getenv("WS_LGBM_WARMUP_PROB", "0.52"))  # Threshold durante warmup (era 0.55)
 ENSEMBLE_MODE = os.getenv("WS_ENSEMBLE_MODE", "weighted")  # "weighted" = média ponderada (mais confiável)
 
 # ===================== CNN PATTERN DETECTOR =====================
@@ -137,11 +151,11 @@ CNN_MIN_PROB = float(os.getenv("WS_CNN_MIN_PROB", "0.55"))    # Prob mínima CNN
 CNN_WEIGHT = float(os.getenv("WS_CNN_WEIGHT", "0.20"))         # Peso da CNN no ensemble (20%)
 CNN_VETO_THRESHOLD = float(os.getenv("WS_CNN_VETO", "0.30"))   # CNN < 0.30 = veto (bloqueia trade)
 
-# ===================== FILTROS DE QUALIDADE ENSEMBLE =====================
-# Exigência mínima de ensemble baseada na qualidade do contexto
-ENS_MIN_CTX_RUIM = float(os.getenv("WS_ENS_MIN_CTX_RUIM", "0.65"))  # ctx < 0.40 precisa ensemble >= 0.65 (MAIS RIGOROSO)
-ENS_MIN_CTX_MED  = float(os.getenv("WS_ENS_MIN_CTX_MED",  "0.60"))  # ctx 0.40-0.50 precisa ensemble >= 0.60
-ENS_MIN_CTX_BOM  = float(os.getenv("WS_ENS_MIN_CTX_BOM",  "0.55"))  # ctx >= 0.50 precisa ensemble >= 0.55
+# ===================== FILTROS DE QUALIDADE ENSEMBLE (SIMPLIFICADO) =====================
+# Thresholds reduzidos — IA filtra inteligentemente, não precisa bloquear tanto
+ENS_MIN_CTX_RUIM = float(os.getenv("WS_ENS_MIN_CTX_RUIM", "0.55"))  # ctx < 0.40 precisa ensemble >= 0.55 (era 0.65)
+ENS_MIN_CTX_MED  = float(os.getenv("WS_ENS_MIN_CTX_MED",  "0.52"))  # ctx 0.40-0.50 precisa ensemble >= 0.52 (era 0.60)
+ENS_MIN_CTX_BOM  = float(os.getenv("WS_ENS_MIN_CTX_BOM",  "0.50"))  # ctx >= 0.50 precisa ensemble >= 0.50 (era 0.55)
 
 # ===================== MODO DA IA =====================
 # "learning" = IA tem controle total, filtros de score relaxados (mais trades, aprende mais rápido)
@@ -149,23 +163,35 @@ ENS_MIN_CTX_BOM  = float(os.getenv("WS_ENS_MIN_CTX_BOM",  "0.55"))  # ctx >= 0.5
 IA_MODE = os.getenv("WS_IA_MODE", "learning").strip().lower()  # PADRÃO: learning
 
 # ===================== FILTROS DE QUALIDADE EXTRA =====================
-# REQUIRE_TRENDLINE: SEMPRE ativado - tendência confirmada é essencial
-_trendline_default = "0"  # Desativado: LTB/LTA agora é confluência, não filtro obrigatório
-REQUIRE_TRENDLINE = (os.getenv("WS_REQUIRE_TRENDLINE", _trendline_default).strip() == "1")
-# USE_TRENDLINE_FILTER: variável dinâmica que será ajustada pelo backtest
-USE_TRENDLINE_FILTER = REQUIRE_TRENDLINE  # Começa com o valor de REQUIRE_TRENDLINE
-# MIN_ENTRY_EFF: direcionalidade mínima do mercado (DOM Forex: net_move/total_move ~0.05-0.25 em OTC)
-MIN_ENTRY_EFF = float(os.getenv("WS_MIN_ENTRY_EFF", "0.10"))  # 10% — compatível com DOM Forex em OTC M1
-# MIN_CONFLUENCE: mínimo de fatores confluentes para operar
-MIN_CONFLUENCE = int(os.getenv("WS_MIN_CONFLUENCE", "2"))  # NOVO: mínimo 2 confluências
-# BACKTEST_MIN_WINRATE: taxa mínima do backtest para operar (evita mercado ruim)
-MIN_CONFLUENCE = int(os.getenv("WS_MIN_CONFLUENCE", "2"))  # Mínimo 2 confluências para entrar
-BACKTEST_MIN_WINRATE = float(os.getenv("WS_BACKTEST_MIN_WINRATE", "0.52"))  # 52% mínimo (acima de sorte/50%)
+# MIN_CONFLUENCE: mínimo 2 confluências para operar (S/R + candle)
+MIN_CONFLUENCE = 2  # Mínimo 2 confluências para entrar
+BACKTEST_MIN_WINRATE = float(os.getenv("WS_BACKTEST_MIN_WINRATE", "0.40"))  # 40% mínimo (realista para OTC com poucas amostras)
+
+# ===================== EXPERT GATE — SÓ OPERA QUANDO IA É EXPERT =====================
+# A IA só faz operações REAIS quando atingir nível Expert.
+# Até lá, roda backtest para aprender e simula sinais (sem arriscar dinheiro).
+EXPERT_ONLY_TRADING = False                   # DESATIVADO — opera desde o início, IA filtra
+EXPERT_MIN_TRADES = 50                        # Mínimo de trades (backtest+live) para Expert
+EXPERT_MIN_WINRATE = 65.0                     # WR mínimo para Expert (%)
+
+# ===================== EARLY SESSION GUARD =====================
+# DESATIVADO — era muito agressivo, pausava 3min após 2 losses impedindo o bot de operar
+EARLY_SESSION_GUARD_ON = False  # DESATIVADO (era True — bloqueava o bot cedo demais)
+EARLY_SESSION_MAX_LOSSES = int(os.getenv("WS_EARLY_LOSSES", "4"))  # Após 4 losses sem win = pausa (era 2)
+
+# ===================== LOSS PENALTY SYSTEM =====================
+# DESATIVADO — criava efeito cascata: 1 loss → filtros sobem → bot para de operar
+# A IA ensemble já filtra por qualidade, não precisa de penalidade extra
+LOSS_PENALTY_ON = False  # DESATIVADO (era True — principal causa do bot ficar inativo)
+LOSS_PENALTY_SCORE_PER_LEVEL = 0.01   # Valor residual se reativado
+LOSS_PENALTY_CTX_PER_LEVEL = 0.01     # Valor residual se reativado
+LOSS_PENALTY_MAX_LEVEL = 2            # Máximo 2 níveis se reativado
+LOSS_PENALTY_DECAY_ON_WIN = 2         # 2 níveis removidos por WIN (mais rápido)
 
 # ===================== AUTO-AJUSTE DE FILTROS =====================
 # Contadores para auto-ajuste quando muitos skips consecutivos
-MAX_CONSECUTIVE_SKIPS = int(os.getenv("WS_MAX_CONSEC_SKIPS", "8"))  # Após 8 skips, relaxa filtros
-AUTO_RELAX_ON_SKIPS = (os.getenv("WS_AUTO_RELAX", "0").strip() == "1")  # DESATIVADO: não relaxa trendline
+MAX_CONSECUTIVE_SKIPS = int(os.getenv("WS_MAX_CONSEC_SKIPS", "8"))  # Tracking de skips
+AUTO_RELAX_ON_SKIPS = False  # DESATIVADO: NUNCA relaxa trendline — LT é obrigatória
 
 # ===================== IA APRENDE COM BACKTEST (HÍBRIDO COM HISTÓRICO) =====================
 # Se ativado, a IA (Bayesian + LightGBM) também aprende com os sinais simulados do backtest
@@ -181,17 +207,35 @@ BACKTEST_USE_ACCUMULATED = (os.getenv("WS_BACKTEST_ACCUMULATE", "1").strip() == 
 
 
 # ===================== SCORE (DEPENDE DO IA_MODE) =====================
-# Ambos os modos agora exigem confluência e tendência forte
+# SIMPLIFICADO: thresholds mais baixos para permitir mais entradas
+# A IA ensemble (Bayes + LGBM) filtra os sinais ruins — não precisa bloquear no gate
 if IA_MODE == "learning":
-    GATE_MIN_SCORE = float(os.getenv("WS_GATE_MIN", "0.42"))   # Score mínimo (Dom Forex: zona + confluência)
-    GATE_SOFT_SCORE = float(os.getenv("WS_GATE_SOFT", "0.35")) # Soft skip — mais entradas
+    GATE_MIN_SCORE = float(os.getenv("WS_GATE_MIN", "0.38"))   # Score mínimo (era 0.42 — muitos sinais bons bloqueados)
+    GATE_SOFT_SCORE = float(os.getenv("WS_GATE_SOFT", "0.30")) # Soft skip (era 0.35)
     GATE_CONTEXT_BAD_BLOCK = True  # BLOQUEIA se contexto for ruim
-    GATE_CONTEXT_VERY_BAD = 0.20  # Contexto mínimo aceitável (relaxado — backtest ajusta)
+    GATE_CONTEXT_VERY_BAD = 0.15  # Contexto mínimo (era 0.20 — OTC tem ctx baixo naturalmente)
 else:  # strict
-    GATE_MIN_SCORE = float(os.getenv("WS_GATE_MIN", "0.60"))   # Score mínimo rigoroso
-    GATE_SOFT_SCORE = float(os.getenv("WS_GATE_SOFT", "0.50")) # Soft skip rigoroso
+    GATE_MIN_SCORE = float(os.getenv("WS_GATE_MIN", "0.50"))   # Score mínimo rigoroso (era 0.60)
+    GATE_SOFT_SCORE = float(os.getenv("WS_GATE_SOFT", "0.42")) # Soft skip rigoroso (era 0.50)
     GATE_CONTEXT_BAD_BLOCK = True  # Bloquear se contexto for ruim
-    GATE_CONTEXT_VERY_BAD = 0.40  # Limiar de contexto mais rigoroso
+    GATE_CONTEXT_VERY_BAD = 0.30  # Limiar de contexto (era 0.40)
+
+# ===================== PREVISÃO DA PRÓXIMA VELA (CANDLE PREDICTOR) =====================
+# Analisa as últimas N velas fechadas para prever a direção da próxima
+# Roda ANTES da vela abrir → entrada IMEDIATA sem delay
+CANDLE_PREDICT_ON = False  # DESATIVADO — bloqueava 80%+ dos sinais (predict_contra)
+CANDLE_PREDICT_LOOKBACK = int(os.getenv("WS_CANDLE_PREDICT_LB", "10"))    # Últimas 10 velas
+CANDLE_PREDICT_MIN_SCORE = float(os.getenv("WS_CANDLE_PREDICT_MIN", "0.02"))  # Score mínimo: DEVE ser a favor (era -0.15)
+CANDLE_PREDICT_MIN_CONF = float(os.getenv("WS_CANDLE_PREDICT_MIN_CONF", "0.55"))  # Confiança mínima (rejeita 0.50-0.54 = ruído)
+
+# ===================== ATR VOLATILITY GATE (NOVO) =====================
+# Filter ALL entries based on ATR regime — blocks trades in dangerous markets
+# ATR(14) / ATR(50) ratio: sweet spot is 0.5 - 1.8
+ATR_GATE_ON = (os.getenv("WS_ATR_GATE", "1").strip() == "1")  # ATIVADO
+ATR_GATE_MAX_RATIO = float(os.getenv("WS_ATR_GATE_MAX", "2.20"))  # ATR recente > 2.2x = volátil demais (era 1.80 — bloqueava mercados normais OTC)
+ATR_GATE_MIN_RATIO = float(os.getenv("WS_ATR_GATE_MIN", "0.25"))  # ATR recente < 0.25x = morto (era 0.40 — bloqueava OTC calmos)
+ATR_GATE_MAX_CANDLE = float(os.getenv("WS_ATR_GATE_MAX_CANDLE", "3.00"))  # Candle > 3x ATR = spike (era 2.50)
+ATR_GATE_CHOP_FLIPS = int(os.getenv("WS_ATR_GATE_CHOP_FLIPS", "10"))  # 10+ flips = choppy (era 8 — OTC tem muitos flips naturalmente)
 
 # ===================== ANTI-SPIKE =====================
 SPIKE_RANGE_ATR = float(os.getenv("WS_SPIKE_RANGE_ATR", "1.35"))
@@ -207,11 +251,20 @@ logging.basicConfig(
 )
 log = logging.getLogger("WS_AUTO_AI")
 
+# Silenciar pings do websocket (DEBUG "Sending ping" a cada 25s é muito verboso)
+logging.getLogger("websocket").setLevel(logging.WARNING)
+
+# ===================== EXCEÇÃO DE META =====================
+class MetaAtingidaException(Exception):
+    """Exceção levantada quando a meta diária é atingida. Impede reinício automático."""
+    pass
+
 class C:
     G = "\033[92m"
     R = "\033[91m"
     Y = "\033[93m"
     B = "\033[94m"
+    C = "\033[96m"  # Cyan
     Z = "\033[0m"
 
 def paint(s: str, color: str) -> str:
@@ -227,7 +280,10 @@ cooldown: Dict[str, float] = {}
 cooldown_spike: Dict[str, float] = {}
 cooldown_loss: Dict[str, float] = {}  # Cooldown após LOSS em ativo específico
 consecutive_losses: Dict[str, int] = {}  # Contador de losses consecutivos por ativo
+last_trade_dir: Dict[str, Tuple[str, float]] = {}  # Última direção operada por ativo: {ativo: ("CALL"/"PUT", timestamp)}
+DIR_FLIP_COOLDOWN = 180  # 3 min se inverter direção (era 10min — bloqueava reversões legítimas)
 global_consecutive_losses: int = 0  # Losses consecutivos globais
+loss_penalty_level: int = 0  # Nível de penalidade (0=sem, 1..4 progressivo)
 
 # ===================== FILTROS POR ATIVO =====================
 # Cada ativo tem seus próprios filtros calibrados pelo backtest
@@ -239,6 +295,9 @@ filtros_por_ativo: Dict[str, Dict[str, Any]] = {}
 
 # Ativos que já foram analisados no backtest (para detectar mudanças)
 ativos_analisados_backtest: List[str] = []
+
+# Ativos selecionados para operar (TOP N por WR do backtest)
+_ativos_operando: List[str] = []
 
 # LightGBM globals
 lgbm_model: Any = None  # Modelo LightGBM treinado
@@ -270,7 +329,204 @@ def end_ts_closed(tf: int) -> float:
     now = time.time()
     return now - (now % tf) - 1  # garante candle fechado
 
+
+def predict_next_candle(iq: 'BrokerAPI', ativo: str, direcao: str, atr_val: float) -> Tuple[bool, str, float]:
+    """
+    Prevê a direção da PRÓXIMA vela analisando as últimas N velas FECHADAS.
+    
+    Roda ANTES da vela abrir → entrada IMEDIATA na abertura, sem delay.
+    Usa 6 fatores ponderados:
+      1. Momentum das últimas 3 velas (direção dos corpos)
+      2. Posição do close da última vela no range
+      3. Crescimento dos corpos (aceleração)
+      4. Rejeição por pavios (defesa compradora/vendedora)
+      5. Micro-tendência (média últimas 2 vs 3 anteriores)
+      6. Sequência de velas contínuas na mesma direção
+    
+    Retorna: (confirma: bool, razao: str, confiança: float 0-1)
+    """
+    if not CANDLE_PREDICT_ON:
+        return True, "predict_off", 0.50
+    
+    try:
+        n = CANDLE_PREDICT_LOOKBACK
+        candles = iq.get_candles(ativo, 60, n, end_ts_closed(60))
+        if not candles or len(candles) < 5:
+            return True, "predict_nodata", 0.50
+        
+        opens   = [float(c['open'])  for c in candles]
+        highs   = [float(c['max'])   for c in candles]
+        lows    = [float(c['min'])   for c in candles]
+        closes  = [float(c['close']) for c in candles]
+        
+        score = 0.0
+        factors = []
+        
+        # ── Fator 1: Momentum das últimas 3 velas ──
+        bull_count = sum(1 for i in range(-3, 0) if closes[i] > opens[i])
+        bear_count = 3 - bull_count
+        if direcao == "CALL":
+            momentum = (bull_count - bear_count) / 3.0
+        else:
+            momentum = (bear_count - bull_count) / 3.0
+        score += momentum * 0.25
+        factors.append(f"mom={momentum:+.2f}")
+        
+        # ── Fator 2: Posição do close da última vela no range ──
+        last_range = highs[-1] - lows[-1]
+        if last_range > 0:
+            close_pos = (closes[-1] - lows[-1]) / last_range
+            if direcao == "CALL":
+                close_score = (close_pos - 0.5) * 0.30
+            else:
+                close_score = (0.5 - close_pos) * 0.30
+            score += close_score
+            factors.append(f"cl={'↑' if close_pos > 0.5 else '↓'}{close_pos:.2f}")
+        
+        # ── Fator 3: Crescimento dos corpos (aceleração) ──
+        bodies = [abs(closes[i] - opens[i]) for i in range(-3, 0)]
+        if bodies[0] > 0 and atr_val > 0:
+            body_growth = bodies[-1] / max(bodies[0], atr_val * 0.01)
+            last_bullish = closes[-1] > opens[-1]
+            favor = (direcao == "CALL" and last_bullish) or (direcao == "PUT" and not last_bullish)
+            if body_growth > 1.5 and favor:
+                score += 0.15
+                factors.append("accel+")
+            elif body_growth > 1.5 and not favor:
+                score -= 0.10
+                factors.append("accel-")
+        
+        # ── Fator 4: Rejeição por pavios na última vela ──
+        last_body = abs(closes[-1] - opens[-1])
+        upper_wick = highs[-1] - max(closes[-1], opens[-1])
+        lower_wick = min(closes[-1], opens[-1]) - lows[-1]
+        
+        if direcao == "CALL" and lower_wick > last_body * 0.5:
+            score += 0.12
+            factors.append("wick_buy")
+        elif direcao == "PUT" and upper_wick > last_body * 0.5:
+            score += 0.12
+            factors.append("wick_sell")
+        elif direcao == "CALL" and upper_wick > last_body * 0.8:
+            score -= 0.08
+            factors.append("wick_contra")
+        elif direcao == "PUT" and lower_wick > last_body * 0.8:
+            score -= 0.08
+            factors.append("wick_contra")
+        
+        # ── Fator 5: Micro-tendência (EMA curta vs longa) ──
+        if len(closes) >= 5:
+            avg_old = sum(closes[-5:-2]) / 3.0
+            avg_new = sum(closes[-2:]) / 2.0
+            micro = (avg_new - avg_old) / atr_val if atr_val > 0 else 0.0
+            if direcao == "CALL":
+                score += max(-0.15, min(0.15, micro * 0.30))
+            else:
+                score += max(-0.15, min(0.15, -micro * 0.30))
+            factors.append(f"μ={'↑' if micro > 0 else '↓'}{abs(micro):.2f}")
+        
+        # ── Fator 6: Sequência contínua (3+ velas mesma dir) ──
+        seq = 0
+        for i in range(len(closes) - 1, 0, -1):
+            is_bull = closes[i] > opens[i]
+            match = (direcao == "CALL" and is_bull) or (direcao == "PUT" and not is_bull)
+            if match:
+                seq += 1
+            else:
+                break
+        if seq >= 3:
+            score += 0.10
+            factors.append(f"seq={seq}")
+        elif seq == 0:
+            # Última vela contra → potencial reversão
+            # Checar se penúltima era a favor (pullback)
+            if len(closes) >= 2:
+                pen_bull = closes[-2] > opens[-2]
+                pen_match = (direcao == "CALL" and pen_bull) or (direcao == "PUT" and not pen_bull)
+                if pen_match:
+                    score -= 0.05
+                    factors.append("pullback")
+        
+        # ── Decisão final ──
+        confidence = max(0.0, min(1.0, 0.5 + score))
+        detail = ",".join(factors)
+        
+        if score < CANDLE_PREDICT_MIN_SCORE:
+            return False, f"predict_contra({detail},sc={score:+.3f})", confidence
+        
+        # NOVO: Rejeitar confiança muito baixa (0.50-0.54 = ruído, não sinal)
+        if confidence < CANDLE_PREDICT_MIN_CONF:
+            return False, f"predict_low_conf({detail},sc={score:+.3f},conf={confidence:.2f}<{CANDLE_PREDICT_MIN_CONF})", confidence
+        
+        return True, f"predict_ok({detail},sc={score:+.3f})", confidence
+        
+    except Exception as e:
+        return True, f"predict_error({e})", 0.50
+
 # ===================== PATCH WEBSOCKET =====================
+# ===================== ATR VOLATILITY GATE =====================
+def atr_volatility_gate(df: 'pd.DataFrame', atr_val: float) -> Tuple[bool, str]:
+    """
+    Filtra entradas baseado no regime de volatilidade ATR.
+    
+    Bloqueia quando:
+    1. ATR recente >> ATR histórico (mercado explosivo, zonas não seguram)
+    2. ATR recente << ATR histórico (mercado morto, spread come lucro)
+    3. Candle atual é spike (range > 2.5x ATR)
+    4. Mercado está choppy (7+ flips em 10 velas)
+    
+    Retorna: (ok: bool, razão: str)
+    """
+    if not ATR_GATE_ON:
+        return True, "atr_gate_off"
+    
+    if df is None or len(df) < 50:
+        return True, "atr_gate_nodata"
+    
+    try:
+        highs = df["high"].astype(float).values
+        lows = df["low"].astype(float).values
+        closes = df["close"].astype(float).values
+        
+        ranges = highs - lows
+        
+        # ATR recente (14 velas) vs ATR histórico (50 velas)
+        atr_recent = float(np.mean(ranges[-14:]))
+        atr_hist = float(np.mean(ranges[-50:]))
+        
+        if atr_hist < 1e-9:
+            return True, "atr_gate_zero_hist"
+        
+        ratio = atr_recent / atr_hist
+        
+        # 1. Volatilidade MUITO ALTA → zonas S/R serão rompidas
+        if ratio > ATR_GATE_MAX_RATIO:
+            return False, f"atr_gate_ALTA({ratio:.2f}>{ATR_GATE_MAX_RATIO})"
+        
+        # 2. Mercado MORTO → spread come o lucro, movimentos sem continuidade
+        if ratio < ATR_GATE_MIN_RATIO:
+            return False, f"atr_gate_MORTO({ratio:.2f}<{ATR_GATE_MIN_RATIO})"
+        
+        # 3. Candle atual é SPIKE → não entrar no caos
+        last_range = ranges[-1]
+        if atr_val > 0 and last_range > ATR_GATE_MAX_CANDLE * atr_val:
+            return False, f"atr_gate_SPIKE({last_range/atr_val:.1f}x>{ATR_GATE_MAX_CANDLE}x)"
+        
+        # 4. Choppiness check: muitos flips = sem direção (mercado OTC lateral)
+        if len(closes) >= 12:
+            flips = 0
+            for i in range(-10, -1):
+                if (closes[i] > closes[i-1]) != (closes[i-1] > closes[i-2]):
+                    flips += 1
+            if flips >= ATR_GATE_CHOP_FLIPS:
+                return False, f"atr_gate_CHOP({flips}flips>={ATR_GATE_CHOP_FLIPS})"
+        
+        return True, f"atr_gate_ok(ratio={ratio:.2f})"
+    
+    except Exception as e:
+        return True, f"atr_gate_error({e})"
+
+
 def patch_websocket_on_close():
     try:
         if BROKER_TYPE == "bullex":
@@ -285,10 +541,10 @@ def patch_websocket_on_close():
 
         def on_close_compat(self, *args, **kwargs):
             try:
-                return old(self)
+                return old(self, *args, **kwargs)
             except TypeError:
                 try:
-                    return old(self, *args, **kwargs)
+                    return old(self)
                 except Exception:
                     return None
             except Exception:
@@ -310,7 +566,10 @@ def conectar_iq(max_retries: int = 5) -> BrokerAPI:
         try:
             log.info(f"Conectando à {_BROKER_NAME}... (tentativa {attempt}/{max_retries})")
             iq = BrokerAPI(EMAIL, SENHA)
-            iq.connect()
+            check, reason = iq.connect()
+
+            if check != True:
+                raise ConnectionError(f"connect() retornou False: {reason}")
 
             for _ in range(15):
                 if iq.check_connect():
@@ -318,7 +577,14 @@ def conectar_iq(max_retries: int = 5) -> BrokerAPI:
                 time.sleep(1.5)
 
             if not iq.check_connect():
-                raise ConnectionError("check_connect() retornou False")
+                raise ConnectionError("check_connect() retornou False após connect()")
+
+            # Atualizar ACTIVES com todos os ativos do servidor (inclui novos OTC)
+            try:
+                iq.update_ACTIVES_OPCODE()
+                log.info(paint("✅ ACTIVES atualizados do servidor (assets dinâmicos)", C.G))
+            except Exception as e:
+                log.warning(paint(f"⚠️ Falha ao atualizar ACTIVES dinâmicos: {e}", C.Y))
 
             iq.change_balance(CONTA)
             try:
@@ -338,7 +604,9 @@ def conectar_iq(max_retries: int = 5) -> BrokerAPI:
 
 def ensure_connected(iq: Optional[BrokerAPI]) -> BrokerAPI:
     if iq is None:
-        return conectar_iq()
+        new_iq = conectar_iq()
+        update_heartbeat_ref(new_iq)
+        return new_iq
     try:
         if iq.check_connect():
             return iq
@@ -352,6 +620,7 @@ def ensure_connected(iq: Optional[BrokerAPI]) -> BrokerAPI:
             for _ in range(15):
                 if iq.check_connect():
                     iq.change_balance(CONTA)
+                    update_heartbeat_ref(iq)
                     log.info(paint("Reconectado com sucesso.", C.G))
                     return iq
                 time.sleep(1.5)
@@ -360,7 +629,47 @@ def ensure_connected(iq: Optional[BrokerAPI]) -> BrokerAPI:
             time.sleep(3 * attempt)  # 3s, 6s, 9s
 
     log.warning(paint("Reconexão rápida falhou. Criando nova conexão...", C.Y))
-    return conectar_iq()
+    new_iq = conectar_iq()
+    update_heartbeat_ref(new_iq)
+    return new_iq
+
+# ===================== HEARTBEAT KEEPALIVE =====================
+_heartbeat_thread: Optional[threading.Thread] = None
+_heartbeat_stop = threading.Event()
+_heartbeat_iq_ref: Optional[BrokerAPI] = None
+
+def _heartbeat_worker():
+    """Thread que envia heartbeat periódico para manter WebSocket vivo."""
+    global _heartbeat_iq_ref
+    while not _heartbeat_stop.is_set():
+        try:
+            iq = _heartbeat_iq_ref
+            if iq and hasattr(iq, 'api') and iq.check_connect():
+                hb_time = int(time.time() * 1000)
+                iq.api.heartbeat(hb_time)
+        except Exception:
+            pass  # silencioso - não travar por heartbeat
+        _heartbeat_stop.wait(60)  # a cada 60s (complementa ping_interval do websocket)
+
+def start_heartbeat(iq: BrokerAPI):
+    """Inicia thread de heartbeat keepalive."""
+    global _heartbeat_thread, _heartbeat_iq_ref
+    _heartbeat_iq_ref = iq
+    if _heartbeat_thread and _heartbeat_thread.is_alive():
+        return  # já rodando
+    _heartbeat_stop.clear()
+    _heartbeat_thread = threading.Thread(target=_heartbeat_worker, daemon=True, name="heartbeat-keepalive")
+    _heartbeat_thread.start()
+    log.info(paint("💓 Heartbeat keepalive iniciado (25s)", C.G))
+
+def stop_heartbeat():
+    """Para thread de heartbeat."""
+    _heartbeat_stop.set()
+
+def update_heartbeat_ref(iq: BrokerAPI):
+    """Atualiza referência do broker no heartbeat (após reconexão)."""
+    global _heartbeat_iq_ref
+    _heartbeat_iq_ref = iq
 
 def _call_with_timeout(fn, timeout_sec, *args, **kwargs):
     """Executa uma função com timeout. Retorna (resultado, sucesso)."""
@@ -405,7 +714,7 @@ def safe_call(iq: BrokerAPI, fn, *args, timeout=45, **kwargs):
             return None
     except Exception as e:
         msg = str(e).lower()
-        if ("10054" in msg) or ("forçado o cancelamento" in msg) or ("goodbye" in msg) or ("10053" in msg):
+        if ("10054" in msg) or ("forçado o cancelamento" in msg) or ("goodbye" in msg) or ("10053" in msg) or ("connection" in msg and "lost" in msg) or ("websocket" in msg and "closed" in msg):
             log.warning(paint(f"Erro de conexão (recuperável): {e}", C.Y))
             try:
                 ensure_connected(iq)
@@ -445,8 +754,8 @@ def get_candles_df(iq: BrokerAPI, ativo: str, timeframe: int, n: int, end_ts: Op
 
         df = df[needed].dropna().sort_index()
 
-        # precisa ser grande o bastante pro SR + filtros
-        need_min = max(220, SR_LOOKBACK + 20)
+        # precisa ser grande o bastante pro SR + filtros (DOM Forex e Precision)
+        need_min = max(220, SR_LOOKBACK + 20, 140)  # 140 = PRECISION_MIN_CANDLES + margem
         if len(df) < need_min:
             return None
         return df
@@ -454,6 +763,21 @@ def get_candles_df(iq: BrokerAPI, ativo: str, timeframe: int, n: int, end_ts: Op
         return None
 
 # ===================== ATIVOS / PAYOUT =====================
+_payout_cache: Dict[str, Tuple[int, float]] = {}  # {ativo: (payout, timestamp)}
+PAYOUT_CACHE_INDIVIDUAL_SEC = 120  # cache individual por ativo: 2min
+
+def _rank_score(filtro: Dict[str, Any]) -> float:
+    """Score para ranking de ativos: WR ponderado pelo nº de sinais.
+    Ativos com 0 sinais = rank 0. 1 sinal vale pouco, 5+ vale bastante."""
+    wr = filtro.get("taxa", 0)
+    n = filtro.get("sinais", 0)
+    if n <= 0:
+        return 0.0  # Sem dados = sem ranking
+    # Peso logarítmico: 1 sinal=0.29, 2=0.46, 3=0.58, 5=0.75, 10=1.0
+    import math
+    confidence = min(1.0, math.log2(n + 1) / math.log2(11))
+    return wr * confidence
+
 def obter_top_ativos_otc(iq: BrokerAPI) -> List[str]:
     global _cache_ativos, _cache_ativos_ts
     now = time.time()
@@ -464,27 +788,100 @@ def obter_top_ativos_otc(iq: BrokerAPI) -> List[str]:
         dados = safe_call(iq, iq.get_all_open_time)
         turbo = dados.get("turbo", {})
     except Exception:
-        return []
+        return _cache_ativos if _cache_ativos else []
 
     abertos = [a for a, info in turbo.items() if info.get("open", False)]
     abertos_otc = [a for a in abertos if "-OTC" in a.upper()]
     if not abertos_otc:
         abertos_otc = abertos
 
+    # FILTRAR ativos que existem no OP_code.ACTIVES (evitar "not found on consts")
+    # Após update_ACTIVES_OPCODE(), o dicionário inclui todos os ativos do servidor.
+    try:
+        actives_dict = _broker_constants.ACTIVES
+        n_antes = len(abertos_otc)
+        abertos_otc = [a for a in abertos_otc if a in actives_dict]
+        n_removidos = n_antes - len(abertos_otc)
+        if n_removidos > 0:
+            log.info(paint(f"🔧 Filtrados {n_removidos} ativos sem OP_code (restam {len(abertos_otc)} válidos)", C.B))
+    except Exception:
+        pass  # Se falhar, continua sem filtro (compatibilidade)
+
+    # === FILTRO DE SEGURANÇA: só aceitar ativos que existem no OP_code.ACTIVES ===
+    # Sem isso, get_candles() falha ("not found on consts") e desperdiça vagas no TOP
+    known_actives = getattr(_broker_constants, 'ACTIVES', {})
+    invalid_assets = [a for a in abertos_otc if a not in known_actives]
+    if invalid_assets:
+        log.warning(paint(f"⚠️ {len(invalid_assets)} ativos ignorados (sem OP_code): {invalid_assets[:5]}{'...' if len(invalid_assets) > 5 else ''}", C.Y))
+    abertos_otc = [a for a in abertos_otc if a in known_actives]
+
+    # === MÉTODO RÁPIDO: get_all_profit() retorna payouts de TODOS os ativos em 1 chamada ===
+    all_profits = None
+    try:
+        all_profits = safe_call(iq, iq.get_all_profit, timeout=15)
+    except Exception:
+        pass
+
     filtrados = []
-    for a in abertos_otc:
-        try:
-            payout = safe_call(iq, iq.get_digital_payout, a, 10, timeout=15)
-            payout = int(payout) if payout is not None else 0
-        except Exception:
-            payout = 0
-        if payout >= PAYOUT_MINIMO:
-            filtrados.append((a, payout))
+
+    if all_profits:
+        # Usar payouts do get_all_profit (turbo) — instantâneo, sem timeout por ativo
+        for a in abertos_otc:
+            try:
+                profit_info = all_profits.get(a, {})
+                turbo_profit = profit_info.get("turbo", 0)
+                payout = int(turbo_profit * 100) if turbo_profit else 0
+                if payout > 0:
+                    _payout_cache[a] = (payout, now)
+            except Exception:
+                cached = _payout_cache.get(a)
+                payout = cached[0] if cached else 0
+            
+            if payout >= PAYOUT_MINIMO:
+                filtrados.append((a, payout))
+        
+        log.info(f"Payouts obtidos via get_all_profit (batch) - {len(filtrados)} ativos válidos")
+    else:
+        # FALLBACK: get_digital_payout por ativo (lento, mas funciona)
+        log.warning(paint("⚠️ get_all_profit falhou - usando fallback por ativo", C.Y))
+        timeout_count = 0
+        max_timeouts = 3
+
+        for a in abertos_otc:
+            cached = _payout_cache.get(a)
+            if cached and (now - cached[1]) < PAYOUT_CACHE_INDIVIDUAL_SEC:
+                payout = cached[0]
+            else:
+                if timeout_count >= max_timeouts:
+                    payout = cached[0] if cached else 0
+                else:
+                    try:
+                        payout = safe_call(iq, iq.get_digital_payout, a, 5, timeout=6)
+                        payout = int(payout) if payout is not None else 0
+                        _payout_cache[a] = (payout, now)
+                    except TimeoutError:
+                        timeout_count += 1
+                        payout = cached[0] if cached else 0
+                    except Exception:
+                        payout = cached[0] if cached else 0
+
+            if payout >= PAYOUT_MINIMO:
+                filtrados.append((a, payout))
+
+        if timeout_count >= max_timeouts:
+            log.warning(paint(f"⚠️ {timeout_count} timeouts ao verificar payouts - usando cache parcial", C.Y))
 
     filtrados.sort(key=lambda x: x[1], reverse=True)
     top = [a for a, _ in filtrados[:NUM_ATIVOS]]
-    _cache_ativos = top
-    _cache_ativos_ts = now
+    
+    # Só atualiza cache global se conseguiu dados válidos
+    if top:
+        _cache_ativos = top
+        _cache_ativos_ts = now
+    elif _cache_ativos:
+        log.warning(paint("⚠️ Nenhum ativo novo encontrado - mantendo cache anterior", C.Y))
+        return _cache_ativos
+    
     log.info(f"TOP ativos: {top}")
     return top
 
@@ -571,41 +968,103 @@ def _safe_save_json(path: str, data: Dict[str, Any]):
 
 def lgbm_extract_features(setup: Dict[str, Any], df_m1: Optional[pd.DataFrame] = None) -> np.ndarray:
     """
-    Extrai features numéricas do setup para o LightGBM.
-    Features:
-    - score, retr, A_atr, effA, flips, pb_len, distBreak
-    - market_quality, late_ext, compression
-    - dir_encoded (CALL=1, PUT=-1)
-    - rsi (RSI confluência)
+    Extrai features v4 do setup para o LightGBM.
+    Usa dados REAIS que o Precision S/R e DOM Forex geram.
+    Features (22):
+    - score: qualidade do sinal (0-1)
+    - sr_touches_n: toques na zona S/R normalizado (0-1, /100)
+    - sr_rejections_n: rejeições normalizadas (0-1, /60)
+    - sr_false_breaks_n: false breaks normalizados (0-1, /15)
+    - candle_str: força do candle de confirmação (0-1)
+    - mkt_qual: qualidade do mercado (0-1)
+    - confluence_cnt_n: contagem de confluências normalizada (0-1, /6)
+    - effA: eficiência direcional (0-1)
+    - approach_n: velocidade de aproximação normalizada (-1 a 1)
+    - has_lt: trendline presente (0 ou 1)
+    - m5_align: M5 alinhado com direção (1=favor, 0=neutro, -1=contra)
+    - dir_enc: direção (1=CALL, -1=PUT)
+    --- Features matemáticas do candle (pipeline) ---
+    - candle_body_ratio: corpo/range (0=doji, 1=marubozu)
+    - candle_close_pos: (close-low)/(high-low) (0=fundo, 1=topo)
+    - candle_body_vs_avg: corpo vs média 20 (body_vs_ma20)
+    - candle_range_vs_atr: range/ATR (expansão/compressão)
+    - candle_absorption_bull: absorção compradora
+    - candle_absorption_bear: absorção vendedora
+    --- Pipeline momentum features (v4) ---
+    - candle_ret1: retorno % 1 candle
+    - candle_ret3: retorno % 3 candles
+    - candle_ret5: retorno % 5 candles
+    - candle_range_vs_ma20: range vs média 20 ranges
     """
-    # Features básicas do setup
     score = float(setup.get("score", 0.0))
-    retr = float(setup.get("retr", 0.0))
-    A_atr = float(setup.get("A_atr", 0.0))
+    
+    # S/R zone features (normalizadas 0-1)
+    sr_touches = float(setup.get("sr_touches", 0))
+    sr_touches_n = min(sr_touches / 100.0, 1.0)
+    
+    sr_rejections = float(setup.get("sr_rejections", 0))
+    sr_rejections_n = min(sr_rejections / 60.0, 1.0)
+    
+    sr_false_breaks = float(setup.get("sr_false_breaks", 0))
+    sr_false_breaks_n = min(sr_false_breaks / 15.0, 1.0)
+    
+    # Candle e mercado
+    candle_str = float(setup.get("candle_strength", setup.get("entry_confidence", 0.5)))
+    mkt_qual = float(setup.get("market_quality", 0.5))
+    
+    # Confluência
+    conf_count = float(setup.get("confluence_count", setup.get("pb_len", 0)))
+    conf_count_n = min(conf_count / 6.0, 1.0)
+    
+    # Eficiência direcional
     effA = float(setup.get("effA", 0.0))
-    flips = float(setup.get("flips", 0.0))
-    pb_len = float(setup.get("pb_len", 0))
-    distBreak = float(setup.get("distBreak", 0.0))
-    late_ext = float(setup.get("late_ext", 0.0))
-    compression = float(setup.get("compression", 0.0))
-    market_quality = float(setup.get("market_quality", 0.5))
-    entry_conf = float(setup.get("entry_confidence", 0.5))
-    rsi = float(setup.get("rsi", 50.0))
     
-    # Contexto do setup
-    ctx = str(setup.get("ctx", "neutro"))
-    ctx_score = 1.0 if ctx == "bom" else (0.5 if ctx == "neutro" else 0.0)
+    # Approach speed (normalizada)
+    approach = float(setup.get("sr_proximity", setup.get("retr", 0.0)))
+    approach_n = max(-1.0, min(1.0, approach))
     
-    # Direção encodada
+    # Trendline
+    has_lt = 1.0 if setup.get("has_lt", False) else 0.0
+    
+    # M5 alignment
+    reasons = setup.get("reasons", [])
+    reasons_str = ",".join(str(r) for r in reasons)
     dir_str = str(setup.get("dir", "NEUTRAL"))
+    if "M5_bullish" in reasons_str and dir_str == "CALL":
+        m5_align = 1.0
+    elif "M5_bearish" in reasons_str and dir_str == "PUT":
+        m5_align = 1.0
+    elif "M5_contra" in reasons_str:
+        m5_align = -1.0
+    elif "M5_neutral" in reasons_str:
+        m5_align = 0.0
+    else:
+        m5_align = 0.0
+    
+    # Direção
     dir_enc = 1.0 if dir_str == "CALL" else (-1.0 if dir_str == "PUT" else 0.0)
     
-    # RSI normalizado (0-1 range para LGBM)
-    rsi_norm = rsi / 100.0
+    # Features matemáticas do candle (v3)
+    c_body_ratio = float(setup.get("candle_body_ratio", 0.0))
+    c_close_pos = float(setup.get("candle_close_pos", 0.5))
+    c_body_vs_avg = min(float(setup.get("candle_body_vs_avg", 1.0)), 3.0) / 3.0  # normaliza 0-1
+    c_range_vs_atr = min(float(setup.get("candle_range_vs_atr", 0.5)), 3.0) / 3.0  # normaliza 0-1
+    c_absorption_bull = float(setup.get("candle_absorption_bull", 0.0))
+    c_absorption_bear = float(setup.get("candle_absorption_bear", 0.0))
+    
+    # Features do pipeline de referência (v4: momentum + range_vs_ma20)
+    c_ret1 = max(-0.5, min(0.5, float(setup.get("candle_ret1", 0.0))))   # clamp ±50%
+    c_ret3 = max(-0.5, min(0.5, float(setup.get("candle_ret3", 0.0))))
+    c_ret5 = max(-0.5, min(0.5, float(setup.get("candle_ret5", 0.0))))
+    c_range_vs_ma20 = min(float(setup.get("candle_range_vs_ma20", 1.0)), 3.0) / 3.0  # normaliza 0-1
     
     features = np.array([
-        score, retr, A_atr, effA, flips, pb_len, distBreak,
-        late_ext, compression, market_quality, entry_conf, ctx_score, dir_enc, rsi_norm
+        score, sr_touches_n, sr_rejections_n, sr_false_breaks_n,
+        candle_str, mkt_qual, conf_count_n, effA,
+        approach_n, has_lt, m5_align, dir_enc,
+        c_body_ratio, c_close_pos, c_body_vs_avg, c_range_vs_atr,
+        c_absorption_bull, c_absorption_bear,
+        c_ret1, c_ret3, c_ret5, c_range_vs_ma20
     ], dtype=np.float32)
     
     return features
@@ -818,6 +1277,69 @@ def lgbm_predict(setup: Dict[str, Any]) -> Tuple[float, bool]:
         log.warning(f"[LGBM] Erro na predição: {e}")
         return 0.5, False
 
+# ===================== EXPERT GATE — VERIFICAÇÃO DE NÍVEL DA IA =====================
+
+def _is_ia_expert() -> Tuple[bool, str, int, float]:
+    """
+    Verifica se a IA atingiu nível Expert (mesmos critérios do chat_screen_new).
+    
+    Critérios Expert:
+      - total_trades >= EXPERT_MIN_TRADES (50)
+      - win_rate >= EXPERT_MIN_WINRATE (65%)
+    
+    total_trades = LGBM amostras (backtest + live)
+    
+    Returns:
+        (is_expert, phase_name, total_trades, win_rate)
+    """
+    global lgbm_data
+    
+    if not EXPERT_ONLY_TRADING:
+        return True, "Expert (gate off)", 0, 0.0
+    
+    total_trades = len(lgbm_data) if lgbm_data else 0
+    if total_trades == 0:
+        return False, "Iniciante", 0, 0.0
+    
+    wins = sum(1 for s in lgbm_data if isinstance(s, dict) and s.get("label") == 1)
+    win_rate = (wins / total_trades * 100.0) if total_trades > 0 else 0.0
+    
+    if total_trades >= EXPERT_MIN_TRADES and win_rate >= EXPERT_MIN_WINRATE:
+        return True, "Expert", total_trades, win_rate
+    elif total_trades >= 25 and win_rate >= 58:
+        return False, "Avançado", total_trades, win_rate
+    elif total_trades >= 10 and win_rate >= 52:
+        return False, "Intermediário", total_trades, win_rate
+    else:
+        return False, "Iniciante", total_trades, win_rate
+
+
+def _simulate_candle_result(iq, ativo: str, direcao: str) -> float:
+    """
+    Espera a vela M1 fechar e verifica se a direção estava correta.
+    Retorna +1.0 para WIN simulado, -1.0 para LOSS simulado, 0.0 para empate/erro.
+    """
+    try:
+        # Esperar a vela fechar (M1 = 60s)
+        time.sleep(62)  # 60s + 2s margem para vela consolidar
+        
+        df = get_candles_df(iq, ativo, TF_M1, 3, end_ts=end_ts_closed(TF_M1))
+        if df is None or len(df) < 2:
+            return 0.0
+        
+        # A vela que acabou de fechar
+        last = df.iloc[-1]
+        o = float(last["open"])
+        c = float(last["close"])
+        
+        if direcao == "CALL":
+            return 1.0 if c > o else (-1.0 if c < o else 0.0)
+        else:  # PUT
+            return 1.0 if c < o else (-1.0 if c > o else 0.0)
+    except Exception as e:
+        log.warning(f"[SIM] Erro ao simular resultado: {e}")
+        return 0.0
+
 # ===================== ENSEMBLE: BAYESIANO + LIGHTGBM + CNN =====================
 
 def ensemble_predict(ativo: str, setup: Dict[str, Any], stats: Dict[str, Any], df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
@@ -892,54 +1414,34 @@ def ensemble_predict(ativo: str, setup: Dict[str, Any], stats: Dict[str, Any], d
         reason_detail = "lgbm_off" if not LGBM_ON else ("lgbm_unreliable" if not lgbm_reliable else "lgbm_unavailable")
         
         if n_arm >= AI_MIN_SAMPLES:
-            # Com histórico suficiente, confia no Bayesiano (threshold levemente relaxado)
-            should_trade = (bayes_prob >= 0.52) and (bayes_conf >= AI_CONF_MIN)
+            # Com histórico suficiente, confia no Bayesiano
+            should_trade = (bayes_prob >= 0.50) and (bayes_conf >= AI_CONF_MIN)
             reason_suffix = f"hist,prob={bayes_prob:.2f},n={n_arm}"
         else:
-            # WARMUP SEM LGBM: bayes_prob com n=0 é apenas o prior
-            # Trader profissional: decide pela ZONA (S/R + LT + score), não pelo prior
+            # WARMUP SEM LGBM — SIMPLIFICADO
+            # Sem dados suficientes da IA, confia na zona S/R (score já filtrou)
+            # O GATE 1 (quality) já garantiu score >= 0.42 e ctx >= 0.20
             sc = float(setup.get("score", 0.0))
             ctx_val = float(setup.get("market_quality", 0.40))
-            entry_conf = float(setup.get("entry_confidence", 0.50))
-            sr_prox = float(setup.get("sr_proximity", 0.0))
             sr_tq = int(setup.get("sr_touches", 0))
-            sr_w = float(setup.get("sr_weight", 0.0))
-            has_lt = bool(setup.get("has_lt", False))
-            lt_pts = int(setup.get("lt_points", setup.get("pb_len", 0)))
-            sr_forte = sr_tq >= 3 and sr_w >= 4.0
-            zona_forte = sr_forte or (has_lt and lt_pts >= 3)
             
-            # W1: Contexto péssimo sem zona forte → bloqueia
-            if ctx_val < 0.30 and not zona_forte:
+            # REGRA SIMPLES: se passou pelo gate de qualidade, PERMITE
+            # A IA vai aprender com os resultados reais
+            if ctx_val < 0.15:
                 should_trade = False
-                reason_suffix = f"ctx_pessimo={ctx_val:.2f}"
-            # W2: Score + contexto bons (critério principal do backtest calibrado)
-            elif sc >= 0.45 and ctx_val >= 0.40:
+                reason_suffix = f"ctx_min={ctx_val:.2f}"
+            elif sc >= 0.42:
                 should_trade = True
-                reason_suffix = f"score_ctx_ok(sc={sc:.2f},ctx={ctx_val:.2f})"
-            # W3: Zona forte + score razoável → permite (trader profissional entra aqui)
-            elif zona_forte and sc >= 0.40:
+                reason_suffix = f"warmup_ok(sc={sc:.2f},ctx={ctx_val:.2f},sr={sr_tq}t)"
+            elif bayes_prob >= 0.50 and sc >= 0.38:
                 should_trade = True
-                reason_suffix = f"zona_forte(sc={sc:.2f},sr={sr_tq}t,lt={lt_pts}pts)"
-            # W4: Score bom + S/R forte → permite
-            elif sc >= 0.40 and sr_forte:
+                reason_suffix = f"prior_ok(prob={bayes_prob:.2f},sc={sc:.2f})"
+            elif IA_MODE == "learning" and sc >= 0.38:
                 should_trade = True
-                reason_suffix = f"score_sr_ok(sc={sc:.2f},sr={sr_tq}t)"
-            # W5: Score bom + candle confirmando → permite
-            elif sc >= 0.45 and entry_conf >= 0.40:
-                should_trade = True
-                reason_suffix = f"score_candle_ok(sc={sc:.2f},ec={entry_conf:.2f})"
-            # W6: Prior razoável + score decente → permite
-            elif bayes_prob >= 0.50 and sc >= 0.42:
-                should_trade = True
-                reason_suffix = f"prior_score_ok(prob={bayes_prob:.2f},sc={sc:.2f})"
-            # W7: Modo learning - permite setups com score mínimo para aprender
-            elif IA_MODE == "learning" and sc >= 0.40 and ctx_val >= 0.40:
-                should_trade = True
-                reason_suffix = f"learning_ok(sc={sc:.2f},ctx={ctx_val:.2f})"
+                reason_suffix = f"learning(sc={sc:.2f})"
             else:
                 should_trade = False
-                reason_suffix = f"fraco(sc={sc:.2f},prob={bayes_prob:.2f},ctx={ctx_val:.2f})"
+                reason_suffix = f"fraco(sc={sc:.2f},prob={bayes_prob:.2f})"
         
         # CNN pode ajudar mesmo sem LGBM: ajusta ensemble_prob
         ens_prob = bayes_prob
@@ -976,80 +1478,43 @@ def ensemble_predict(ativo: str, setup: Dict[str, Any], stats: Dict[str, Any], d
     
     # Decisão baseada no modo
     if ENSEMBLE_MODE == "both":
-        # Ambos devem aprovar
         bayes_ok = bayes_prob >= AI_MIN_PROB
         lgbm_ok = lgbm_prob >= LGBM_MIN_PROB
         should_trade = bayes_ok and lgbm_ok
         reason = f"both(B={bayes_prob:.2f},L={lgbm_prob:.2f}{cnn_suffix})"
     elif ENSEMBLE_MODE == "any":
-        # Qualquer um aprova, MAS ensemble deve ser forte
         bayes_ok = bayes_prob >= AI_MIN_PROB
         lgbm_ok = lgbm_prob >= LGBM_MIN_PROB
-        should_trade = (bayes_ok or lgbm_ok) and ensemble_prob >= 0.55
+        should_trade = (bayes_ok or lgbm_ok) and ensemble_prob >= 0.50
         reason = f"any(B={bayes_prob:.2f},L={lgbm_prob:.2f},ens={ensemble_prob:.2f}{cnn_suffix})"
     else:  # weighted
-        # Usa prob ensemble com threshold mais alto
-        min_ens_weighted = max(AI_MIN_PROB, 0.58)
+        # Threshold SIMPLIFICADO — era 0.58 (bloqueava muitos sinais bons)
+        min_ens_weighted = max(AI_MIN_PROB, 0.52)
         should_trade = ensemble_prob >= min_ens_weighted
         reason = f"weighted(ens={ensemble_prob:.2f},min={min_ens_weighted:.2f}{cnn_suffix})"
     
-    # Warmup: se poucos dados no Bayesiano, IA decide com base no cenário
+    # Warmup SIMPLIFICADO: regras claras e permissivas
     if n_arm < AI_MIN_SAMPLES:
-        warmup_threshold = LGBM_WARMUP_PROB if IA_MODE == "learning" else LGBM_MIN_PROB
         if lgbm_available:
-            # Pegar contexto do setup para ajustar exigência
-            ctx_val = float(setup.get("market_quality", 0.40))
-            entry_conf_val = float(setup.get("entry_confidence", 0.50))
-            sr_prox = float(setup.get("sr_proximity", 0.0))
-            sr_tq = int(setup.get("sr_touches", 0))
-            
-            # Threshold dinâmico de ensemble baseado no contexto
-            if ctx_val < 0.40:  # contexto ruim
-                min_ens = ENS_MIN_CTX_RUIM  # 0.58
-            elif ctx_val < 0.50:  # contexto mediano
-                min_ens = ENS_MIN_CTX_MED   # 0.54
-            else:  # contexto bom
-                min_ens = ENS_MIN_CTX_BOM   # 0.50
-            
-            # entry_conf baixo (0.44) penaliza mais
-            if entry_conf_val < 0.50:
-                min_ens += 0.02
-            
-            # S/R PROXIMITY BENEFIT: pullback perto de S/R forte relaxa threshold
-            # (estilo Candle Mind: S/R forte = mais confiança na entrada)
-            if sr_prox > 0.60 and sr_tq >= 4:
-                min_ens -= 0.06  # suporte/resistência muito forte
-            elif sr_prox > 0.40 and sr_tq >= 3:
-                min_ens -= 0.03  # suporte/resistência moderado
-            
-            # REGRA #1: LGBM muito confiante que vai PERDER
+            # REGRA #1: LGBM muito confiante que vai PERDER → bloqueia
             if lgbm_prob < 0.30:
                 should_trade = False
                 reason = f"warmup_danger(L={lgbm_prob:.2f}<0.30)"
-            # REGRA #2: Ambos negativos = consenso de LOSS, bloquear
-            elif bayes_prob < 0.50 and lgbm_prob < 0.50:
+            # REGRA #2: Ambos negativos (<0.45) → consenso de LOSS
+            elif bayes_prob < 0.45 and lgbm_prob < 0.45:
                 should_trade = False
-                reason = f"warmup_consenso_neg(B={bayes_prob:.2f},L={lgbm_prob:.2f})"
-            # REGRA #3: Ambos modelos concordam positivamente (ambos >= 0.58)
-            elif bayes_prob >= 0.58 and lgbm_prob >= 0.58:
+                reason = f"warmup_neg(B={bayes_prob:.2f},L={lgbm_prob:.2f})"
+            # REGRA #3: Ensemble >= 0.50 → PERMITE (mais permissivo no warmup)
+            elif ensemble_prob >= 0.50:
                 should_trade = True
-                reason = f"warmup_consenso_ok(B={bayes_prob:.2f},L={lgbm_prob:.2f})"
-            # REGRA #4: Bayes alto (>=0.63) E LGBM não contra (>=0.50)
-            elif bayes_prob >= 0.63 and lgbm_prob >= 0.50:
+                reason = f"warmup_ok(B={bayes_prob:.2f},L={lgbm_prob:.2f},ens={ensemble_prob:.2f})"
+            # REGRA #4: LGBM ou Bayes positivo (>=0.55) → PERMITE
+            elif lgbm_prob >= 0.55 or bayes_prob >= 0.55:
                 should_trade = True
-                reason = f"warmup_bayes_forte(B={bayes_prob:.2f},L={lgbm_prob:.2f})"
-            # REGRA #5: LGBM alto (>=0.62) E Bayes não contra (>=0.50)
-            elif lgbm_prob >= 0.62 and bayes_prob >= 0.50:
-                should_trade = True
-                reason = f"warmup_lgbm_forte(B={bayes_prob:.2f},L={lgbm_prob:.2f})"
-            # REGRA #6: Ensemble atinge threshold dinâmico (ajustado por contexto)
-            elif ensemble_prob >= min_ens:
-                should_trade = True
-                reason = f"warmup_ens_ctx(B={bayes_prob:.2f},L={lgbm_prob:.2f},ens={ensemble_prob:.2f},min={min_ens:.2f})"
+                reason = f"warmup_one_ok(B={bayes_prob:.2f},L={lgbm_prob:.2f})"
             else:
-                # Cenário fraco demais
                 should_trade = False
-                reason = f"warmup_fraco(B={bayes_prob:.2f},L={lgbm_prob:.2f},ens={ensemble_prob:.2f},min={min_ens:.2f})"
+                reason = f"warmup_fraco(B={bayes_prob:.2f},L={lgbm_prob:.2f},ens={ensemble_prob:.2f})"
         else:
             should_trade = True
             reason = f"warmup_no_lgbm"
@@ -1108,24 +1573,20 @@ def ai_make_key(ativo: str, setup: Dict[str, Any]) -> str:
 def ai_prior_from_setup(setup: Dict[str, Any]) -> float:
     """
     Prior PROFISSIONAL baseado em zonas de alta probabilidade.
-    Trader profissional: prioriza ZONA (S/R + LT) sobre candle.
+    Foco: ZONA S/R + candle features + momentum.
     """
     sc = float(setup.get("score", 0.0))
     ctx = float(setup.get("market_quality", 0.40))
     sr_prox = float(setup.get("sr_proximity", 0.0))
     sr_tq = int(setup.get("sr_touches", 0))
     sr_w = float(setup.get("sr_weight", 0.0))
-    has_lt = bool(setup.get("has_lt", False))
-    lt_pts = int(setup.get("lt_points", setup.get("pb_len", 0)))
-    lt_conf = float(setup.get("lt_confluence", 0.0))
     candle_str = float(setup.get("candle_strength", setup.get("entry_confidence", 0.0)))
     conf_count = int(setup.get("confluence_count", 0))
-    effA = float(setup.get("effA", 0.0))
 
     # Base no score (range mais amplo para refletir melhor a qualidade)
     p = 0.48 + (sc - 0.40) * 0.40
 
-    # 1. ZONA S/R - fator mais importante para trader profissional
+    # 1. ZONA S/R - fator mais importante
     if sr_tq >= 5 and sr_w >= 8.0:
         p += 0.08  # S/R muito forte (5+ toques, peso alto)
     elif sr_tq >= 3 and sr_w >= 4.0:
@@ -1133,13 +1594,7 @@ def ai_prior_from_setup(setup: Dict[str, Any]) -> float:
     elif sr_tq >= 2:
         p += 0.02  # S/R básico
 
-    # 2. TRENDLINE alinhada - segundo fator mais importante
-    if has_lt and lt_pts >= 4:
-        p += 0.06  # LT muito forte (4+ pontos)
-    elif has_lt and lt_pts >= 2:
-        p += 0.03  # LT presente
-
-    # 3. Contexto de mercado
+    # 2. Contexto de mercado
     if ctx >= 0.70:
         p += 0.04  # mercado excelente
     elif ctx >= 0.55:
@@ -1147,24 +1602,39 @@ def ai_prior_from_setup(setup: Dict[str, Any]) -> float:
     elif ctx < 0.35:
         p -= 0.04  # mercado ruim
 
-    # 4. Confluência alta = muitas confirmações
+    # 3. Confluência alta = muitas confirmações
     if conf_count >= 5:
         p += 0.04
     elif conf_count >= 4:
         p += 0.02
 
-    # 5. Candle padrão (bônus, não requisito)
+    # 4. Candle — usa absorção matemática em vez de só pattern name
     if candle_str >= 0.60:
         p += 0.03  # candle forte confirmando
     elif candle_str >= 0.30:
         p += 0.01  # candle moderado
-    # Candle 0.0 (neutral) = sem bônus, mas NÃO penaliza
+    # Bônus absorção: se direção = CALL, absorption_bull alto → mais confiança
+    dir_str = str(setup.get("dir", "NEUTRAL"))
+    if dir_str == "CALL":
+        abs_val = float(setup.get("candle_absorption_bull", 0.0))
+    elif dir_str == "PUT":
+        abs_val = float(setup.get("candle_absorption_bear", 0.0))
+    else:
+        abs_val = 0.0
+    if abs_val >= 0.25:
+        p += 0.02  # absorção forte na direção certa
 
-    # 6. Direcionalidade (DOM Forex)
-    if effA > 0.20:
-        p += 0.02
-    elif effA < 0.05:
-        p -= 0.02
+    # 5. Momentum (pipeline: ret1/ret3) — momentum favorável à direção
+    ret1 = float(setup.get("candle_ret1", 0.0))
+    ret3 = float(setup.get("candle_ret3", 0.0))
+    if dir_str == "CALL" and ret1 > 0 and ret3 > 0:
+        p += 0.02  # momentum recente a favor (CALL + retornos positivos)
+    elif dir_str == "PUT" and ret1 < 0 and ret3 < 0:
+        p += 0.02  # momentum recente a favor (PUT + retornos negativos)
+    elif dir_str == "CALL" and ret3 < -0.005:
+        p -= 0.02  # momentum forte contra (CALL mas caindo)
+    elif dir_str == "PUT" and ret3 > 0.005:
+        p -= 0.02  # momentum forte contra (PUT mas subindo)
 
     return _clip(p, 0.42, 0.78)
 
@@ -1320,13 +1790,14 @@ def ai_learn_from_backtest_signal(ativo: str, setup: Dict[str, Any], win: bool, 
         arms[key] = {"a": 2.0 * prior, "b": 2.0 * (1.0 - prior), "n": 0}
         arm = arms[key]
     
-    # Aplicar peso do backtest (menor que trades reais)
-    weight = AI_BACKTEST_WEIGHT
+    # Aplicar peso do backtest — WINs têm peso 1.5x maior para IA aprender mais com acertos
+    weight_win = AI_BACKTEST_WEIGHT * 1.5  # WIN pesa mais
+    weight_loss = AI_BACKTEST_WEIGHT * 0.7  # LOSS pesa menos (evita pessimismo)
     
     if win:
-        arm["a"] = float(arm.get("a", 1.0)) + weight
+        arm["a"] = float(arm.get("a", 1.0)) + weight_win
     else:
-        arm["b"] = float(arm.get("b", 1.0)) + weight
+        arm["b"] = float(arm.get("b", 1.0)) + weight_loss
     
     arm["n"] = int(arm.get("n", 0)) + 1
     
@@ -1345,7 +1816,7 @@ def ai_learn_from_backtest_signal(ativo: str, setup: Dict[str, Any], win: bool, 
 def ai_learn_from_backtest_batch(sinais: List[Dict], stats: Dict[str, Any]):
     """
     Processa um lote de sinais do backtest e atualiza a IA.
-    Só processa sinais de qualidade (score >= 0.55, ctx >= 0.40).
+    Aprende com sinais que tenham score e contexto mínimos razoáveis.
     Retorna quantidade de sinais processados.
     """
     if not AI_LEARN_FROM_BACKTEST or not sinais:
@@ -1360,9 +1831,10 @@ def ai_learn_from_backtest_batch(sinais: List[Dict], stats: Dict[str, Any]):
         ctx = sinal.get("ctx", 0.0)
         effA = sinal.get("effA", 0.0)
         
-        # ===== FILTRO DE QUALIDADE =====
-        # Só aprende com sinais que teriam passado nos filtros reais
-        if score < 0.55 or ctx < 0.40 or effA < 0.25:
+        # ===== FILTRO DE QUALIDADE (RELAXADO para aprender mais) =====
+        # Score >= 0.25 E contexto >= 0.30 — sinais mínimos viáveis
+        # IA precisa aprender tanto wins quanto losses para calibrar
+        if score < 0.25 or ctx < 0.30:
             skipped += 1
             continue
         
@@ -1401,15 +1873,14 @@ def lgbm_add_sample_from_backtest(setup: Dict[str, Any], win: bool):
     if not LGBM_ON:
         return
     
-    # ===== FILTRO DE QUALIDADE =====
-    # Só aprende com sinais que teriam passado nos filtros reais
+    # ===== FILTRO DE QUALIDADE (RELAXADO) =====
+    # Aprende com sinais viáveis — IA precisa de WINs e LOSSes para calibrar
     score = setup.get("score", 0.0)
     ctx = setup.get("market_quality", 0.0)
-    effA = setup.get("effA", 0.0)
     
-    # Requer: score >= 0.55 E contexto >= 0.40 E effA >= 0.25
-    if score < 0.55 or ctx < 0.40 or effA < 0.25:
-        return  # Sinal fraco -- não polui o treinamento
+    # Score >= 0.25 E contexto >= 0.30
+    if score < 0.25 or ctx < 0.30:
+        return  # Sinal muito fraco
     
     features = lgbm_extract_features(setup).tolist()
     label = 1 if win else 0
@@ -1507,6 +1978,7 @@ def backtest_history_add_signals(sinais: List[Dict]):
     """
     Adiciona sinais do backtest atual ao histórico acumulado.
     Remove amostras antigas se exceder o limite.
+    Evita duplicação verificando sinais já existentes.
     """
     global backtest_history
     
@@ -1515,11 +1987,33 @@ def backtest_history_add_signals(sinais: List[Dict]):
     
     timestamp = time.time()
     
-    # Adicionar novos sinais com timestamp
+    # Cria set de sinais existentes para deduplicação rápida
+    existing_keys = set()
+    for s in backtest_history:
+        # Chave única: ativo + direção + resultado + features principais
+        key = (
+            s.get("ativo", ""),
+            s.get("dir", ""),
+            s.get("resultado", ""),
+            str(s.get("features", ""))
+        )
+        existing_keys.add(key)
+    
+    # Adicionar apenas sinais novos (não duplicados) com timestamp
+    added = 0
     for sinal in sinais:
-        sinal_with_ts = sinal.copy()
-        sinal_with_ts["timestamp"] = timestamp
-        backtest_history.append(sinal_with_ts)
+        key = (
+            sinal.get("ativo", ""),
+            sinal.get("dir", ""),
+            sinal.get("resultado", ""),
+            str(sinal.get("features", ""))
+        )
+        if key not in existing_keys:
+            sinal_with_ts = sinal.copy()
+            sinal_with_ts["timestamp"] = timestamp
+            backtest_history.append(sinal_with_ts)
+            existing_keys.add(key)
+            added += 1
     
     # Remover amostras muito antigas (>48h) e limitar tamanho
     cutoff_time = time.time() - (48 * 3600)  # 48 horas
@@ -1530,8 +2024,9 @@ def backtest_history_add_signals(sinais: List[Dict]):
         backtest_history = sorted(backtest_history, key=lambda x: x.get("timestamp", 0), reverse=True)
         backtest_history = backtest_history[:BACKTEST_HISTORY_MAX_SAMPLES]
     
-    backtest_history_save()
-    log.info(f"[BACKTEST-HIST] Histórico atualizado: {len(backtest_history)} amostras")
+    if added > 0:
+        backtest_history_save()
+    log.info(f"[BACKTEST-HIST] Histórico atualizado: {len(backtest_history)} amostras (+{added} novos)")
 
 def backtest_history_get_weighted_signals() -> List[Tuple[Dict, float]]:
     """
@@ -1602,18 +2097,33 @@ def ai_learn_from_accumulated_history(stats: Dict[str, Any]) -> int:
         return 0
     
     count = 0
+    skipped = 0
     for sinal, time_weight in backtest_history_get_weighted_signals():
         ativo = sinal.get("ativo", "")
         win = sinal.get("win", False)
+        score = sinal.get("score", 0.0)
+        ctx = sinal.get("ctx", 0.0)
+        
+        # Filtro de qualidade — só aprende de sinais com score/ctx razoável
+        if score < 0.25 or ctx < 0.30:
+            skipped += 1
+            continue
+        
+        # Para LOSSes, exigir qualidade maior (evita aprender lixo)
+        if not win and (score < 0.35 or ctx < 0.40):
+            skipped += 1
+            continue
         
         # Peso final = peso do backtest * peso temporal
-        final_weight = AI_BACKTEST_WEIGHT * time_weight
+        # WINs pesam 1.5x mais para evitar pessimismo
+        weight_mult = 1.5 if win else 0.7
+        final_weight = AI_BACKTEST_WEIGHT * time_weight * weight_mult
         
         # Reconstruir setup
         setup_backtest = {
             "dir": sinal.get("direcao", "CALL"),
-            "score": sinal.get("score", 0.5),
-            "market_quality": sinal.get("ctx", 0.5),
+            "score": score,
+            "market_quality": ctx,
             "effA": sinal.get("effA", 0.3),
             "has_lt": sinal.get("has_lt", False),
             "retracement": sinal.get("retr", 0.5),
@@ -1675,10 +2185,28 @@ def ai_should_block_pattern(ativo: str, setup: Dict[str, Any], stats: Dict[str, 
     return False, f"approved_wr={winrate:.0%}({pattern['wins']}W/{pattern['losses']}L)"
 
 
-# ===================== DETECT SETUP (DOM FOREX PERFECT ZONES) =====================
+# ===================== DETECT SETUP (SR + CANDLE FEATURES) =====================
 def detect_setup(df: pd.DataFrame, atr_val: float) -> Dict[str, Any]:
-    """Estratégia DOM Forex Perfect Zones (price action puro)."""
-    return dom_forex_signal(df, atr_val)
+    """
+    Estratégia S/R + Candle Features.
+    Detecta zonas de suporte/resistência e analisa features matemáticas do candle.
+    A IA (Bayesiano + LGBM) valida depois.
+    """
+    try:
+        result = sr_precision_signal(df, atr_val)
+        if result.get("precision_trade", False):
+            log.info(paint(
+                f"  ⭐ SR SIGNAL: {result['dir']} score={result['score']:.2f} "
+                f"| zona={result.get('sr_touches', 0)}t "
+                f"| candle={result.get('candle_pattern', '?')} "
+                f"| risk={result.get('breakout_risk', '?')}",
+                C.G
+            ))
+        return result
+    except Exception as e:
+        log.warning(f"[SR] Erro: {e}")
+        return {"trade": False, "precision_trade": False, "dir": "NEUTRAL",
+                "score": 0.0, "reasons": [f"erro_{e}"]}
 
 
 # ===================== ESCOLHER MELHOR SETUP DO MINUTO (TODOS OS ATIVOS) =====================
@@ -1798,10 +2326,13 @@ def wait_result(iq: BrokerAPI, op_type: str, op_id: int) -> float:
 # Arquivo para salvar estado do auto-tuner
 AUTO_TUNER_FILE = os.path.join(os.path.dirname(__file__), "auto_tuner_state.json")
 
-def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 90) -> Dict[str, Any]:
+def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 90, skip_global_filters: bool = False) -> Dict[str, Any]:
     """
     Executa backtest nos últimos N minutos para calibrar filtros automaticamente.
     CALCULA FILTROS INDIVIDUAIS POR ATIVO!
+    
+    skip_global_filters: se True, NÃO altera GATE_CONTEXT_VERY_BAD/GATE_MIN_SCORE
+                         (usado em backtests incrementais de novos ativos)
     
     Retorna:
         {
@@ -1829,13 +2360,13 @@ def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 
     score_original = GATE_MIN_SCORE
     
     # ===== FASE 1: COLETAR TODOS OS SINAIS POR ATIVO =====
-    log.info(paint("📊 Fase 1: Coletando sinais por ativo...", C.B))
+    log.info(paint(f"📊 Fase 1: Coletando sinais de {len(ativos)} ativos...", C.B))
     sinais_por_ativo: Dict[str, List[Dict]] = {}
     _bt_start = time.time()
-    _BT_TIMEOUT = 120  # máximo 2 min para backtest inteiro
+    _BT_TIMEOUT = 300  # máximo 5 min para backtest (40 ativos)
     _bt_timed_out = False
     
-    for ativo in ativos[:5]:  # máx 5 ativos (otimizado)
+    for ativo in ativos:  # processa TODOS os ativos do pool
         if time.time() - _bt_start > _BT_TIMEOUT:
             log.warning(paint(f"⏱️ Backtest timeout ({_BT_TIMEOUT}s) - usando dados já coletados", C.Y))
             _bt_timed_out = True
@@ -1908,44 +2439,12 @@ def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 
         GATE_MIN_SCORE = min_score_floor
         # Inicializar todos os ativos com piso rígido (sem auto-relax)
         for ativo in ativos:
-            filtros_por_ativo[ativo] = {"min_ctx": min_ctx_floor, "min_score": min_score_floor, "taxa": 0.50, "sinais": 0, "habilitado": True}
-        return {"sinais": 0, "wins": 0, "losses": 0, "taxa_acerto": 0, "calibrado": True, "ajustes": [], "filtros_por_ativo": filtros_por_ativo, "use_trendline": REQUIRE_TRENDLINE}
+            filtros_por_ativo[ativo] = {"min_ctx": min_ctx_floor, "min_score": min_score_floor, "taxa": 0.0, "sinais": 0, "habilitado": True}
+        return {"sinais": 0, "wins": 0, "losses": 0, "taxa_acerto": 0, "calibrado": True, "ajustes": [], "filtros_por_ativo": filtros_por_ativo}
     
     wins_raw = sum(1 for s in todos_sinais if s["win"])
     taxa_raw = wins_raw / total_raw
     log.info(f"   Total de sinais: {total_raw} | WINs: {wins_raw} ({taxa_raw*100:.1f}%)")
-    
-    # ===== ANÁLISE DE TRENDLINE (has_lt) =====
-    # Verificar se exigir trendline realmente melhora os resultados
-    sinais_com_lt = [s for s in todos_sinais if s.get("has_lt", False)]
-    sinais_sem_lt = [s for s in todos_sinais if not s.get("has_lt", False)]
-    
-    winrate_com_lt = sum(1 for s in sinais_com_lt if s["win"]) / len(sinais_com_lt) if sinais_com_lt else 0
-    winrate_sem_lt = sum(1 for s in sinais_sem_lt if s["win"]) / len(sinais_sem_lt) if sinais_sem_lt else 0
-    
-    # Decidir se usa filtro de trendline automaticamente
-    # Se REQUIRE_TRENDLINE estiver ativo, nunca desativar por backtest.
-    use_trendline_filter = REQUIRE_TRENDLINE
-    if len(sinais_com_lt) >= 3:
-        # Se trendline melhora significativamente (>5%), usar
-        if winrate_com_lt > winrate_sem_lt + 0.05:
-            use_trendline_filter = True
-            log.info(paint(f"   📈 Trendline ATIVADO: com_LT={winrate_com_lt*100:.0f}% ({len(sinais_com_lt)}) vs sem_LT={winrate_sem_lt*100:.0f}% ({len(sinais_sem_lt)})", C.G))
-        else:
-            if REQUIRE_TRENDLINE:
-                use_trendline_filter = True
-                log.info(paint(f"   📊 Trendline MANTIDO (obrigatório): com_LT={winrate_com_lt*100:.0f}% vs sem_LT={winrate_sem_lt*100:.0f}%", C.B))
-            else:
-                use_trendline_filter = False
-                log.info(paint(f"   📊 Trendline DESATIVADO: com_LT={winrate_com_lt*100:.0f}% vs sem_LT={winrate_sem_lt*100:.0f}% (diferença <5%)", C.Y))
-    else:
-        # Poucos sinais com trendline
-        if REQUIRE_TRENDLINE:
-            use_trendline_filter = True
-            log.info(paint(f"   ⚠️ Trendline MANTIDO (obrigatório): poucos sinais com LT ({len(sinais_com_lt)})", C.B))
-        else:
-            use_trendline_filter = False
-            log.info(paint(f"   ⚠️ Trendline DESATIVADO: poucos sinais com LT ({len(sinais_com_lt)})", C.Y))
     
     # ===== FASE 2: ANALISAR PADRÕES WINs vs LOSSes =====
     log.info(paint("🔍 Fase 2: Analisando padrões de WIN vs LOSS...", C.B))
@@ -1970,43 +2469,41 @@ def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 
     else:
         avg_ctx_loss, avg_score_loss = 0.40, 0.55
     
-    # ===== FASE 3: CALCULAR PONTO DE CORTE IDEAL =====
-    log.info(paint("🎯 Fase 3: Calculando filtros ideais...", C.B))
-    
-    # ESTRATÉGIA: Testar TODAS as combinações de filtros e encontrar a que
-    # maximiza a taxa de acerto mantendo pelo menos 3 sinais.
-    # O backtest é o CALIBRADOR — deve encontrar os melhores filtros!
-    
-    best_ctx = 0.30
-    best_score = 0.40
-    best_taxa = taxa_raw
-    best_count = total_raw
-    
-    # Testar combinações de filtros do mais rigoroso ao mais leve
-    ctx_range = [0.70, 0.65, 0.60, 0.55, 0.50, 0.45, 0.40, 0.35, 0.30, 0.25]
-    score_range = [0.70, 0.65, 0.60, 0.55, 0.50, 0.45, 0.40]
-    
-    for ctx_test in ctx_range:
-        for score_test in score_range:
-            filtered = [s for s in todos_sinais if s["ctx"] >= ctx_test and s["score"] >= score_test]
-            n = len(filtered)
-            if n < 3:  # Precisa de pelo menos 3 sinais para ser estatisticamente relevante
-                continue
-            w = sum(1 for s in filtered if s["win"])
-            taxa = w / n
-            
-            # Aceitar se: taxa melhor, OU mesma taxa com mais sinais
-            if taxa > best_taxa or (taxa == best_taxa and n > best_count):
-                best_taxa = taxa
-                best_ctx = ctx_test
-                best_score = score_test
-                best_count = n
-    
+    # ===== FASE 3: CALIBRAR PELO EQUILÍBRIO (MEDIANA) =====
+    log.info(paint("🎯 Fase 3: Calibrando pelo equilíbrio (mediana)...", C.B))
+    # Ordenar todos os sinais por score e contexto
+    sorted_ctx = sorted([s["ctx"] for s in todos_sinais])
+    sorted_score = sorted([s["score"] for s in todos_sinais])
+    # Mediana
+    med_ctx = sorted_ctx[len(sorted_ctx)//2] if sorted_ctx else 0.40
+    med_score = sorted_score[len(sorted_score)//2] if sorted_score else 0.40
+    # Buscar ponto de equilíbrio: maior número de sinais com WR >= 50% e não muito abaixo da mediana
+    best_ctx = med_ctx
+    best_score = med_score
+    best_balance = 0
+    best_n = 0
+    best_wr = 0
+    for delta in [0.00, -0.02, -0.04, -0.06, -0.08, -0.10]:
+        ctx_test = max(0.20, med_ctx + delta)
+        score_test = max(0.20, med_score + delta)
+        filtered = [s for s in todos_sinais if s["ctx"] >= ctx_test and s["score"] >= score_test]
+        n = len(filtered)
+        if n < 3:
+            continue
+        w = sum(1 for s in filtered if s["win"])
+        wr = w / n
+        # Equilíbrio: (WR - 0.5) * n (maximiza quantidade com WR >= 50%)
+        balance = (wr - 0.5) * n
+        if wr >= 0.5 and balance > best_balance:
+            best_balance = balance
+            best_ctx = ctx_test
+            best_score = score_test
+            best_n = n
+            best_wr = wr
     ctx_ideal = best_ctx
     score_ideal = best_score
-    
-    log.info(f"   📐 Melhor combinação encontrada: ctx≥{ctx_ideal:.2f} score≥{score_ideal:.2f}")
-    log.info(f"      → {best_count} sinais | {best_taxa*100:.1f}% WR (original: {taxa_raw*100:.1f}%)")
+    log.info(f"   📐 Filtros calibrados: ctx≥{ctx_ideal:.2f} score≥{score_ideal:.2f} (mediana)")
+    log.info(f"      → {best_n} sinais | {best_wr*100:.1f}% WR (original: {taxa_raw*100:.1f}%)")
     
     # ===== FASE 4: VALIDAR E APLICAR FILTROS CALIBRADOS =====
     log.info(paint("📈 Fase 4: Validando filtros calibrados...", C.B))
@@ -2040,8 +2537,12 @@ def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 
                 break
     
     # ===== APLICAR FILTROS GLOBAIS =====
-    GATE_CONTEXT_VERY_BAD = ctx_ideal
-    GATE_MIN_SCORE = score_ideal
+    # Limitar para não ficar absurdamente restritivo com poucas amostras
+    if not skip_global_filters:
+        GATE_CONTEXT_VERY_BAD = min(ctx_ideal, 0.50)   # Cap: não subir ctx acima de 0.50
+        GATE_MIN_SCORE = min(score_ideal, 0.55)          # Cap: não subir score acima de 0.55
+    else:
+        log.info(paint("   ℹ️ Backtest incremental — filtros globais NÃO alterados", C.B))
     
     ajustes = []
     if ctx_ideal != ctx_original:
@@ -2052,70 +2553,72 @@ def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 
     # ===== FASE 6: CALCULAR FILTROS INDIVIDUAIS POR ATIVO =====
     log.info(paint("🎯 Fase 6: Calculando filtros por ativo...", C.B))
     
+    # CAPS para filtros por ativo — evita thresholds absurdos com poucas amostras
+    PER_ASSET_MAX_CTX = 0.55   # Nunca exigir ctx acima disso por ativo (era 0.65)
+    PER_ASSET_MAX_SCORE = 0.65  # Nunca exigir score acima disso por ativo (era 0.75)
+    PER_ASSET_MIN_SIGNALS_DISABLE = 5  # Mínimo de sinais para poder desabilitar um ativo (era 3)
+
     for ativo, sinais in sinais_por_ativo.items():
         if len(sinais) < 2:
             # Poucos sinais - usar filtros globais mas habilitar
+            # Taxa real: 0 sinais = 0.0, 1 sinal = resultado real (0 ou 1)
+            if len(sinais) == 1:
+                _taxa_poucos = 1.0 if sinais[0]["win"] else 0.0
+            else:
+                _taxa_poucos = 0.0  # 0 sinais = sem dados
             filtros_por_ativo[ativo] = {
-                "min_ctx": ctx_ideal,
-                "min_score": score_ideal,
-                "taxa": 0.50,
+                "min_ctx": min(ctx_ideal, PER_ASSET_MAX_CTX),
+                "min_score": min(score_ideal, PER_ASSET_MAX_SCORE),
+                "taxa": _taxa_poucos,
                 "sinais": len(sinais),
                 "habilitado": True,
                 "motivo": "poucos_sinais"
             }
             continue
-        
+
         wins_ativo = sum(1 for s in sinais if s["win"])
         taxa_ativo = wins_ativo / len(sinais)
-        
-        # ===== GRID SEARCH POR ATIVO =====
-        # Encontrar melhor combinação de filtros para este ativo específico
-        best_ctx_a = ctx_ideal
-        best_score_a = score_ideal
-        best_taxa_a = taxa_ativo
-        best_n_a = len(sinais)
-        
-        for ctx_test in ctx_range:
-            for score_test in score_range:
-                filtered = [s for s in sinais if s["ctx"] >= ctx_test and s["score"] >= score_test]
-                n = len(filtered)
-                if n < 2:
-                    continue
-                w = sum(1 for s in filtered if s["win"])
-                taxa = w / n
-                if taxa > best_taxa_a or (taxa == best_taxa_a and n > best_n_a):
-                    best_taxa_a = taxa
-                    best_ctx_a = ctx_test
-                    best_score_a = score_test
-                    best_n_a = n
-        
-        ctx_ativo = best_ctx_a
-        score_ativo = best_score_a
-        
-        # Decidir se ativo está habilitado
+
+        # ===== CALIBRAÇÃO POR ATIVO USANDO MEDIANA/EQUILÍBRIO =====
+        ctxs = sorted(s["ctx"] for s in sinais)
+        scores = sorted(s["score"] for s in sinais)
+        # Mediana
+        med_ctx = ctxs[len(ctxs)//2] if ctxs else ctx_ideal
+        med_score = scores[len(scores)//2] if scores else score_ideal
+
+        # CAP: com poucas amostras (<5), limitar filtros para não ficarem absurdos
+        if len(sinais) < 5:
+            med_ctx = min(med_ctx, PER_ASSET_MAX_CTX)
+            med_score = min(med_score, PER_ASSET_MAX_SCORE)
+
+        # Aplicar filtros medianos
+        filtrados = [s for s in sinais if s["ctx"] >= med_ctx and s["score"] >= med_score]
+        n_filtrados = len(filtrados)
+        wins_filtrados = sum(1 for s in filtrados if s["win"])
+        taxa_filtrada = wins_filtrados / n_filtrados if n_filtrados > 0 else 0.0
+
+        # Ajustar habilitação — REQUER mínimo de sinais para desabilitar
         habilitado = True
         motivo = "ok"
-        
-        if best_taxa_a < 0.42:
-            # Taxa muito baixa mesmo com filtros — desabilitar ativo
+        if len(sinais) >= PER_ASSET_MIN_SIGNALS_DISABLE and taxa_filtrada < 0.15:
             habilitado = False
-            motivo = f"taxa_baixa_{best_taxa_a*100:.0f}%"
-        elif best_taxa_a < 0.50:
-            motivo = f"taxa_moderada_{best_taxa_a*100:.0f}%"
-        
+            motivo = f"taxa_baixa_{taxa_filtrada*100:.0f}%"
+        elif taxa_filtrada < 0.25:
+            motivo = f"taxa_moderada_{taxa_filtrada*100:.0f}%"
+
         filtros_por_ativo[ativo] = {
-            "min_ctx": ctx_ativo,
-            "min_score": score_ativo,
-            "taxa": best_taxa_a,
-            "sinais": len(sinais),
-            "wins": wins_ativo,
+            "min_ctx": med_ctx,
+            "min_score": med_score,
+            "taxa": taxa_filtrada,
+            "sinais": n_filtrados,
+            "wins": wins_filtrados,
             "habilitado": habilitado,
             "motivo": motivo
         }
-        
+
         # Log
         status = "✅" if habilitado else "⛔"
-        log.info(f"   {status} {ativo}: {len(sinais)} sinais | {taxa_ativo*100:.0f}% | ctx≥{ctx_ativo:.2f} score≥{score_ativo:.2f}")
+        log.info(f"   {status} {ativo}: {n_filtrados} sinais | {taxa_filtrada*100:.0f}% | ctx≥{med_ctx:.2f} score≥{med_score:.2f}")
     
     # ===== RESULTADO FINAL =====
     log.info("=" * 60)
@@ -2146,15 +2649,27 @@ def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 
     log.info("=" * 60)
     
     # ===== SALVAR SINAIS NO HISTÓRICO ACUMULADO =====
-    if BACKTEST_USE_ACCUMULATED and todos_sinais:
+    # SÓ adiciona sinais de backtests com WR razoável (>=40%)
+    # e SÓ os sinais FILTRADOS (que passaram ctx/score) — evita poluir com LOSSes
+    sinais_para_historico = sinais_filtrados if sinais_filtrados else []
+    backtest_wr_ok = taxa_raw >= 0.40  # WR mínimo para considerar backtest válido
+    
+    if BACKTEST_USE_ACCUMULATED and sinais_para_historico and backtest_wr_ok:
         try:
-            backtest_history_add_signals(todos_sinais)
+            backtest_history_add_signals(sinais_para_historico)
             hist_stats = backtest_history_analyze()
             log.info(paint(f"📚 HISTÓRICO ACUMULADO: {hist_stats['total']} amostras | WR={hist_stats['weighted_winrate']*100:.1f}% (ponderado)", C.B))
         except Exception as e:
             log.warning(f"Erro ao salvar histórico: {e}")
+    elif BACKTEST_USE_ACCUMULATED:
+        hist_stats = backtest_history_analyze()
+        if taxa_raw < 0.40:
+            log.info(paint(f"📚 HISTÓRICO: {hist_stats['total']} amostras | WR_backtest={taxa_raw*100:.0f}%<40% → NÃO aprendeu (evita poluir)", C.Y))
+        else:
+            log.info(paint(f"📚 HISTÓRICO ACUMULADO: {hist_stats['total']} amostras | WR={hist_stats['weighted_winrate']*100:.1f}% (ponderado)", C.B))
     
     # ===== IA APRENDE COM O BACKTEST (ATUAL + HISTÓRICO) =====
+    # SÓ aprende se backtest tem WR razoável — evita aprender LOSSes ruins
     if AI_LEARN_FROM_BACKTEST and IA_ON:
         try:
             # Carregar stats da IA
@@ -2165,9 +2680,11 @@ def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 
             n_learned_current = 0
             n_learned_history = 0
             
-            # 1. Aprender com sinais do backtest ATUAL (peso normal)
-            if todos_sinais:
-                n_learned_current = ai_learn_from_backtest_batch(todos_sinais, stats_backtest)
+            # 1. Aprender com sinais do backtest ATUAL — SÓ se WR >= 40%
+            if sinais_para_historico and backtest_wr_ok:
+                n_learned_current = ai_learn_from_backtest_batch(sinais_para_historico, stats_backtest)
+            elif not backtest_wr_ok and todos_sinais:
+                log.info(paint(f"[BACKTEST-LEARN] WR={taxa_raw*100:.0f}%<40% → IA NÃO aprendeu (protege modelo)", C.Y))
             
             # 2. Aprender com HISTÓRICO ACUMULADO (peso temporal decrescente)
             if BACKTEST_USE_ACCUMULATED:
@@ -2219,7 +2736,7 @@ def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 
         "calibrado": calibrado,
         "ajustes": ajustes,
         "filtros_por_ativo": filtros_por_ativo,
-        "use_trendline": use_trendline_filter
+        "total_sinais": total_raw  # total de sinais brutos (antes de filtrar)
     }
     
     # ===== CALIBRAÇÃO COM CLAUDE - DESATIVADO (IA local faz isso) =====
@@ -2244,13 +2761,15 @@ def backtest_antes_de_operar(iq: BrokerAPI, ativos: List[str], n_candles: int = 
 def main():
     iq: Optional[BrokerAPI] = None
     iq = ensure_connected(iq)
+    start_heartbeat(iq)  # Keepalive WebSocket
 
     global MIN_CONFLUENCE
-    if "MIN_CONFLUENCE" not in globals():
-        MIN_CONFLUENCE = int(os.getenv("WS_MIN_CONFLUENCE", "2"))
+    global lgbm_data, lgbm_model, lgbm_reliable, lgbm_val_accuracy
+    global loss_penalty_level
+    MIN_CONFLUENCE = 2  # Mínimo 2 confluências para entrar
 
     log.info("=" * 60)
-    log.info(f"🚀 WS_AUTO_AI — DOM Forex Perfect Zones (M1) + ENSEMBLE IA [{_BROKER_NAME}]")
+    log.info(f"🚀 WS_AUTO_AI — S/R + Candle Features (M1) + ENSEMBLE IA [{_BROKER_NAME}]")
     log.info("=" * 60)
     log.info("✅ Analisa TODOS os ativos de uma vez")
     log.info("✅ Entra quando aparecer sinal confirmado")
@@ -2264,7 +2783,7 @@ def main():
         log.info(paint("🧠 MODO: LEARNING COM CONFLUÊNCIA - Tendência + Zona + Confiança obrigatórios", C.G))
         log.info(paint(f"   → Score mínimo: {GATE_MIN_SCORE:.2f} | Confluência mínima: {MIN_CONFLUENCE}", C.B))
         log.info(paint(f"   → Contexto mínimo: {GATE_CONTEXT_VERY_BAD:.2f} | Ensemble: {ENSEMBLE_MODE}", C.B))
-        log.info(paint(f"   → Trendline: {'OBRIGATÓRIA' if REQUIRE_TRENDLINE else 'opcional'} | EffA mínima: {MIN_ENTRY_EFF:.2f}", C.B))
+        log.info(paint(f"   → Confluência: {MIN_CONFLUENCE} (S/R+candle)", C.B))
     else:
         log.info(paint("🔒 MODO: STRICT - IA + filtros rigorosos", C.Y))
         log.info(paint("   → Score mínimo alto, filtros conservadores", C.B))
@@ -2276,6 +2795,17 @@ def main():
     # Carregar LightGBM
     if LGBM_ON:
         lgbm_load_data()
+        # ===== MIGRAÇÃO: limpar dados antigos com features v1 (14 features) =====
+        if lgbm_data and len(lgbm_data) > 0:
+            sample_len = len(lgbm_data[0].get("features", []))
+            if sample_len != LGBM_N_FEATURES:
+                log.info(paint(f"[LGBM] \u26a0\ufe0f Dados antigos ({sample_len} features vs {LGBM_N_FEATURES} esperadas) \u2192 RESETANDO para features v2", C.Y))
+                lgbm_data = []
+                lgbm_model = None
+                lgbm_reliable = False
+                lgbm_val_accuracy = 0.0
+                lgbm_save_data()
+                log.info(paint(f"[LGBM] \u2705 Dados limpos - IA vai reaprender com features melhores", C.G))
         lgbm_load_model()
         log.info(paint(f"[LGBM] ON | mode={ENSEMBLE_MODE} | min_prob={LGBM_MIN_PROB:.2f} | samples={len(lgbm_data)}", C.B))
         if len(lgbm_data) >= LGBM_MIN_SAMPLES and lgbm_model is None:
@@ -2324,6 +2854,17 @@ def main():
     else:
         log.info(paint("🧠 IA aprende apenas com trades reais", C.B))
 
+    # Expert Gate status
+    if EXPERT_ONLY_TRADING:
+        _exp_ok, _exp_phase, _exp_t, _exp_wr = _is_ia_expert()
+        if _exp_ok:
+            log.info(paint(f"🏆 EXPERT GATE: IA é EXPERT ({_exp_t} trades, WR={_exp_wr:.0f}%) → OPERANDO REAL", C.G))
+        else:
+            log.info(paint(f"🎓 EXPERT GATE: IA é {_exp_phase} ({_exp_t} trades, WR={_exp_wr:.0f}%) → MODO SIMULAÇÃO (só backtest + simulação)", C.Y))
+            log.info(paint(f"   → Precisa: {EXPERT_MIN_TRADES} trades com WR>={EXPERT_MIN_WINRATE:.0f}% para operar REAL", C.Y))
+    else:
+        log.info(paint("🔓 EXPERT GATE: DESATIVADO — operando real desde o início", C.B))
+
     try:
         saldo_inicial = float(iq.get_balance())
         log.info(paint(f"💰 SALDO INICIAL: {saldo_inicial:.2f} | META: {META_LUCRO_PERCENT:.1f}% (={saldo_inicial * META_LUCRO_PERCENT / 100:.2f})", C.G))
@@ -2331,48 +2872,115 @@ def main():
             log.info(paint(f"📊 GESTÃO: {PERCENT_BANCA:.1f}% da banca por operação (stake dinâmico)", C.B))
         else:
             log.info(paint(f"📊 GESTÃO: Stake fixo de {STAKE_FIXA:.2f}", C.B))
+        tick_status = "ATIVADO" if CANDLE_PREDICT_ON else "DESATIVADO"
+        log.info(paint(f"🔮 CANDLE PREDICTOR: {tick_status} | lookback={CANDLE_PREDICT_LOOKBACK} velas | min_score={CANDLE_PREDICT_MIN_SCORE}", C.G if CANDLE_PREDICT_ON else C.Y))
     except Exception:
         saldo_inicial = 1000.0
 
     total = 0
     wins = 0
+    session_total_losses_no_win = 0  # Contador de losses na sessão sem nenhum WIN (nunca reseta exceto com WIN)
 
     # ========== BACKTEST INTELIGENTE ANTES DE OPERAR ==========
     mercado_ok = True  # Flag para indicar se o mercado está bom
     ultima_verificacao_mercado = time.time()
     INTERVALO_REVERIFICACAO = 120  # Re-verificar mercado a cada 2 minutos se estiver ruim
     mercado_tentativas_falhas = 0  # Contador de re-verificações que falharam
+    MAX_MERCADO_RETRIES = 3  # Máximo de tentativas antes de forçar retomada (reduzido para não travar)
+    _early_guard_fired = False  # Early Session Guard só dispara 1x por sessão
     
-    # Variável global para controlar filtro de trendline dinamicamente
-    global USE_TRENDLINE_FILTER, ativos_analisados_backtest
+    global ativos_analisados_backtest, _ativos_operando
     consecutive_skips = 0  # Contador de skips consecutivos para auto-relax
     
     try:
         ativos_backtest = obter_top_ativos_otc(iq)
         if ativos_backtest:
+            log.info(paint(f"🔍 Pool inicial: {len(ativos_backtest)} ativos com payout≥{PAYOUT_MINIMO}%", C.B))
             backtest_result = backtest_antes_de_operar(iq, ativos_backtest, n_candles=90)
             taxa_backtest = backtest_result.get("taxa_acerto", 0.0)
             
             # IMPORTANTE: Salvar quais ativos foram analisados no backtest
             ativos_analisados_backtest = list(ativos_backtest)
             
-            # Atualizar USE_TRENDLINE_FILTER baseado no backtest
-            USE_TRENDLINE_FILTER = backtest_result.get("use_trendline", REQUIRE_TRENDLINE)
-            lt_status = "ATIVADO" if USE_TRENDLINE_FILTER else "DESATIVADO"
-            log.info(paint(f"📊 Filtro de Trendline: {lt_status} (automático pelo backtest)", C.B))
+            # ===== RANKING: SÓ seleciona ativos com WR >= 75% no backtest =====
+            _fpa = backtest_result.get("filtros_por_ativo", {})
+            if _fpa:
+                _ranked = sorted(
+                    _fpa.items(),
+                    key=lambda x: _rank_score(x[1]),
+                    reverse=True
+                )
+                # FILTRO PRINCIPAL: SÓ ativos com WR >= 75% e pelo menos 2 sinais
+                _top = [
+                    a for a, f in _ranked
+                    if f.get("habilitado", True)
+                    and f.get("taxa", 0) >= BACKTEST_MIN_WR_OPERAR
+                    and f.get("sinais", 0) >= 2
+                ][:NUM_ATIVOS_OPERAR]
+                
+                # Se nenhum ativo atingiu 75%, pegar os melhores com WR >= 60% (fallback)
+                if not _top:
+                    log.warning(paint(f"⚠️ Nenhum ativo com WR≥{BACKTEST_MIN_WR_OPERAR*100:.0f}%! Usando fallback WR≥60%...", C.Y))
+                    _top = [
+                        a for a, f in _ranked
+                        if f.get("habilitado", True)
+                        and f.get("taxa", 0) >= 0.60
+                        and f.get("sinais", 0) >= 2
+                    ][:NUM_ATIVOS_OPERAR]
+                
+                if _top:
+                    _ativos_operando = _top
+                    _cache_ativos = _top
+                    _cache_ativos_ts = time.time()
+                    log.info("=" * 60)
+                    log.info(paint(f"🏆 {len(_top)} ATIVOS COM WR≥{BACKTEST_MIN_WR_OPERAR*100:.0f}% SELECIONADOS:", C.G))
+                    for _i, (a, f) in enumerate([x for x in _ranked if x[0] in _top], 1):
+                        _wr = f.get("taxa", 0) * 100
+                        _ns = f.get("sinais", 0)
+                        _rs = _rank_score(f)
+                        log.info(paint(f"   {_i}. {a}: WR={_wr:.0f}% ({_ns} sinais) rank={_rs:.2f}", C.G))
+                    log.info("=" * 60)
+                else:
+                    log.warning(paint("⚠️ Nenhum ativo passou nos filtros de WR! Usando pool por payout...", C.R))
+            # ===============================================================
             
             # Mostrar filtros finais que serão usados
             log.info(paint(f"🎯 FILTROS ATIVOS: ctx≥{GATE_CONTEXT_VERY_BAD:.2f} score≥{GATE_MIN_SCORE:.2f}", C.G))
             
-            if taxa_backtest < BACKTEST_MIN_WINRATE:
-                # Em vez de bloquear totalmente, operar com cautela extra
-                mercado_ok = True  # PERMITIR operar mesmo com mercado difícil
-                log.warning(paint(f"⚠️ MERCADO DIFÍCIL: Taxa do backtest: {taxa_backtest*100:.1f}% - OPERANDO com filtros adaptativos", C.Y))
-                log.info(paint("   → IA vai selecionar APENAS os melhores sinais disponíveis", C.B))
-            elif backtest_result["calibrado"]:
-                log.info(paint("✅ Filtros otimizados - iniciando operações!", C.G))
+            # ===== IA COM APRENDIZADO → NÃO PAUSAR, APENAS CALIBRAR =====
+            # Se a IA tem dados suficientes (Bayes ou LGBM), ela filtra cada trade
+            # individualmente. O backtest apenas calibra filtros, nunca bloqueia tudo.
+            ia_tem_dados = (
+                (IA_ON and stats.get("meta", {}).get("total", 0) >= AI_MIN_SAMPLES) or
+                (LGBM_ON and len(lgbm_data) >= LGBM_MIN_SAMPLES)
+            )
+            
+            if ia_tem_dados:
+                # IA tem aprendizado → operar SEMPRE, backtest só calibra filtros
+                if taxa_backtest < 0.40:
+                    log.warning(paint(f"⚠️ Backtest fraco ({taxa_backtest*100:.1f}%) mas IA tem aprendizado → operando com IA-VETO", C.Y))
+                    log.info(paint("   → IA filtra cada sinal individualmente (Bayes + LGBM)", C.B))
+                elif backtest_result["calibrado"]:
+                    log.info(paint("✅ Filtros otimizados + IA com aprendizado - iniciando operações!", C.G))
+                else:
+                    log.info(paint("⚠️ Mercado difícil mas IA tem aprendizado - operando com cautela", C.Y))
+                # mercado_ok permanece True → bot opera
             else:
-                log.info(paint("⚠️ Mercado difícil mas filtros calibrados - operando com cautela", C.Y))
+                # IA SEM dados → backtest decide se pausa
+                ia_min_wr = BACKTEST_MIN_WINRATE
+                n_sinais_bt = backtest_result.get("total_sinais", 0)
+                if n_sinais_bt < 10:
+                    ia_min_wr = max(0.30, ia_min_wr - 0.10)
+                    log.info(paint(f"📊 Poucas amostras no backtest ({n_sinais_bt}) → threshold reduzido para {ia_min_wr*100:.0f}%", C.Y))
+                
+                if taxa_backtest < ia_min_wr:
+                    mercado_ok = False
+                    log.warning(paint(f"⛔ MERCADO RUIM (IA sem dados): Taxa {taxa_backtest*100:.1f}% < {ia_min_wr*100:.0f}%", C.R))
+                    log.info(paint("   → PAUSANDO até mercado melhorar (re-verifica a cada 2min)", C.Y))
+                elif backtest_result["calibrado"]:
+                    log.info(paint("✅ Filtros otimizados - iniciando operações!", C.G))
+                else:
+                    log.info(paint("⚠️ Mercado difícil mas filtros calibrados - operando com cautela", C.Y))
     except Exception as e:
         log.warning(f"Erro no backtest inicial: {e}")
     # =========================================================
@@ -2400,18 +3008,31 @@ def main():
             deve_parar, lucro_percent = verificar_meta_atingida(saldo_inicial, saldo_atual)
             if deve_parar:
                 lucro_abs = saldo_atual - saldo_inicial
+                stop_heartbeat()
                 if lucro_percent >= META_LUCRO_PERCENT:
                     log.info(paint(f"🎯 META ATINGIDA! Lucro: {lucro_abs:.2f} ({lucro_percent:.2f}%) | Parando operação.", C.G))
+                    raise MetaAtingidaException(f"Meta atingida: {lucro_percent:.2f}%")
                 else:
                     log.info(paint(f"🛑 STOP LOSS! Perda: {lucro_abs:.2f} ({lucro_percent:.2f}%) | Parando operação.", C.R))
-                break
+                    raise MetaAtingidaException(f"Stop loss: {lucro_percent:.2f}%")
+        except MetaAtingidaException:
+            raise  # propagar para fora do loop
         except Exception as e:
             log.warning(f"Erro ao verificar meta: {e}")
 
         # ========== VERIFICAR SE O MERCADO ESTÁ BOM ==========
         if not mercado_ok:
+            # Se a IA ganhou dados suficientes durante a sessão, liberar imediatamente
+            ia_tem_dados_agora = (
+                (IA_ON and stats.get("meta", {}).get("total", 0) >= AI_MIN_SAMPLES) or
+                (LGBM_ON and len(lgbm_data) >= LGBM_MIN_SAMPLES)
+            )
+            if ia_tem_dados_agora:
+                mercado_ok = True
+                mercado_tentativas_falhas = 0
+                log.info(paint("🧠 IA tem aprendizado suficiente → liberando operações (IA filtra individualmente)", C.G))
             # Re-verificar mercado periodicamente
-            if time.time() - ultima_verificacao_mercado >= INTERVALO_REVERIFICACAO:
+            elif time.time() - ultima_verificacao_mercado >= INTERVALO_REVERIFICACAO:
                 log.info(paint("🔄 Re-verificando condições do mercado...", C.B))
                 try:
                     ativos_reverif = obter_top_ativos_otc(iq)
@@ -2424,24 +3045,30 @@ def main():
                         ativos_analisados_backtest.clear()
                         ativos_analisados_backtest.extend(ativos_reverif)
                         
-                        # Atualizar USE_TRENDLINE_FILTER com resultado do backtest
-                        USE_TRENDLINE_FILTER = backtest_reverif.get("use_trendline", REQUIRE_TRENDLINE)
-                        lt_status = "ATIVADO" if USE_TRENDLINE_FILTER else "DESATIVADO"
-                        log.info(paint(f"📊 Filtro de Trendline: {lt_status}", C.B))
+                        ia_min_wr_rev = BACKTEST_MIN_WINRATE
+                        n_sinais_rev = backtest_reverif.get("total_sinais", 0)
+                        if n_sinais_rev < 10:
+                            ia_min_wr_rev = max(0.30, ia_min_wr_rev - 0.10)
                         
-                        if taxa_reverif >= BACKTEST_MIN_WINRATE:
+                        if taxa_reverif >= ia_min_wr_rev:
                             mercado_ok = True
                             mercado_tentativas_falhas = 0
-                            log.info(paint(f"✅ MERCADO MELHOROU! Taxa: {taxa_reverif*100:.1f}% - Retomando operações!", C.G))
+                            log.info(paint(f"✅ MERCADO MELHOROU! Taxa: {taxa_reverif*100:.1f}% (min={ia_min_wr_rev*100:.0f}%) - Retomando operações!", C.G))
                         else:
                             mercado_tentativas_falhas += 1
-                            # Após 2 tentativas, forçar operação com cautela
-                            if mercado_tentativas_falhas >= 2:
+                            if mercado_tentativas_falhas >= 2 and taxa_reverif >= 0.28:
                                 mercado_ok = True
-                                log.warning(paint(f"🔄 Mercado difícil ({taxa_reverif*100:.1f}%) mas IA vai operar com os melhores sinais", C.Y))
-                                log.info(paint("   → Filtros adaptativos ativados - IA seleciona apenas sinais fortes", C.B))
+                                mercado_tentativas_falhas = 0
+                                log.warning(paint(f"🔄 Mercado moderado ({taxa_reverif*100:.1f}%) → operando com IA-VETO ativo", C.Y))
+                            elif mercado_tentativas_falhas >= MAX_MERCADO_RETRIES:
+                                mercado_ok = True
+                                mercado_tentativas_falhas = 0
+                                log.warning(paint(
+                                    f"⚠️ MAX RETRIES ({MAX_MERCADO_RETRIES}x) atingido — retomando com filtros rigorosos "
+                                    f"(taxa={taxa_reverif*100:.1f}%)", C.Y
+                                ))
                             else:
-                                log.warning(paint(f"⚠️ Mercado ainda difícil: {taxa_reverif*100:.1f}% - próxima verificação em {INTERVALO_REVERIFICACAO//60} min", C.Y))
+                                log.warning(paint(f"⚠️ Mercado ruim: {taxa_reverif*100:.1f}% (tentativa {mercado_tentativas_falhas}/{MAX_MERCADO_RETRIES}) - aguardando...", C.Y))
                 except Exception as e:
                     log.warning(f"Erro ao re-verificar mercado: {e}")
             
@@ -2451,32 +3078,83 @@ def main():
                 continue
         # =====================================================
 
-        ativos = obter_top_ativos_otc(iq)
+        # Usar lista rankeada se disponível, senão busca padrão
+        if _ativos_operando:
+            ativos = list(_ativos_operando)
+        else:
+            ativos = obter_top_ativos_otc(iq)
         if not ativos:
             log.warning("Sem ativos com payout mínimo. Tentando em 10s...")
             time.sleep(10)
             continue
 
         # ===================== VERIFICAR NOVOS ATIVOS =====================
-        # Detectar se há ativos novos que não foram analisados no backtest
-        novos_ativos = [a for a in ativos if a not in ativos_analisados_backtest]
-        if novos_ativos:
-            log.info(paint(f"🔄 {len(novos_ativos)} NOVOS ATIVOS detectados: {novos_ativos[:3]}...", C.Y))
-            log.info(paint("   → Fazendo backtest nos novos ativos antes de operar...", C.B))
-            try:
-                backtest_novos = backtest_antes_de_operar(iq, novos_ativos, n_candles=90)
-                # Adicionar aos ativos já analisados
-                ativos_analisados_backtest.extend(novos_ativos)
-                log.info(paint(f"✅ Backtest concluído para novos ativos | Taxa: {backtest_novos.get('taxa_acerto', 0)*100:.1f}%", C.G))
-            except Exception as e:
-                log.warning(f"Erro ao fazer backtest em novos ativos: {e}")
-                # Mesmo com erro, adiciona para não ficar em loop
-                ativos_analisados_backtest.extend(novos_ativos)
+        # Cooldown: só verificar a cada 10 minutos (evita storm de backtests)
+        _NOVO_ATIVO_COOLDOWN = 600  # 10 min
+        if not hasattr(main, '_last_novo_check'):
+            main._last_novo_check = time.time()  # type: ignore
+        
+        if time.time() - main._last_novo_check >= _NOVO_ATIVO_COOLDOWN:  # type: ignore
+            main._last_novo_check = time.time()  # type: ignore
+            _todos_disponiveis = obter_top_ativos_otc(iq)
+            novos_ativos = [a for a in _todos_disponiveis if a not in ativos_analisados_backtest]
+            if novos_ativos:
+                log.info(paint(f"🔄 {len(novos_ativos)} NOVOS ATIVOS detectados: {novos_ativos[:3]}...", C.Y))
+                log.info(paint("   → Fazendo backtest nos novos ativos (filtros globais preservados)...", C.B))
+                try:
+                    backtest_novos = backtest_antes_de_operar(iq, novos_ativos, n_candles=90, skip_global_filters=True)
+                    ativos_analisados_backtest.extend(novos_ativos)
+                    log.info(paint(f"✅ Backtest concluído para novos ativos | Taxa: {backtest_novos.get('taxa_acerto', 0)*100:.1f}%", C.G))
+                    
+                    # Re-ranquear TODOS os ativos conhecidos e atualizar top operando
+                    _fpa_all = filtros_por_ativo
+                    if _fpa_all:
+                        _ranked_all = sorted(
+                            _fpa_all.items(),
+                            key=lambda x: _rank_score(x[1]),
+                            reverse=True
+                        )
+                        # SÓ ativos com WR >= 75%
+                        _new_top = [
+                            a for a, f in _ranked_all
+                            if f.get("habilitado", True)
+                            and f.get("taxa", 0) >= BACKTEST_MIN_WR_OPERAR
+                            and f.get("sinais", 0) >= 2
+                        ][:NUM_ATIVOS_OPERAR]
+                        # Fallback: WR >= 60% se nenhum atingiu 75%
+                        if not _new_top:
+                            _new_top = [
+                                a for a, f in _ranked_all
+                                if f.get("habilitado", True)
+                                and f.get("taxa", 0) >= 0.60
+                                and f.get("sinais", 0) >= 2
+                            ][:NUM_ATIVOS_OPERAR]
+                        if _new_top and _new_top != _ativos_operando:
+                            _ativos_operando = _new_top
+                            ativos = list(_ativos_operando)
+                            log.info(paint(f"🏆 TOP {len(_new_top)} ATUALIZADO: {_new_top}", C.G))
+                except Exception as e:
+                    log.warning(f"Erro ao fazer backtest em novos ativos: {e}")
+                    ativos_analisados_backtest.extend(novos_ativos)
         # ===================================================================
 
         wait_until_minus(TF_M1, DECIDIR_ANTES_FECHAR_SEC)
+        t_antes_analise = time.time()
 
         best_trade, best_any = escolher_melhor_setup(iq, ativos)
+
+        # GUARD: Verifica se não passou do tempo (entrada atrasada)
+        # Se a análise demorou demais e o candle já fechou + novo abriu,
+        # a entrada seria no início do candle seguinte (fora do timing).
+        tempo_analise = time.time() - t_antes_analise
+        seg_restantes = TF_M1 - (time.time() % TF_M1)
+        if seg_restantes > DECIDIR_ANTES_FECHAR_SEC + 5:
+            # Já estamos no início do PRÓXIMO candle — entrada seria atrasada
+            log.warning(paint(
+                f"⏰ Análise demorou {tempo_analise:.1f}s, candle já virou. Pulando entrada.", C.Y
+            ))
+            wait_for_next_open(TF_M1)
+            continue
 
         if not best_trade:
             if best_any:
@@ -2495,154 +3173,131 @@ def main():
         score, ativo, setup, atr_val, df_candles = best_trade
         score = float(score)
 
-        # ===================== FILTROS POR ATIVO =====================
-        # Verificar se ativo está habilitado e usar filtros específicos
-        if ativo in filtros_por_ativo:
-            filtro_ativo = filtros_por_ativo[ativo]
-            
-            # Verificar se ativo está desabilitado
-            if not filtro_ativo.get("habilitado", True):
-                log.info(paint(
-                    f"[ATIVO-SKIP] {ativo} DESABILITADO | {filtro_ativo.get('motivo', '?')} | sinais={filtro_ativo.get('sinais', 0)}",
-                    C.R
-                ))
-                consecutive_skips += 1
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-            
-            # Usar filtros específicos do ativo
-            min_score_ativo = filtro_ativo.get("min_score", GATE_MIN_SCORE)
-            min_ctx_ativo = filtro_ativo.get("min_ctx", GATE_CONTEXT_VERY_BAD)
-            ctx = setup.get("market_quality", 0)
-            
-            if ctx < min_ctx_ativo:
-                log.info(paint(
-                    f"[CTX-SKIP] {ativo} | ctx={ctx:.2f}<{min_ctx_ativo:.2f} (específico) | score={score:.2f}",
-                    C.Y
-                ))
-                consecutive_skips += 1
-                # Auto-relax: se muitos skips por CTX, reduzir min_ctx do ativo
-                if AUTO_RELAX_ON_SKIPS and consecutive_skips >= MAX_CONSECUTIVE_SKIPS:
-                    filtro_ativo["min_ctx"] = max(0.25, filtro_ativo["min_ctx"] - 0.05)
-                    consecutive_skips = 0
-                    log.info(paint(f"🔄 AUTO-RELAX: Reduzindo min_ctx de {ativo} para {filtro_ativo['min_ctx']:.2f}", C.G))
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-            
-            if score < min_score_ativo:
-                log.info(paint(
-                    f"[SCORE-SKIP] {ativo} | score={score:.2f}<{min_score_ativo:.2f} (específico)",
-                    C.Y
-                ))
-                consecutive_skips += 1
-                # Auto-relax: se muitos skips por SCORE, reduzir min_score do ativo
-                if AUTO_RELAX_ON_SKIPS and consecutive_skips >= MAX_CONSECUTIVE_SKIPS:
-                    filtro_ativo["min_score"] = max(0.38, filtro_ativo["min_score"] - 0.03)
-                    consecutive_skips = 0
-                    log.info(paint(f"🔄 AUTO-RELAX: Reduzindo min_score de {ativo} para {filtro_ativo['min_score']:.2f}", C.G))
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-        else:
-            # Ativo não tem filtros específicos - usar globais COM verificação de contexto
-            ctx = setup.get("market_quality", 0)
-            
-            # Verificar contexto ANTES de tudo
-            if ctx < GATE_CONTEXT_VERY_BAD:
-                log.info(paint(
-                    f"[CTX-SKIP] {ativo} | ctx={ctx:.2f}<{GATE_CONTEXT_VERY_BAD:.2f} (global) | score={score:.2f}",
-                    C.Y
-                ))
-                consecutive_skips += 1
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-            
-            if score < GATE_SOFT_SCORE:
-                log.info(paint(
-                    f"[SKIP] {ativo} | score={score:.2f} | {','.join(setup.get('reasons', []))}",
-                    C.Y
-                ))
-                consecutive_skips += 1
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-
-            if score < GATE_MIN_SCORE:
-                log.info(paint(
-                    f"[SOFT-SKIP] {ativo} | score={score:.2f} | {','.join(setup.get('reasons', []))}",
-                    C.B
-                ))
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-
-        # ===================== FILTROS DE QUALIDADE EXTRA =====================
-        # Filtro 1: Exigir linha de tendência (LTA/LTB) confirmando a direção
-        # Usa USE_TRENDLINE_FILTER (ajustado dinamicamente pelo backtest)
-        if USE_TRENDLINE_FILTER and not setup.get("has_lt", False):
-            dir_tipo = "LTA" if setup.get("dir") == "CALL" else "LTB"
-            ctx_lt = setup.get("market_quality", 0)
-            
-            # OVERRIDE: No modo LEARNING, se score >= 0.90 E contexto bom E confluência >= 3, permite entrada sem LT
-            if IA_MODE == "learning" and score >= 0.90 and ctx_lt >= 0.55 and setup.get("sr_proximity", 0) > 0.40:
-                log.info(paint(
-                    f"[LT-OVERRIDE] {ativo} | sem_{dir_tipo} mas score={score:.2f} ctx={ctx_lt:.2f} SR={setup.get('sr_proximity',0):.2f} | PERMITINDO",
-                    C.G
-                ))
-            else:
-                if IA_MODE == "learning" and score >= 0.90 and ctx_lt < 0.55:
-                    log.info(paint(
-                        f"[LT-SKIP] {ativo} | sem_{dir_tipo} | score={score:.2f} mas ctx={ctx_lt:.2f}<0.42 (mercado ruim)",
-                        C.Y
-                    ))
-                else:
-                    log.info(paint(
-                        f"[LT-SKIP] {ativo} | sem_{dir_tipo} | score={score:.2f} | {','.join(setup.get('reasons', []))}",
-                        C.Y
-                    ))
-                # Auto-relax: se muitos skips seguidos por LT, desativar
-                consecutive_skips += 1
-                if AUTO_RELAX_ON_SKIPS and consecutive_skips >= MAX_CONSECUTIVE_SKIPS:
-                    USE_TRENDLINE_FILTER = False
-                    consecutive_skips = 0
-                    log.info(paint(f"🔄 AUTO-RELAX: Desativando filtro de Trendline após {MAX_CONSECUTIVE_SKIPS} skips", C.G))
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-        
-        # Filtro 2: Eficiência mínima do setup
-        # OTC M1 tem eficiência direcional naturalmente baixa
-        # Se score é alto (>= 0.55), aceitar effA menor (0.05 vs 0.10)
-        effA = setup.get("effA", 0.0)
-        eff_threshold = MIN_ENTRY_EFF * 0.5 if score >= 0.55 else MIN_ENTRY_EFF
-        if effA < eff_threshold:
+        # ===================== ATR VOLATILITY GATE (NOVO) =====================
+        # Bloqueia QUALQUER entrada quando o mercado está em regime perigoso
+        # Roda ANTES de tudo — se ATR não é ideal, não entra nem em precision
+        atr_ok, atr_reason = atr_volatility_gate(df_candles, atr_val)
+        if not atr_ok:
             log.info(paint(
-                f"[EFF-SKIP] {ativo} | effA={effA:.2f}<{eff_threshold:.2f} | score={score:.2f}",
-                C.Y
+                f"[ATR-GATE] {ativo} {setup.get('dir','?')} | {atr_reason} | "
+                f"score={score:.2f} | Mercado em regime perigoso → SKIP",
+                C.R
             ))
             wait_for_next_open(TF_M1)
             cooldown[ativo] = time.time()
             continue
+        
+        # ===================== EARLY SESSION GUARD (NOVO) =====================
+        # Se começo da sessão (0 wins) e já tem N losses, pausa protegendo banca
+        # Dispara apenas 1x por sessão para não travar o bot
+        if EARLY_SESSION_GUARD_ON and not _early_guard_fired and wins == 0 and total >= EARLY_SESSION_MAX_LOSSES:
+            _early_acc = (wins / max(1, total)) * 100
+            if _early_acc < 40:
+                _early_guard_fired = True  # NÃO disparar novamente nesta sessão
+                log.warning(paint(
+                    f"🛡️ EARLY SESSION GUARD: {total} trades, {wins} wins ({_early_acc:.0f}%) — "
+                    f"Sem win na sessão! Pausando 3min e recalibrando...",
+                    C.R
+                ))
+                # Forçar recalibração via backtest
+                try:
+                    ativos_recal = obter_top_ativos_otc(iq)
+                    if ativos_recal:
+                        backtest_early = backtest_antes_de_operar(iq, ativos_recal, n_candles=90)
+                        taxa_early = backtest_early.get("taxa_acerto", 0.0)
+                        ativos_analisados_backtest.clear()
+                        ativos_analisados_backtest.extend(ativos_recal)
+                        if taxa_early < 0.50:
+                            # Pausa de 3min mas NÃO bloqueia mercado permanentemente
+                            log.warning(paint(f"⛔ Mercado difícil ({taxa_early*100:.0f}%) — recalibrado, retomando com filtros rigorosos", C.R))
+                        else:
+                            log.info(paint(f"✅ Mercado OK ({taxa_early*100:.0f}%) — filtros recalibrados", C.G))
+                except Exception as e:
+                    log.warning(f"Erro no early session backtest: {e}")
+                time.sleep(180)  # Pausa de 3 minutos
+                continue
+
+        # ══════════════════════════════════════════════════════════
+        # PIPELINE DE ENTRADA v2 — LIMPO & TRANSPARENTE
+        # 3 gates: QUALITY → IA DECISION → EXECUTE
+        # ══════════════════════════════════════════════════════════
 
         final_dir = str(setup["dir"])
-        sinal_invertido = False  # Flag para não poluir IA com sinais invertidos
-        
-        # Info sobre filtros usados
-        if ativo in filtros_por_ativo:
-            filtro = filtros_por_ativo[ativo]
-            filtro_info = f"[{ativo} filtros: ctx≥{filtro.get('min_ctx', 0):.2f} score≥{filtro.get('min_score', 0):.2f} taxa={filtro.get('taxa', 0)*100:.0f}%]"
-            log.info(paint(filtro_info, C.B))
-        
+        sinal_invertido = False
+
+        # ── GATE 0: DIRECTION FLIP PROTECTION ──
+        # Evita entrar CALL depois de PUT (ou vice-versa) no mesmo ativo em < 10 min
+        if ativo in last_trade_dir:
+            _prev_dir, _prev_ts = last_trade_dir[ativo]
+            _flip_elapsed = time.time() - _prev_ts
+            if _prev_dir != final_dir and _flip_elapsed < DIR_FLIP_COOLDOWN:
+                _flip_wait = int(DIR_FLIP_COOLDOWN - _flip_elapsed)
+                log.info(paint(
+                    f"[DIR-FLIP] {ativo} | último={_prev_dir} agora={final_dir} | "
+                    f"inversão bloqueada (falta {_flip_wait}s de {DIR_FLIP_COOLDOWN}s)",
+                    C.Y
+                ))
+                cooldown[ativo] = time.time()
+                continue
+
+        # ── GATE 1: QUALIDADE MÍNIMA (SIMPLIFICADO) ──
+        # Score = qualidade da zona S/R + candle + trend
+        # Context = condição do mercado
+        # FILOSOFIA: thresholds FIXOS e BAIXOS. A IA ensemble filtra os ruins.
+        ctx_val = float(setup.get("market_quality", 0.40))
+        _pen_info = f" [PEN-L{loss_penalty_level}]" if loss_penalty_level > 0 else ""
+
+        # Thresholds SIMPLES — sem penalidade progressiva que trava o bot
+        _quality_min_score = 0.42  # Mínimo fixo (era 0.50 + penalty até 0.62)
+        _quality_min_ctx = 0.20    # Mínimo fixo (era 0.35 + penalty até 0.50)
+
+        if score < _quality_min_score:
+            log.info(paint(
+                f"[QUALITY] {ativo} {final_dir} | score={score:.2f}<{_quality_min_score:.2f}{_pen_info} | "
+                f"{','.join(setup.get('reasons', []))}",
+                C.Y
+            ))
+            consecutive_skips += 1
+            cooldown[ativo] = time.time()
+            continue
+
+        if ctx_val < _quality_min_ctx:
+            log.info(paint(
+                f"[QUALITY] {ativo} {final_dir} | ctx={ctx_val:.2f}<{_quality_min_ctx:.2f}{_pen_info} | SKIP",
+                C.Y
+            ))
+            consecutive_skips += 1
+            cooldown[ativo] = time.time()
+            continue
+
+        # Ativo bloqueado pelo backtest (taxa muito baixa)
+        # SIMPLIFICADO: score >= 0.55 bypassa bloqueio (era 0.72 — impossível)
+        if ativo in filtros_por_ativo and not filtros_por_ativo[ativo].get("habilitado", True):
+            if score < 0.55:
+                log.info(paint(
+                    f"[BLOCKED] {ativo} {final_dir} | backtest desabilitou "
+                    f"({filtros_por_ativo[ativo].get('motivo','?')}) | SKIP",
+                    C.R
+                ))
+                cooldown[ativo] = time.time()
+                continue
+
+        # Log do sinal que passou pelo gate de qualidade
+        sr_touches_log = int(setup.get("sr_touches", 0))
+        macro_t = str(setup.get("macro_trend_dir", "neutral"))
+        macro_s = float(setup.get("macro_trend_strength", 0))
+        candle_p = str(setup.get("candle_pattern", "none"))
         log.info(paint(
-            f"[SINAL-HARD] {ativo} -> {final_dir} | score={score:.2f} | ATR={atr_val:.6f} | {','.join(setup.get('reasons', []))}",
+            f"[SINAL] {ativo} → {final_dir} | score={score:.2f} ctx={ctx_val:.2f} | "
+            f"S/R={sr_touches_log}t candle={candle_p} macro={macro_t}({macro_s:.2f}){_pen_info} | "
+            f"{','.join(setup.get('reasons', []))}",
             dir_color(final_dir)
         ))
 
+        # ── GATE 2: IA DECISION ──
+        # IA ensemble (Bayes + LGBM + CNN) é o filtro inteligente
+        # Aprende quais setups funcionam e quais não
         if IA_ON:
-            # ENSEMBLE: Combina Bayesiano + LightGBM + CNN
             ens = ensemble_predict(ativo, setup, stats, df=df_candles)
             bayes_prob = float(ens["bayes_prob"])
             lgbm_prob = float(ens["lgbm_prob"])
@@ -2651,99 +3306,78 @@ def main():
             should_trade = bool(ens["should_trade"])
             ens_reason = str(ens["reason"])
             n_arm = int(ens.get("n_arm", 0))
-            
-            # Sufixo CNN para logs
-            cnn_log = f" | CNN={cnn_prob_val:.2f}" if CNN_ON and cnn_model is not None else ""
-            
-            # Log do ensemble
-            if LGBM_ON and lgbm_model is not None and lgbm_reliable:
+
+            cnn_log = f" CNN={cnn_prob_val:.2f}" if CNN_ON and cnn_model is not None else ""
+
+            log.info(paint(
+                f"[IA] {ativo} {final_dir} | Bayes={bayes_prob:.2f}(n={n_arm}) "
+                f"LGBM={lgbm_prob:.2f}{cnn_log} Ens={ensemble_prob:.2f} | {ens_reason}",
+                C.G if should_trade else C.Y
+            ))
+
+            # LOSS PENALTY no ensemble: DESATIVADO (LOSS_PENALTY_ON=False)
+            # Não bloqueia mais — a IA ensemble já pondera qualidade
+
+            # IA diz não → respeitar
+            if not should_trade:
                 log.info(paint(
-                    f"[ENSEMBLE] {ativo} {final_dir} | Bayes={bayes_prob:.2f} | LGBM={lgbm_prob:.2f}{cnn_log} | Ens={ensemble_prob:.2f} | {ens_reason}",
-                    C.B
-                ))
-            elif LGBM_ON and not lgbm_reliable:
-                log.info(paint(
-                    f"[BAYES-ONLY] {ativo} {final_dir} | prob={bayes_prob:.2f} (n={n_arm}){cnn_log} | LGBM desabilitado (Val={lgbm_val_accuracy:.1f}%<50%) | {ens_reason}",
+                    f"[IA-SKIP] {ativo} {final_dir} | {ens_reason} | SKIP",
                     C.Y
                 ))
-            else:
-                log.info(paint(
-                    f"[BAYES] {ativo} {final_dir} | prob={bayes_prob:.2f} (n={n_arm}){cnn_log} | {ens_reason}",
-                    C.B
-                ))
-            
-            # Decisão do ensemble
-            if not should_trade:
-                if lgbm_prob < 0.30:
-                    log.info(paint(f"[IA-BLOCK] {ativo} {final_dir} | LGBM={lgbm_prob:.2f}<0.30 = PERIGO | {ens_reason}", C.R))
-                else:
-                    log.info(paint(f"[IA-SKIP] {ativo} {final_dir} | ensemble fraco | {ens_reason}", C.Y))
-                wait_for_next_open(TF_M1)
                 cooldown[ativo] = time.time()
                 continue
-            
-            # GATE EXTRA: Verificação rigorosa do contexto vs ensemble vs confluência
-            ctx_val = float(setup.get("market_quality", 0.40))
-            entry_conf_val = float(setup.get("entry_confidence", 0.50))
-            sr_prox_gate = float(setup.get("sr_proximity", 0.0))
-            sr_tq_gate = int(setup.get("sr_touches", 0))
-            sr_forte = sr_prox_gate > 0.60 and sr_tq_gate >= 4  # S/R forte = critério mais exigente
-            sr_basico = sr_tq_gate >= 3 and float(setup.get("sr_weight", 0.0)) >= 4.0  # S/R com zona confirmada
-            confluence_count = int(setup.get("confluence_bonus", 0) > 0.04) + int(setup.get("has_lt", False)) + int(sr_prox_gate > 0.30)
-            lt_conf = float(setup.get("lt_confluence", 0.0))
-            
-            # GATE 1: Contexto ruim BLOQUEIA a menos que ensemble muito alto + SR forte
-            if ctx_val < 0.40 and not ((sr_forte or sr_basico) and ensemble_prob >= 0.58):
-                log.info(paint(f"[CTX-GATE] {ativo} {final_dir} | ctx_ruim={ctx_val:.2f} | ens={ensemble_prob:.2f}", C.Y))
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-            # GATE 2: Contexto mediano + sem zona confirmada = precisa score alto
-            # Trader profissional: zona confirmada (S/R 3+ toques) compensa candle fraco
-            score_gate2 = float(setup.get("score", 0.0))
-            has_lt_g2 = bool(setup.get("has_lt", False))
-            if ctx_val < 0.50 and not sr_forte and not sr_basico and not has_lt_g2 and score_gate2 < 0.55:
-                log.info(paint(f"[CTX-GATE] {ativo} {final_dir} | ctx_med+sem_zona | ctx={ctx_val:.2f},sc={score_gate2:.2f}", C.Y))
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-            # GATE 3: Trendline fraca (<0.5) sem S/R forte = não opera
-            if lt_conf < 0.5 and not setup.get("has_lt", False) and sr_prox_gate < 0.40:
-                log.info(paint(f"[TREND-GATE] {ativo} {final_dir} | sem_tendência_forte+sem_SR | lt={lt_conf:.2f},sr={sr_prox_gate:.2f}", C.Y))
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-            # GATE 4: Verificação PROFISSIONAL - foco na ZONA, não no candle
-            # Trader profissional: candle neutro em zona forte = ENTRADA VÁLIDA
-            # Só bloqueia se TUDO é fraco: zona fraca + candle fraco + ensemble fraco
-            score_val_gate = float(setup.get("score", 0.0))
-            sr_tq_g4 = int(setup.get("sr_touches", 0))
-            sr_w_g4 = float(setup.get("sr_weight", 0.0))
-            lt_pts_g4 = int(setup.get("lt_points", setup.get("pb_len", 0)))
-            has_lt_g4 = bool(setup.get("has_lt", False))
-            
-            # Zona forte = S/R com toques + LT alinhada (trader profissional entra aqui)
-            zona_forte = (sr_tq_g4 >= 3 and sr_w_g4 >= 4.0) or (has_lt_g4 and lt_pts_g4 >= 3)
-            # Setup de qualidade = score bom + contexto aceitável
-            setup_ok = score_val_gate >= 0.45 and ctx_val >= 0.50
-            # Setup forte = alta confluência
-            setup_forte = score_val_gate >= 0.55 and ctx_val >= 0.55 and confluence_count >= 2
-            
-            # SÓ BLOQUEIA se: candle fraco E zona fraca E setup fraco E ensemble baixo
-            ens_gate_threshold = 0.52 if (not lgbm_reliable or not LGBM_ON) else 0.60
-            if entry_conf_val < 0.30 and not zona_forte and not setup_forte and ensemble_prob < ens_gate_threshold:
-                log.info(paint(f"[CONF-GATE] {ativo} {final_dir} | tudo_fraco | conf={entry_conf_val:.2f},zona={zona_forte},sc={score_val_gate:.2f},ens={ensemble_prob:.2f}", C.Y))
-                wait_for_next_open(TF_M1)
-                cooldown[ativo] = time.time()
-                continue
-            
-            # LOG S/R quando detectado
-            if sr_prox_gate > 0:
-                sr_reason_log = str(setup.get("sr_reason", "?"))
-                log.info(paint(f"[SR-ZONE] {ativo} {final_dir} | {sr_reason_log} | bonus={setup.get('sr_bonus',0):.2f}", C.G if sr_forte else C.B))
+
+        # ── SESSION GUARD: muitos losses sem win → parar ──
+        if total >= MAX_SESSION_LOSSES_NO_WIN and wins == 0:
+            log.warning(paint(
+                f"[SESSION] {ativo} {final_dir} | {total} trades sem WIN — sessão ruim, pausando 2min",
+                C.R
+            ))
+            time.sleep(120)
+            continue
+
+        # ── LOG SETUP FINAL ──
+        sr_reason_log = str(setup.get("sr_reason", "sr_bounce"))
+        log.info(paint(
+            f"✅ [SETUP-OK] {ativo} {final_dir} | {sr_reason_log} {sr_touches_log}t | "
+            f"score={score:.2f} ctx={ctx_val:.2f} conf={setup.get('confluence_count', 1)}",
+            C.G
+        ))
 
         wait_for_next_open(TF_M1)
 
+        # ── EXPERT GATE (opcional — desativado por padrão) ──
+        if EXPERT_ONLY_TRADING:
+            _expert_ok, _expert_phase, _expert_trades, _expert_wr = _is_ia_expert()
+            if not _expert_ok:
+                log.info(paint(
+                    f"🎓 [SIM] IA={_expert_phase} ({_expert_trades}t, WR={_expert_wr:.0f}%) | "
+                    f"Simulando {ativo} {final_dir}",
+                    C.B
+                ))
+                sim_res = _simulate_candle_result(iq, ativo, final_dir)
+                if sim_res > 0:
+                    log.info(paint(f"🎓 [SIM-WIN] {ativo} {final_dir} ✅", C.G))
+                elif sim_res < 0:
+                    log.info(paint(f"🎓 [SIM-LOSS] {ativo} {final_dir} ❌", C.R))
+                # Treinar IA com resultado simulado
+                if sim_res != 0 and not sinal_invertido:
+                    if IA_ON:
+                        ai_update(ativo, setup, sim_res, stats)
+                        _safe_save_json(AI_STATS_FILE, stats)
+                    if LGBM_ON:
+                        lgbm_add_sample(setup, sim_res)
+                    if CNN_ON and cnn_model is not None and df_candles is not None:
+                        try:
+                            cnn_model.add_sample(df_candles, final_dir, win=(sim_res > 0))
+                        except Exception:
+                            pass
+                cooldown[ativo] = time.time()
+                last_trade_dir[ativo] = (final_dir, time.time())
+                consecutive_skips = 0
+                continue
+
+        # IA é Expert → OPERAR DE VERDADE
         stake = calcular_stake_dinamico(iq, STAKE_FIXA)
         log.info(paint(f"[{ativo}] 💵 Stake calculado: {stake:.2f}", C.B))
 
@@ -2753,6 +3387,9 @@ def main():
             log.error(paint(f"[{ativo}] ❌ falhou enviar ordem (TURBO/DIGITAL).", C.R))
             cooldown[ativo] = time.time()
             continue
+
+        # Registrar direção operada (proteção contra inversão rápida)
+        last_trade_dir[ativo] = (final_dir, time.time())
 
         # Resetar contador de skips - uma operação foi feita
         consecutive_skips = 0
@@ -2778,6 +3415,16 @@ def main():
             # Reset counters após WIN
             consecutive_losses[ativo] = 0
             global_consecutive_losses = 0
+            session_total_losses_no_win = 0  # Reset: teve WIN na sessão
+            
+            # LOSS PENALTY DECAY: reduzir penalidade após WIN
+            if LOSS_PENALTY_ON and loss_penalty_level > 0:
+                _old_pen = loss_penalty_level
+                loss_penalty_level = max(0, loss_penalty_level - LOSS_PENALTY_DECAY_ON_WIN)
+                log.info(paint(
+                    f"📉 PENALTY DECAY: L{_old_pen} → L{loss_penalty_level} (WIN reduz exigência)",
+                    C.G
+                ))
             
             # RECOMPENSAR ATIVO QUE DEU WIN - relaxar filtros levemente
             if ativo in filtros_por_ativo:
@@ -2792,27 +3439,61 @@ def main():
             log.info(paint(f"[{ativo}] ❌ LOSS {res:.2f}$", C.R))
             # Enviar resultado para stdout (capturado pela tela)
             print(f">>> RESULTADO: LOSS {abs(res):.2f}", flush=True)
+            
+            # 🧠 IA LOSS MEMORY: Analisar e salvar motivo do LOSS
+            if LOSS_MEMORY_ON:
+                try:
+                    _extra = {
+                        "broker": BROKER_TYPE,
+                        "account_type": "DEMO" if os.getenv("WS_ACCOUNT_TYPE", "PRACTICE") != "REAL" else "REAL",
+                    }
+                    analyze_and_save_loss(ativo, final_dir, res, setup, stats, _extra)
+                except Exception as _lm_err:
+                    log.warning(f"[LOSS_MEMORY] Erro: {_lm_err}")
+            
             # Incrementar contadores de LOSS
             consecutive_losses[ativo] = consecutive_losses.get(ativo, 0) + 1
             global_consecutive_losses += 1
+            session_total_losses_no_win += 1
             # Aplicar cooldown especial após LOSS
             cooldown_loss[ativo] = time.time()
             
-            # PENALIZAR FILTROS DO ATIVO ESPECÍFICO QUE DEU LOSS
+            # LOSS PENALTY: aumentar nível de penalidade (IA fica mais exigente)
+            if LOSS_PENALTY_ON:
+                _old_pen = loss_penalty_level
+                loss_penalty_level = min(LOSS_PENALTY_MAX_LEVEL, loss_penalty_level + 1)
+                _extra_score = loss_penalty_level * LOSS_PENALTY_SCORE_PER_LEVEL
+                _extra_ctx = loss_penalty_level * LOSS_PENALTY_CTX_PER_LEVEL
+                log.warning(paint(
+                    f"📈 PENALTY UP: L{_old_pen} → L{loss_penalty_level} | "
+                    f"score +{_extra_score:.2f} ctx +{_extra_ctx:.2f} "
+                    f"(IA mais exigente para próximas entradas)",
+                    C.R
+                ))
+            
+            # KILL SWITCH SUAVIZADO: Se tomou N losses sem NENHUM win, PAUSA (não mata o bot)
+            if session_total_losses_no_win >= MAX_SESSION_LOSSES_NO_WIN and wins == 0:
+                log.warning(paint(f"🛑 SESSION GUARD: {session_total_losses_no_win} LOSSes consecutivos SEM WIN na sessão!", C.R))
+                log.warning(paint(f"   → Pausando 3 minutos para mercado se estabilizar...", C.Y))
+                time.sleep(180)  # Pausa 3 min em vez de matar o bot
+                session_total_losses_no_win = 0  # Reset para tentar novamente
+                log.info(paint("▶️ Retomando após pausa de 3 minutos...", C.G))
+            
+            # PENALIZAR FILTROS DO ATIVO ESPECÍFICO QUE DEU LOSS — SUAVIZADO
             if ativo in filtros_por_ativo:
                 filtro = filtros_por_ativo[ativo]
-                # Apertar filtros do ativo que deu LOSS
-                filtro["min_ctx"] = min(0.50, filtro.get("min_ctx", 0.40) + 0.03)
-                filtro["min_score"] = min(0.65, filtro.get("min_score", 0.55) + 0.03)
-                filtro["taxa"] = max(0.0, filtro.get("taxa", 0.50) - 0.10)  # Reduzir taxa estimada
+                # Apertar LEVEMENTE (era +0.03 → agora +0.01)
+                filtro["min_ctx"] = min(0.45, filtro.get("min_ctx", 0.40) + 0.01)
+                filtro["min_score"] = min(0.55, filtro.get("min_score", 0.50) + 0.01)
+                filtro["taxa"] = max(0.0, filtro.get("taxa", 0.50) - 0.05)
                 
-                # Se taxa ficar muito baixa, desabilitar ativo
-                if filtro["taxa"] < 0.35:
+                # Só desabilita se taxa MUITO baixa (era 0.35 → agora 0.15)
+                if filtro["taxa"] < 0.15:
                     filtro["habilitado"] = False
                     filtro["motivo"] = f"desabilitado_loss_consec_{consecutive_losses[ativo]}"
-                    log.warning(paint(f"⛔ {ativo} DESABILITADO após LOSS! Taxa estimada muito baixa", C.R))
+                    log.warning(paint(f"⛔ {ativo} DESABILITADO após LOSS repetido! Taxa={filtro['taxa']*100:.0f}%", C.R))
                 else:
-                    log.info(paint(f"🔧 {ativo} filtros apertados: ctx≥{filtro['min_ctx']:.2f} score≥{filtro['min_score']:.2f}", C.Y))
+                    log.info(paint(f"🔧 {ativo} filtros ajustados: ctx≥{filtro['min_ctx']:.2f} score≥{filtro['min_score']:.2f}", C.Y))
             
             # RETREINO SEVERO: aplicar penalidade extra no padrão (apenas se não usar backtest)
             if IA_ON and not BACKTEST_ON_LOSS:
@@ -2834,23 +3515,28 @@ def main():
                     ativos_analisados_backtest.clear()
                     ativos_analisados_backtest.extend(ativos_recalibrar)
                     
-                    # Atualizar USE_TRENDLINE_FILTER com resultado do backtest pós-LOSS
-                    USE_TRENDLINE_FILTER = backtest_result_loss.get("use_trendline", REQUIRE_TRENDLINE)
-                    lt_status = "ATIVADO" if USE_TRENDLINE_FILTER else "DESATIVADO"
-                    log.info(paint(f"📊 Filtro de Trendline: {lt_status}", C.B))
-                    
-                    # Verificar se mercado ainda está bom
-                    if taxa_backtest_loss < BACKTEST_MIN_WINRATE:
-                        mercado_ok = False
-                        log.warning(paint(f"⛔ MERCADO RUIM APÓS LOSS! Taxa: {taxa_backtest_loss*100:.1f}% < {BACKTEST_MIN_WINRATE*100:.1f}%", C.R))
-                        log.warning(paint("   → Aguardando mercado melhorar antes de continuar...", C.Y))
-                    elif taxa_backtest_loss < 0.55:
-                        # Mercado mediano - apertar filtros globais como proteção extra
+                    # Verificar se mercado ainda está bom (threshold dinâmico com IA)
+                    # Se IA tem aprendizado, NUNCA pausar — apenas calibrar
+                    ia_tem_dados_loss = (
+                        (IA_ON and stats.get("meta", {}).get("total", 0) >= AI_MIN_SAMPLES) or
+                        (LGBM_ON and len(lgbm_data) >= LGBM_MIN_SAMPLES)
+                    )
+                    if ia_tem_dados_loss:
+                        # IA tem dados → operar, apenas logar status
+                        if taxa_backtest_loss < 0.40:
+                            log.warning(paint(f"⚠️ Backtest pós-LOSS fraco ({taxa_backtest_loss*100:.1f}%) mas IA filtra individualmente", C.Y))
+                        else:
+                            log.info(paint(f"✅ Mercado OK após recalibração: {taxa_backtest_loss*100:.1f}% + IA com aprendizado", C.G))
                         mercado_ok = True
-                        log.warning(paint(f"⚠️ Mercado MEDIANO após recalibração: {taxa_backtest_loss*100:.1f}% - filtros mais rigorosos", C.Y))
                     else:
-                        mercado_ok = True
-                        log.info(paint(f"✅ Mercado OK após recalibração: {taxa_backtest_loss*100:.1f}%", C.G))
+                        ia_min_wr_loss = BACKTEST_MIN_WINRATE
+                        if taxa_backtest_loss < ia_min_wr_loss:
+                            mercado_ok = False
+                            log.warning(paint(f"⛔ MERCADO RUIM APÓS LOSS (IA sem dados)! Taxa: {taxa_backtest_loss*100:.1f}% < {ia_min_wr_loss*100:.1f}%", C.R))
+                            log.warning(paint("   → Aguardando mercado melhorar antes de continuar...", C.Y))
+                        else:
+                            mercado_ok = True
+                            log.info(paint(f"✅ Mercado OK após recalibração: {taxa_backtest_loss*100:.1f}%", C.G))
                     ultima_verificacao_mercado = time.time()
                 except Exception as e:
                     log.error(f"Erro no backtest pós-LOSS: {e}")
@@ -2929,6 +3615,10 @@ if __name__ == "__main__":
         try:
             main()
             _restart_count = 0  # Reset após execução bem-sucedida
+        except MetaAtingidaException as e:
+            stop_heartbeat()
+            log.info(paint(f"✅ Bot encerrado: {e}", C.G))
+            break  # META ou STOP LOSS - NÃO reiniciar
         except (RuntimeError, ConnectionError, OSError) as e:
             _restart_count += 1
             log.warning(paint(f"⚠️ Conexão perdida: {e}", C.Y))
@@ -2939,6 +3629,7 @@ if __name__ == "__main__":
             log.info(paint(f"🔄 Reiniciando em {wait_sec}s... ({_restart_count}/{_max_restarts})", C.Y))
             time.sleep(wait_sec)
         except KeyboardInterrupt:
+            stop_heartbeat()
             log.info("Bot encerrado pelo usuário.")
             break
         except Exception as e:
