@@ -778,7 +778,7 @@
           </p>
 
           <div class="heroActions" data-reveal style="--delay:.18s">
-            <a class="btn primary" id="btnBaixarHero" href="https://github.com/whsouza22/wstrader-update/releases/download/v3.0/WsTrader_Setup_3.0.exe" style="padding:14px 24px;font-size:14px">
+            <a class="btn primary" id="btnBaixarHero" href="https://github.com/whsouza22/wstrader-update/releases/latest" style="padding:14px 24px;font-size:14px">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
               <span data-i18n="hero.cta3">Download</span>
             </a>
@@ -1105,7 +1105,7 @@
             </div>
           </div>
           <div class="actions">
-            <a class="btn primary" id="btnBaixar" href="https://github.com/whsouza22/wstrader-update/releases/download/v3.0/WsTrader_Setup_3.0.exe" style="padding:16px 28px;font-size:15px">
+            <a class="btn primary" id="btnBaixar" href="https://github.com/whsouza22/wstrader-update/releases/latest" style="padding:16px 28px;font-size:15px">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
               <span data-i18n="dl.btn.download">Baixar</span>
             </a>
@@ -1232,10 +1232,40 @@
     const TELEGRAM_URL = "https://t.me/WstraderFlow_bot";
     const STRIPE_URL = "https://buy.stripe.com/fZe3e38sxfr28Le9AG";
     const STRIPE_PORTAL = "https://billing.stripe.com/p/login/00g6oQcPN8tl3VC9AA";
-    const DOWNLOAD_URL = "https://github.com/whsouza22/wstrader-update/releases/download/v3.0/WsTrader_Setup_3.0.exe";
+    /* === AUTO-DETECT LATEST RELEASE FROM GITHUB === */
+    const GITHUB_REPO = "whsouza22/wstrader-update";
+    const FALLBACK_DOWNLOAD_URL = "https://github.com/whsouza22/wstrader-update/releases/latest";
+    let DOWNLOAD_URL = FALLBACK_DOWNLOAD_URL;
     const DOWNLOAD_AVAILABLE = true;
     const LAUNCH_DATE = new Date("2026-03-01T00:00:00");
     const IS_LAUNCHED = new Date() >= LAUNCH_DATE;
+
+    // Fetch latest release automatically
+    (async function fetchLatestRelease() {
+      try {
+        const resp = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        // Find the .exe asset (installer)
+        const exeAsset = data.assets && data.assets.find(a => a.name.endsWith('.exe'));
+        if (exeAsset) {
+          DOWNLOAD_URL = exeAsset.browser_download_url;
+        } else if (data.html_url) {
+          DOWNLOAD_URL = data.html_url;
+        }
+        // Update all download buttons with the latest URL
+        ["btnBaixar", "btnBaixarHero"].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.href = DOWNLOAD_URL;
+        });
+        // Update version badge if exists
+        const versionEl = document.getElementById("latestVersion");
+        if (versionEl && data.tag_name) versionEl.textContent = data.tag_name;
+        console.log("[WSTrader] Latest release:", data.tag_name, DOWNLOAD_URL);
+      } catch (e) {
+        console.warn("[WSTrader] Could not fetch latest release, using fallback", e);
+      }
+    })();
 
     /* ===================== i18n COMPLETO ===================== */
     const I18N = {
