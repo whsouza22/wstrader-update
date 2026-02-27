@@ -1,1 +1,6 @@
-﻿{"version":"3.0","changelog":"v3.0 - PyArmor protection + IA otimizada + cursor moderno","download_url":"https://github.com/whsouza22/wstrader-update/releases/download/v3.0/WsTrader_Setup_3.0.exe","download_link":"https://github.com/whsouza22/wstrader-update/releases/download/v3.0/WsTrader_Setup_3.0.exe"}
+﻿{
+    "download_url":  "https://github.com/whsouza22/wstrader-update/releases/download/v4.4/WsTrader_Setup_4.4.exe",
+    "changelog":  "v4.4 - Auto cleanup data on exit, plan_type backend",
+    "download_link":  "https://github.com/whsouza22/wstrader-update/releases/download/v4.4/WsTrader_Setup_4.4.exe",
+    "version":  "4.4"
+}
