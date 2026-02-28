@@ -1,0 +1,11 @@
+﻿# ==============================================
+# IGNORAR TUDO - Repositório apenas para releases
+# ==============================================
+
+# Ignorar tudo por padrão
+*
+
+# Permitir APENAS estes arquivos:
+!.gitignore
+!README.md
+!version.json
