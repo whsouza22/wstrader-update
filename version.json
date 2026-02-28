@@ -1,5 +1,5 @@
 {
   "version": "5.0",
   "changelog": "v5.0 - Seleção aleatória de ativo (não repete EURUSD) + IA stats exportadas para UI + Dashboard real-time tick streaming + correções de estabilidade",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v5.0/WsTrader_Setup_5.1.exe"
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v5.0/WsTrader_Setup_5.0.exe"
 }
