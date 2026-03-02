@@ -12,6 +12,19 @@ if sys.version_info >= (3, 10):
     import importlib.metadata as _md
     _md.packages_distributions = lambda: {}
 
+# ===== FIX: PyArmor + urllib3 SSL PermissionError =====
+# PyArmor intercepta operações de arquivo e redireciona para
+# \\?\Volume{...}\virtual_file.log — que é read-only.
+# Pré-inicializar SSL/certifi ANTES de importar requests resolve isso.
+try:
+    import ssl as _ssl_pre
+    import certifi as _certifi_pre
+    os.environ.setdefault('SSL_CERT_FILE', _certifi_pre.where())
+    os.environ.setdefault('REQUESTS_CA_BUNDLE', _certifi_pre.where())
+    _ssl_pre.create_default_context()  # força cache do contexto SSL
+except Exception:
+    pass
+
 import flet as ft
 import webbrowser
 import logging

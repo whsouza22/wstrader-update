@@ -119,7 +119,7 @@ a = Analysis(
     ] + stripe_hiddenimports + certifi_hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['runtime_hook_ssl.py'],
     excludes=['tensorflow', 'keras', 'tensorboard', 'tf_keras', 'h5py',
               'torch', 'torchvision', 'torchaudio', 'transformers',
               'IPython', 'notebook', 'jupyter', 'jupyterlab',
