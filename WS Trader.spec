@@ -60,6 +60,7 @@ a = Analysis(
         (os.path.join(protected_dir, 'ws_reversal_ai.py'), '.'),
         (os.path.join(protected_dir, 'ws_structure_map.py'), '.'),
         (os.path.join(protected_dir, 'ws_structure_patterns.py'), '.'),
+        (os.path.join(protected_dir, 'dashboard_hs_ia.py'), '.'),
         (flet_desktop_app, os.path.join('flet_desktop', 'app')),
         (flet_controls, os.path.join('flet', 'controls')),
     ] + stripe_datas + certifi_datas,
@@ -93,6 +94,7 @@ a = Analysis(
         'operations_manager',
         'ia_autonomous_brain', 'ws_candle_color_ai',
         'ws_reversal_ai', 'ws_structure_map', 'ws_structure_patterns',
+        'dashboard_hs_ia',
         # === Backend / Licença ===
         'backend_server', 'backend_license_endpoint', 'license_manager',
         'license_activation_screen',

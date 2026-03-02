@@ -17,9 +17,6 @@ import time
 import json
 import logging
 import random
-import socket
-import subprocess
-import urllib.request
 
 # ── Fix Windows console Unicode (emojis) ──
 if sys.platform == "win32":
@@ -244,151 +241,449 @@ def _get_ia_level(n_total: int) -> tuple:
 
 
 # ═══════════════════════════════════════════════════════════════
-# DASHBOARD — INTEGRAÇÃO (fonte única de sinais H&S)
+# DETECÇÃO H&S — DIRETO DA CORRETORA (SEM DASHBOARD)
 # ═══════════════════════════════════════════════════════════════
-DASHBOARD_URL = "http://localhost:8899/api/data"
-DASHBOARD_PORT = 8899
 
 
-def _is_dashboard_running():
-    """Verifica se o dashboard está rodando na porta 8899."""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(2)
-        s.connect(("127.0.0.1", DASHBOARD_PORT))
-        s.close()
-        return True
-    except Exception:
-        return False
+def detect_pivots(H, L, window=5):
+    """Detecta pivot highs e pivot lows diretamente dos arrays OHLC."""
+    n = len(H)
+    ph, pl = [], []
+    edge_min = 2
+    for i in range(window, n - edge_min):
+        rw = min(window, n - 1 - i)
+        is_ph = True
+        for j in range(1, window + 1):
+            if H[i] <= H[i - j]:
+                is_ph = False; break
+        if is_ph:
+            for j in range(1, rw + 1):
+                if H[i] <= H[i + j]:
+                    is_ph = False; break
+        if is_ph:
+            ph.append((i, float(H[i])))
+        is_pl = True
+        for j in range(1, window + 1):
+            if L[i] >= L[i - j]:
+                is_pl = False; break
+        if is_pl:
+            for j in range(1, rw + 1):
+                if L[i] >= L[i + j]:
+                    is_pl = False; break
+        if is_pl:
+            pl.append((i, float(L[i])))
+    return ph, pl
 
 
-def _ensure_dashboard_running():
-    """Inicia o dashboard_hs_ia.py automaticamente se não estiver rodando."""
-    if _is_dashboard_running():
-        log.info(paint("✅ Dashboard IA H&S já está rodando na porta 8899", C.G))
-        return True
+def detect_all_hs(H, L, C_arr, O, pivot_highs, pivot_lows, atr):
+    """Detecta TODOS os padrões H&S/iH&S no histórico de velas.
+    Inclui validações: cabeça não pode ter sido rompida."""
+    patterns = []
+    n = len(H)
+    tol = atr * 1.5
+    min_depth = atr * 1.0
+    min_spacing = 8
+    max_span = 100
+    trend_lookback = 30
+    symmetry_min = 0.90
+    seen_heads = set()
 
-    log.info(paint("🚀 Iniciando Dashboard IA H&S automaticamente...", C.B))
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    dashboard_script = os.path.join(script_dir, "dashboard_hs_ia.py")
+    # ── MODO 1: H&S Clássico (3 pivot highs) ──
+    for i in range(len(pivot_highs) - 2):
+        iL, pL = pivot_highs[i]
+        iH, pH = pivot_highs[i + 1]
+        iR, pR = pivot_highs[i + 2]
+        if pH <= pL or pH <= pR: continue
+        if abs(pL - pR) > tol: continue
+        if iH - iL < min_spacing or iR - iH < min_spacing: continue
+        if iR - iL > max_span: continue
+        shoulder_avg = (pL + pR) / 2
+        head_depth = pH - shoulder_avg
+        if head_depth < min_depth: continue
+        if min(pL, pR) / max(pL, pR) < symmetry_min: continue
+        if iL >= trend_lookback:
+            if float(C_arr[iL]) <= float(C_arr[iL - trend_lookback]): continue
+        if iH + 1 < iR + 1:
+            if float(max(H[iH+1:iR+1])) >= pH: continue
+        v1_region = L[iL:iH + 1]
+        v1_rel = int(np.argmin(v1_region)); v1_idx = iL + v1_rel; v1_price = float(v1_region[v1_rel])
+        v2_region = L[iH:iR + 1]
+        v2_rel = int(np.argmin(v2_region)); v2_idx = iH + v2_rel; v2_price = float(v2_region[v2_rel])
+        neckline = (v1_price + v2_price) / 2
+        if abs(v1_price - v2_price) > atr * 0.5: continue
+        neck_slope = (v2_price - v1_price) / max(1, v2_idx - v1_idx)
+        seen_heads.add(("H", iH))
+        patterns.append({
+            "type": "HEAD_SHOULDERS", "direction": "PUT", "mode": "classic",
+            "left_shoulder": {"idx": int(iL), "price": round(float(pL), 6)},
+            "head": {"idx": int(iH), "price": round(float(pH), 6)},
+            "right_shoulder": {"idx": int(iR), "price": round(float(pR), 6)},
+            "valley1": {"idx": int(v1_idx), "price": round(v1_price, 6)},
+            "valley2": {"idx": int(v2_idx), "price": round(v2_price, 6)},
+            "neckline": round(neckline, 6),
+            "neck_slope": round(neck_slope, 8),
+            "depth": round(float(head_depth), 6),
+            "target": round(neckline - head_depth, 6),
+            "stop": round(float(pH), 6),
+            "entry_idx": int(iR) + 1,
+        })
 
-    if not os.path.exists(dashboard_script):
-        log.warning(paint("⚠️ dashboard_hs_ia.py não encontrado!", C.Y))
-        return False
+    # ── MODO 1: iH&S Clássico (3 pivot lows) ──
+    for i in range(len(pivot_lows) - 2):
+        iL, pL = pivot_lows[i]
+        iH, pH = pivot_lows[i + 1]
+        iR, pR = pivot_lows[i + 2]
+        if pH >= pL or pH >= pR: continue
+        if abs(pL - pR) > tol: continue
+        if iH - iL < min_spacing or iR - iH < min_spacing: continue
+        if iR - iL > max_span: continue
+        shoulder_avg = (pL + pR) / 2
+        head_depth = shoulder_avg - pH
+        if head_depth < min_depth: continue
+        if min(pL, pR) / max(pL, pR) < symmetry_min: continue
+        if iL >= trend_lookback:
+            if float(C_arr[iL]) >= float(C_arr[iL - trend_lookback]): continue
+        if iH + 1 < iR + 1:
+            if float(min(L[iH+1:iR+1])) <= pH: continue
+        v1_region = H[iL:iH + 1]
+        v1_rel = int(np.argmax(v1_region)); v1_idx = iL + v1_rel; v1_price = float(v1_region[v1_rel])
+        v2_region = H[iH:iR + 1]
+        v2_rel = int(np.argmax(v2_region)); v2_idx = iH + v2_rel; v2_price = float(v2_region[v2_rel])
+        neckline = (v1_price + v2_price) / 2
+        if abs(v1_price - v2_price) > atr * 0.5: continue
+        neck_slope = (v2_price - v1_price) / max(1, v2_idx - v1_idx)
+        seen_heads.add(("L", iH))
+        patterns.append({
+            "type": "INV_HEAD_SHOULDERS", "direction": "CALL", "mode": "classic",
+            "left_shoulder": {"idx": int(iL), "price": round(float(pL), 6)},
+            "head": {"idx": int(iH), "price": round(float(pH), 6)},
+            "right_shoulder": {"idx": int(iR), "price": round(float(pR), 6)},
+            "valley1": {"idx": int(v1_idx), "price": round(v1_price, 6)},
+            "valley2": {"idx": int(v2_idx), "price": round(v2_price, 6)},
+            "neckline": round(neckline, 6),
+            "neck_slope": round(neck_slope, 8),
+            "depth": round(float(head_depth), 6),
+            "target": round(neckline + head_depth, 6),
+            "stop": round(float(pH), 6),
+            "entry_idx": int(iR) + 1,
+        })
 
-    try:
-        # Herda BROKER_TYPE para que o dashboard use a mesma corretora
-        env = os.environ.copy()
-        subprocess.Popen(
-            [sys.executable, dashboard_script],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=env,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-        )
-        log.info(paint("⏳ Aguardando dashboard conectar e fazer primeiro scan...", C.B))
-        # Espera até 60s para o dashboard subir e fazer o primeiro scan
-        for i in range(60):
-            time.sleep(1)
-            if _is_dashboard_running():
-                # Dashboard subiu, agora espera o primeiro scan completar
-                time.sleep(10)
-                log.info(paint("✅ Dashboard IA H&S iniciado com sucesso!", C.G))
-                return True
-        log.warning(paint("⚠️ Dashboard não iniciou a tempo (60s)", C.Y))
-        return False
-    except Exception as e:
-        log.warning(paint(f"⚠️ Erro ao iniciar dashboard: {e}", C.Y))
-        return False
+    # ── MODO 2: H&S Tempo Real (PUT) ──
+    for i in range(len(pivot_highs) - 1):
+        iL, pL = pivot_highs[i]
+        iH, pH = pivot_highs[i + 1]
+        if ("H", iH) in seen_heads: continue
+        if pH <= pL or iH - iL < min_spacing: continue
+        head_depth = pH - pL
+        if head_depth < min_depth: continue
+        if iL >= trend_lookback:
+            if float(C_arr[iL]) <= float(C_arr[iL - trend_lookback]): continue
+        search_start = iH + min_spacing
+        if search_start >= n: continue
+        region = H[search_start:n]
+        if len(region) < 2: continue
+        local_max_rel = int(np.argmax(region))
+        iR = search_start + local_max_rel
+        pR = float(H[iR])
+        if abs(pL - pR) > tol or pR >= pH: continue
+        if min(pL, pR) / max(pL, pR) < symmetry_min: continue
+        if iR - iL > max_span: continue
+        if float(max(H[iH+1:n])) >= pH: continue
+        v1_region = L[iL:iH + 1]
+        v1_rel = int(np.argmin(v1_region)); v1_idx = iL + v1_rel; v1_price = float(v1_region[v1_rel])
+        v2_region = L[iH:min(iR + 1, n)]
+        v2_rel = int(np.argmin(v2_region)); v2_idx = iH + v2_rel; v2_price = float(v2_region[v2_rel])
+        neckline = (v1_price + v2_price) / 2
+        if abs(v1_price - v2_price) > atr * 0.5: continue
+        neck_slope = (v2_price - v1_price) / max(1, v2_idx - v1_idx)
+        patterns.append({
+            "type": "HEAD_SHOULDERS", "direction": "PUT", "mode": "realtime",
+            "left_shoulder": {"idx": int(iL), "price": round(float(pL), 6)},
+            "head": {"idx": int(iH), "price": round(float(pH), 6)},
+            "right_shoulder": {"idx": int(iR), "price": round(float(pR), 6)},
+            "valley1": {"idx": int(v1_idx), "price": round(v1_price, 6)},
+            "valley2": {"idx": int(v2_idx), "price": round(v2_price, 6)},
+            "neckline": round(neckline, 6),
+            "neck_slope": round(neck_slope, 8),
+            "depth": round(float(head_depth), 6),
+            "target": round(neckline - head_depth, 6),
+            "stop": round(float(pH), 6),
+            "entry_idx": int(iR) + 1,
+        })
+
+    # ── MODO 2: iH&S Tempo Real (CALL) ──
+    for i in range(len(pivot_lows) - 1):
+        iL, pL = pivot_lows[i]
+        iH, pH = pivot_lows[i + 1]
+        if ("L", iH) in seen_heads: continue
+        if pH >= pL or iH - iL < min_spacing: continue
+        head_depth = pL - pH
+        if head_depth < min_depth: continue
+        if iL >= trend_lookback:
+            if float(C_arr[iL]) >= float(C_arr[iL - trend_lookback]): continue
+        search_start = iH + min_spacing
+        if search_start >= n: continue
+        region = L[search_start:n]
+        if len(region) < 2: continue
+        local_min_rel = int(np.argmin(region))
+        iR = search_start + local_min_rel
+        pR = float(L[iR])
+        if abs(pL - pR) > tol or pR <= pH: continue
+        if min(pL, pR) / max(pL, pR) < symmetry_min: continue
+        if iR - iL > max_span: continue
+        if float(min(L[iH+1:n])) <= pH: continue
+        v1_region = H[iL:iH + 1]
+        v1_rel = int(np.argmax(v1_region)); v1_idx = iL + v1_rel; v1_price = float(v1_region[v1_rel])
+        v2_region = H[iH:min(iR + 1, n)]
+        v2_rel = int(np.argmax(v2_region)); v2_idx = iH + v2_rel; v2_price = float(v2_region[v2_rel])
+        neckline = (v1_price + v2_price) / 2
+        if abs(v1_price - v2_price) > atr * 0.5: continue
+        neck_slope = (v2_price - v1_price) / max(1, v2_idx - v1_idx)
+        patterns.append({
+            "type": "INV_HEAD_SHOULDERS", "direction": "CALL", "mode": "realtime",
+            "left_shoulder": {"idx": int(iL), "price": round(float(pL), 6)},
+            "head": {"idx": int(iH), "price": round(float(pH), 6)},
+            "right_shoulder": {"idx": int(iR), "price": round(float(pR), 6)},
+            "valley1": {"idx": int(v1_idx), "price": round(v1_price, 6)},
+            "valley2": {"idx": int(v2_idx), "price": round(v2_price, 6)},
+            "neckline": round(neckline, 6),
+            "neck_slope": round(neck_slope, 8),
+            "depth": round(float(head_depth), 6),
+            "target": round(neckline + head_depth, 6),
+            "stop": round(float(pH), 6),
+            "entry_idx": int(iR) + 1,
+        })
+
+    return patterns
 
 
-def _fetch_dashboard_signals():
-    """Busca sinais LIVE do dashboard IA H&S via API."""
-    try:
-        req = urllib.request.urlopen(DASHBOARD_URL, timeout=5)
-        data = json.loads(req.read().decode("utf-8"))
-        signals = data.get("live_signals", [])
-        summary = data.get("summary", {})
-        scan_count = data.get("scan_count", 0)
-        return signals, summary, scan_count
-    except Exception as e:
-        log.warning(paint(f"⚠️ Erro ao acessar dashboard: {e}", C.Y))
-        return [], {}, 0
+def backtest_pattern(pat, C, O, H, L, n):
+    """Verifica se o padrão H&S resultaria em WIN ou LOSS.
+    Regra: entra na abertura da vela entry_idx na direção pat['direction'].
+    Verifica o close EXP_CANDLES velas depois.
+    PUT: WIN se close < entry_price
+    CALL: WIN se close > entry_price
+    Retorna None se padrão é LIVE (sem resultado ainda)."""
+    entry_idx = pat.get("entry_idx", pat["right_shoulder"]["idx"] + 1)
+    if entry_idx >= n or entry_idx < 0:
+        return None  # sem dados para verificar
+    exit_idx = entry_idx + EXP_FIXA  # EXP_FIXA candles de expiração
+    if exit_idx >= n:
+        return None  # padrão muito recente, sem resultado ainda
+    entry_price = float(O[entry_idx])
+    exit_price = float(C[exit_idx - 1])
+    head_price = pat["head"]["price"]
+    if pat["direction"] == "PUT":
+        if entry_price >= head_price:
+            return {"result": "skip", "reason": "acima_cabeca"}
+        win = exit_price < entry_price
+    else:  # CALL
+        if entry_price <= head_price:
+            return {"result": "skip", "reason": "abaixo_cabeca"}
+        win = exit_price > entry_price
+    return {
+        "result": "win" if win else "loss",
+        "entry_price": round(entry_price, 6),
+        "exit_price": round(exit_price, 6),
+        "entry_idx": entry_idx,
+        "exit_idx": exit_idx - 1,
+        "pips": round(abs(exit_price - entry_price), 6),
+    }
 
 
-def escolher_melhor_setup_dashboard(cooldown: dict):
-    """Busca sinais do dashboard e seleciona o melhor setup H&S.
-    SUBSTITUI a detecção local — fonte única de sinais é o dashboard.
-    Returns (best_trade, best_any) no mesmo formato do antigo escolher_melhor_setup."""
-    signals, summary, scan_count = _fetch_dashboard_signals()
+def _train_ia_from_history(bx, hs_stats: dict) -> dict:
+    """Treina IA a partir do histórico de velas — IGUAL ao dashboard _update_thread.
+    Busca N_M1 candles para cada ativo top, detecta todos os padrões H&S,
+    faz backtest de cada um, e alimenta hs_stats com WIN/LOSS.
+    Isso faz a IA já iniciar com dados, subindo o nível imediatamente."""
+    ativos = obter_top_ativos_otc(bx)
+    if not ativos:
+        log.warning(paint("⚠️ Nenhum ativo para treino — IA inicia do zero", C.Y))
+        return hs_stats
 
-    if not signals:
+    log.info(paint(f"🏋️ Treinando IA com {len(ativos)} ativos ({N_M1} velas cada)...", C.B))
+
+    total_wins = 0
+    total_losses = 0
+    total_patterns = 0
+
+    for ativo in ativos:
+        try:
+            df = get_candles_df(bx, ativo, TF_M1, N_M1)
+            if df is None or len(df) < 100:
+                continue
+
+            H = df["high"].values
+            L = df["low"].values
+            C_arr = df["close"].values
+            O = df["open"].values
+            n = len(H)
+
+            # ATR (14 períodos) — IGUAL ao dashboard
+            atr_vals = [float(H[k] - L[k]) for k in range(max(0, n - 14), n)]
+            atr = float(np.mean(atr_vals)) if atr_vals else 0.001
+            if atr <= 0:
+                continue
+
+            # Detectar pivots e H&S
+            ph, pl = detect_pivots(H, L, window=5)
+            all_hs = detect_all_hs(H, L, C_arr, O, ph, pl, atr)
+
+            if not all_hs:
+                continue
+
+            _w, _l = 0, 0
+            for pat in all_hs:
+                bt = backtest_pattern(pat, C_arr, O, H, L, n)
+                if bt is not None and bt["result"] in ("win", "loss"):
+                    # Alimentar IA — IGUAL ao dashboard _ia_new.learn()
+                    pat_type = pat.get("type", "HS")
+                    mode = pat.get("mode", "classic")
+                    arm = f"{ativo}_{pat_type}_{mode}"
+                    if "arms" not in hs_stats:
+                        hs_stats["arms"] = {}
+                    if arm not in hs_stats["arms"]:
+                        hs_stats["arms"][arm] = {"wins": 0, "total": 0}
+                    hs_stats["arms"][arm]["total"] += 1
+                    if bt["result"] == "win":
+                        hs_stats["arms"][arm]["wins"] += 1
+                        _w += 1
+                    else:
+                        _l += 1
+
+                    # Stats globais (meta.total)
+                    meta = hs_stats.setdefault("meta", {"total": 0})
+                    meta["total"] = meta.get("total", 0) + 1
+
+                    total_patterns += 1
+
+            if _w + _l > 0:
+                log.info(f"  {ativo}: {len(all_hs)} padrões | {_w}W / {_l}L")
+            total_wins += _w
+            total_losses += _l
+
+        except Exception as e:
+            log.debug(f"Erro treinando {ativo}: {e}")
+            continue
+
+    _n_total = hs_stats.get("meta", {}).get("total", 0)
+    _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
+    wr = (total_wins / max(total_wins + total_losses, 1)) * 100
+
+    log.info(paint("=" * 50, C.G))
+    log.info(paint(f"🏋️ TREINO CONCLUÍDO!", C.G))
+    log.info(paint(f"  📊 Total: {total_patterns} padrões | {total_wins}W / {total_losses}L | WR: {wr:.1f}%", C.G))
+    log.info(paint(f"  🧠 IA: {_n_total} amostras | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
+    log.info(paint("=" * 50, C.G))
+
+    print(f">>> IA: Treinada! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome}) | WR: {wr:.1f}%", flush=True)
+
+    # Salvar no disco
+    _safe_save_json(AI_STATS_FILE, hs_stats)
+    if _n_total > 0:
+        _save_retrain_control()
+
+    return hs_stats
+
+
+def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict):
+    """Detecta H&S em TEMPO REAL — busca candles DIRETO da corretora.
+    Sem dashboard, sem JSON, sem delay. Detecção local pura.
+    Returns (best_trade, best_any)."""
+    ativos = obter_top_ativos_otc(bx)
+    if not ativos:
+        log.warning(paint("⚠️ Nenhum ativo OTC disponível", C.Y))
         return None, None
 
     best_trade = None
     best_any = None
+    _total_patterns = 0
 
-    for sig in signals:
-        ativo = sig.get("ativo", "")
-        direction = sig.get("direction", "")
-        pat_type = sig.get("type", "HS")
-        mode = sig.get("mode", "classic")
-        ia_prob = sig.get("ia_prob", 0.5)
-        head_price = sig.get("head_price", 0)
-        rs_price = sig.get("rs_price", 0)
-        neckline = sig.get("neckline", 0)
-        entry_pending = sig.get("entry_pending", True)
-        scan_ts = sig.get("scan_ts", 0)
-        target = sig.get("target", 0)
-        stop = sig.get("stop", 0)
-
-        if not ativo or not direction:
-            continue
-
-        # ── SOMENTE sinais com entrada pendente (vela de entrada AINDA NÃO existe) ──
-        if not entry_pending:
-            log.info(paint(f"  ⏭️ {ativo}: entrada já ocorreu — aguardando resultado", C.Y))
-            continue
-
-        # ── FRESHNESS CHECK: scan do dashboard não pode ter mais de 120s ──
-        if scan_ts > 0 and (time.time() - scan_ts) > 120:
-            log.info(paint(
-                f"  ⏭️ {ativo}: scan antigo ({int(time.time() - scan_ts)}s) — SKIP",
-                C.Y
-            ))
-            continue
-
-        # Cooldown individual por ativo (3 min após trade nele)
-        if ativo in cooldown:
-            elapsed = time.time() - cooldown[ativo]
+    for ativo in ativos:
+        # Cooldown individual
+        if ativo in cooldown_map:
+            elapsed = time.time() - cooldown_map[ativo]
             if elapsed < COOLDOWN_AFTER_TRADE:
                 continue
 
-        setup = {
-            "dir": direction,
-            "type": pat_type,
-            "mode": mode,
-            "confidence": round(ia_prob * 100, 1),
-            "pattern": {
+        # ── Buscar candles DIRETO da corretora ──
+        df = get_candles_df(bx, ativo, TF_M1, N_M1)
+        if df is None or len(df) < 100:
+            continue
+
+        H = df["high"].values
+        L = df["low"].values
+        C_arr = df["close"].values
+        O = df["open"].values
+        n = len(H)
+
+        # ATR (14 períodos) — IGUAL ao dashboard
+        atr_vals = [float(H[k] - L[k]) for k in range(max(0, n - 14), n)]
+        atr = float(np.mean(atr_vals)) if atr_vals else 0.001
+        if atr <= 0:
+            continue
+
+        # ── Detectar pivots e padrões H&S ──
+        pivot_highs, pivot_lows = detect_pivots(H, L, window=5)
+        patterns = detect_all_hs(H, L, C_arr, O, pivot_highs, pivot_lows, atr)
+
+        if not patterns:
+            continue
+
+        # ── Filtrar: só padrões LIVE (sem resultado ainda) — IGUAL ao dashboard ──
+        live_patterns = []
+        for pat in patterns:
+            bt = backtest_pattern(pat, C_arr, O, H, L, n)
+            if bt is None:
+                # Padrão recente sem resultado = sinal LIVE
+                entry_idx = pat.get("entry_idx", pat["right_shoulder"]["idx"] + 1)
+                pat["entry_pending"] = entry_idx >= n
+                pat["candles_ago"] = max(0, n - 1 - pat["right_shoulder"]["idx"])
+                live_patterns.append(pat)
+
+        if not live_patterns:
+            continue
+
+        _total_patterns += len(live_patterns)
+
+        for pat in live_patterns:
+            direction = pat["direction"]
+            pat_type = pat["type"]
+            mode = pat.get("mode", "classic")
+
+            # IA predict — IGUAL ao dashboard
+            ia_prob = ai_predict_hs(ativo, pat, hs_stats)
+            ia_n = hs_stats.get("arms", {}).get(f"{ativo}_{pat_type}_{mode}", {}).get("total", 0)
+
+            # Score: se IA tem dados usa, senão 0.5
+            score = ia_prob if ia_n >= AI_MIN_SAMPLES else 0.5
+
+            setup = {
+                "dir": direction,
                 "type": pat_type,
-                "direction": direction,
                 "mode": mode,
-                "head": {"price": head_price},
-                "right_shoulder": {"price": rs_price},
-                "neckline": neckline,
-                "target": target,
-                "stop": stop,
-            },
-        }
-        score = ia_prob
+                "confidence": round(score * 100, 1),
+                "pattern": pat,
+            }
 
-        # Candidato (qualquer sinal LIVE pendente)
-        if best_any is None or ia_prob > best_any[0]:
-            best_any = (score, ativo, setup, 0.001)
+            log.info(paint(
+                f"  📊 H&S LOCAL: {ativo} | {pat_type} {direction} ({mode}) | "
+                f"score={score:.2f} | entry_idx={pat['entry_idx']} | n={n}",
+                C.B
+            ))
 
-        # Filtro: dashboard confirmou padrão e entrada é pendente
-        best_trade = (score, ativo, setup, 0.001) if (best_trade is None or ia_prob > best_trade[0]) else best_trade
+            if best_any is None or score > best_any[0]:
+                best_any = (score, ativo, setup, atr)
 
+            # Filtro: IA não bloqueia se poucos dados
+            if ia_n >= AI_MIN_SAMPLES and ia_prob < AI_MIN_PROB:
+                continue
+
+            if best_trade is None or score > best_trade[0]:
+                best_trade = (score, ativo, setup, atr)
+
+    if _total_patterns > 0:
+        log.info(paint(f"  🔍 Scan local: {_total_patterns} padrão(ões) H&S recente(s) encontrado(s)", C.G))
     return best_trade, best_any
 
 
@@ -402,9 +697,30 @@ def wait_until_minus(tf, seconds_before):
 
 
 
+def ai_predict_hs(ativo, pat, stats_ai):
+    """IA prediction para setup H&S — IGUAL ao dashboard.
+    Usa key com mode e fallback para stats globais."""
+    arms = stats_ai.get("arms", {})
+    # Key específica: ativo_type_mode
+    key = f"{ativo}_{pat.get('type', 'HS')}_{pat.get('mode', 'classic')}"
+    data = arms.get(key, None)
+    if data and data.get("total", 0) >= 3:
+        return data["wins"] / data["total"]
+    # Fallback: stats globais do tipo (qualquer ativo com mesmo type)
+    pat_type = pat.get("type", "HS")
+    g_wins, g_total = 0, 0
+    for k, v in arms.items():
+        if f"_{pat_type}_" in k or k.endswith(f"_{pat_type}"):
+            g_wins += v.get("wins", 0)
+            g_total += v.get("total", 0)
+    if g_total >= 5:
+        return g_wins / g_total
+    return 0.5  # sem dados
+
+
 def ai_predict(ativo, setup, stats_ai):
-    """IA prediction para setup H&S."""
-    arm = f"{ativo}_{setup.get('type', 'HS')}"
+    """IA prediction para setup H&S (compatibilidade)."""
+    arm = f"{ativo}_{setup.get('type', 'HS')}_{setup.get('mode', 'classic')}"
     arm_data = stats_ai.get("arms", {}).get(arm, {"wins": 0, "total": 0})
     n = arm_data.get("total", 0)
     w = arm_data.get("wins", 0)
@@ -414,10 +730,10 @@ def ai_predict(ativo, setup, stats_ai):
 
 
 def ai_update(ativo, setup, result_value, stats_ai):
-    """Atualiza IA stats após trade H&S."""
+    """Atualiza IA stats após trade H&S — com mode na key."""
     if "arms" not in stats_ai:
         stats_ai["arms"] = {}
-    arm = f"{ativo}_{setup.get('type', 'HS')}"
+    arm = f"{ativo}_{setup.get('type', 'HS')}_{setup.get('mode', 'classic')}"
     if arm not in stats_ai["arms"]:
         stats_ai["arms"][arm] = {"wins": 0, "total": 0}
     stats_ai["arms"][arm]["total"] += 1
@@ -794,52 +1110,37 @@ def main():
     # Inicializar ReversalAI (para stats e compatibilidade)
     reversal_ai = ReversalAI("unified")
 
-    # ── RESET TOTAL: sempre limpa stats e retreina do Dashboard ao iniciar ──
-    log.info(paint("=" * 60, C.G))
-    log.info(paint("🔄 RESET IA — Retreinando com 900 velas do Dashboard!", C.G))
-    log.info(paint("=" * 60, C.G))
-    hs_stats = {"meta": {"total": 0}, "arms": {}}
-    _safe_save_json(AI_STATS_FILE, hs_stats)
+    # ── Carregar / Treinar IA — IGUAL ao dashboard _update_thread ──
+    log.info(paint("🧠 Verificando IA H&S...", C.B))
 
-    # ── Iniciar Dashboard IA H&S automaticamente (fonte única de sinais) ──
-    _ensure_dashboard_running()
-
-    # ── TREINAMENTO INICIAL: carregar arquivo do Dashboard do disco (sem bloquear) ──
-    log.info(paint("🧠 Carregando IA do disco...", C.B))
-    _DASHBOARD_STATS_FILE = os.path.join(os.path.expanduser("~"), ".wstrader", "hs_ia_dashboard_stats.json")
-    try:
-        if os.path.exists(_DASHBOARD_STATS_FILE):
-            with open(_DASHBOARD_STATS_FILE, "r", encoding="utf-8") as _df:
-                _disk_data = json.load(_df)
-            _disk_stats = _disk_data.get("stats", {})
-            if _disk_stats:
-                hs_stats["arms"] = {}
-                _imported_count = 0
-                for _stat_key, _stat_val in _disk_stats.items():
-                    _parts = _stat_key.split("_")
-                    _bot_key = f"{_parts[0]}_{_parts[1]}" if len(_parts) >= 2 else _stat_key
-                    if _bot_key not in hs_stats["arms"]:
-                        hs_stats["arms"][_bot_key] = {"wins": 0, "total": 0}
-                    _d_total = _stat_val.get("total", 0)
-                    _d_wins = _stat_val.get("wins", 0)
-                    hs_stats["arms"][_bot_key]["wins"] += _d_wins
-                    hs_stats["arms"][_bot_key]["total"] += _d_total
-                    if _d_total > 0:
-                        _imported_count += 1
-                hs_stats["meta"] = {"total": sum(v.get("total", 0) for v in hs_stats["arms"].values())}
-                _n_total = hs_stats["meta"]["total"]
-                if _n_total > 0:
-                    _safe_save_json(AI_STATS_FILE, hs_stats)
-                    _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
-                    log.info(paint(f"✅ IA carregada! {_n_total} amostras | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
-                    print(f">>> IA: Treinada! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome})", flush=True)
-    except Exception as _fe:
-        log.debug(f"Arquivo IA não disponível: {_fe}")
-
-    _n_total = hs_stats["meta"].get("total", 0)
-    if _n_total == 0:
-        log.info(paint("🌱 IA H&S: Sem stats salvos — iniciando do zero. Dashboard vai treinar em background.", C.Y))
-        print(">>> IA: Iniciando do zero — dashboard treina em background.", flush=True)
+    if _need_retrain_bot():
+        # Nova semana ISO → limpar stats e retreinar do zero
+        log.info(paint("=" * 50, C.Y))
+        log.info(paint("🔄 RETRAIN SEMANAL — Nova semana detectada!", C.Y))
+        log.info(paint("   Limpando IA antiga e retreinando do zero...", C.Y))
+        log.info(paint("=" * 50, C.Y))
+        hs_stats = {"meta": {"total": 0}, "arms": {}}
+        # Remover stats antigos do disco
+        try:
+            if os.path.exists(AI_STATS_FILE):
+                os.remove(AI_STATS_FILE)
+                log.info(paint("[RETRAIN] Stats antigos removidos do disco", C.Y))
+        except Exception:
+            pass
+        # Treinar com histórico (busca N_M1 candles de cada ativo — backtest + learn)
+        hs_stats = _train_ia_from_history(bx, hs_stats)
+    else:
+        # Mesma semana → carregar stats existentes
+        hs_stats = _safe_load_json(AI_STATS_FILE)
+        _n_total = hs_stats.get("meta", {}).get("total", 0)
+        if _n_total > 0:
+            _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
+            log.info(paint(f"✅ IA carregada do disco! {_n_total} amostras | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
+            print(f">>> IA: Treinada! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome})", flush=True)
+        else:
+            # Sem stats salvos — treinar com histórico
+            log.info(paint("🌱 Sem stats salvos — treinando IA com dados históricos...", C.Y))
+            hs_stats = _train_ia_from_history(bx, hs_stats)
 
     log.info("=" * 60)
     log.info(paint(f"🚀 WS TRADER — Cabeça e Ombros (H&S) ({_BROKER_LABEL})", C.G))
@@ -848,8 +1149,8 @@ def main():
     log.info(f"✅ Corretora: {_BROKER_LABEL} ({BROKER_TYPE})")
     log.info(f"✅ Expiração: {EXP_FIXA} minuto(s)")
     log.info(f"✅ Horário: 1:30 às 18:00")
-    log.info(f"✅ Sinais: Dashboard IA H&S (http://localhost:8899)")
-    log.info(f"✅ Retrain: 1x por semana (compartilhado entre corretoras)")
+    log.info(f"✅ Sinais: Detecção LOCAL (direto da corretora, sem delay)")
+    log.info(f"✅ Retrain: IA aprende em tempo real com cada trade")
     log.info(f"✅ IA: ATIVA — aprendendo padrões H&S")
     log.info("=" * 60)
 
@@ -875,7 +1176,7 @@ def main():
     _current_day = _date_cls.today()
     _last_trade_time = 0.0
 
-    print(f"\n>>> IA: Iniciado | Exp: {EXP_FIXA}min | Sinais: Dashboard", flush=True)
+    print(f"\n>>> IA: Iniciado | Exp: {EXP_FIXA}min | Sinais: Detecção LOCAL", flush=True)
 
     # Exportar stats iniciais para o UI
     reversal_ai.save_stats_to_disk()
@@ -953,19 +1254,13 @@ def main():
                     time.sleep(min(s + 1, 30))
                     continue
 
-            # ═══ ESPERAR SEGUNDO :45 PARA BUSCAR SINAIS ═══
-            log.info(paint(f"\n⏰ Esperando :{ANALYZE_AT_SECOND:02d} para buscar sinais do dashboard...", C.B))
+            # ═══ ESPERAR SEGUNDO :45 PARA SCANEAR H&S ═══
+            log.info(paint(f"\n⏰ Esperando :{ANALYZE_AT_SECOND:02d} para scanear H&S direto da corretora...", C.B))
             wait_until_second(ANALYZE_AT_SECOND)
 
-            # ═══ BUSCAR SINAIS DO DASHBOARD (FONTE ÚNICA DE H&S) ═══
-            if not _is_dashboard_running():
-                log.warning(paint("⚠️ Dashboard offline — tentando reiniciar...", C.Y))
-                _ensure_dashboard_running()
-                time.sleep(5)
-                continue
-
-            log.info(paint("\n🔍 Buscando sinais do Dashboard IA H&S...", C.B))
-            best_trade, best_any = escolher_melhor_setup_dashboard(cooldown)
+            # ═══ DETECÇÃO LOCAL H&S — DIRETO DA CORRETORA ═══
+            log.info(paint("\n🔍 Scaneando H&S em tempo real (direto da corretora)...", C.B))
+            best_trade, best_any = escolher_melhor_setup_local(bx, cooldown, hs_stats)
 
             if not best_trade:
                 if best_any:
@@ -975,45 +1270,35 @@ def main():
                         C.Y
                     ))
                 else:
-                    log.info(paint("  ⏸️ Nenhum sinal no dashboard. Próximo candle.", C.Y))
+                    log.info(paint("  ⏸️ Nenhum H&S recente. Próximo candle.", C.Y))
                 s = seconds_to_next(TF_M1)
                 time.sleep(min(s + 1, 30))
                 continue
 
-            # ═══ H&S ENCONTRADO NO DASHBOARD → ENTRAR ═══
+            # ═══ H&S ENCONTRADO → ENTRAR ═══
             sc, ativo, setup, atr_val = best_trade
             direcao = setup["dir"]
             pat_type = setup["type"]
 
-            # ═══ IA: PROBABILIDADE DO DASHBOARD (FONTE PRINCIPAL) ═══
-            # Dashboard IA é a fonte real — analisa 900 velas com precisão
-            dashboard_prob = setup.get("confidence", 50.0) / 100.0
+            # ═══ IA: PROBABILIDADE LOCAL — IGUAL AO DASHBOARD ═══
+            pat_data = setup.get("pattern", setup)
+            ia_prob = ai_predict_hs(ativo, pat_data, hs_stats)
+            _arm_key = f"{ativo}_{pat_type}_{setup.get('mode', 'classic')}"
+            ia_samples = hs_stats.get("arms", {}).get(_arm_key, {}).get("total", 0)
 
-            # Bot IA: secundária — só filtra quando tem dados suficientes
-            pred = ai_predict(ativo, setup, hs_stats)
-            bot_prob = pred["prob"]
-            ia_samples = pred["n_arm"]
-            ia_conf = pred["conf"]
-
-            # ═══ PROBABILIDADE COMBINADA: Dashboard é a fonte principal ═══
-            # Se bot tem amostras, combina 70% dashboard + 30% bot
-            # Se bot não tem amostras, usa 100% dashboard
-            if ia_samples >= AI_MIN_SAMPLES:
-                ia_prob = dashboard_prob * 0.7 + bot_prob * 0.3
-            else:
-                ia_prob = dashboard_prob  # Dashboard é a fonte real
+            # Se IA sem dados: 0.5 (neutro)
+            if ia_samples < AI_MIN_SAMPLES:
+                ia_prob = 0.5
 
             log.info(paint(
-                f"  🤖 IA H&S: {ativo} | prob_final={ia_prob:.2f} | "
-                f"dashboard={dashboard_prob:.2f} | bot={bot_prob:.2f} | amostras={ia_samples}",
+                f"  🤖 IA H&S: {ativo} | prob={ia_prob:.2f} | amostras={ia_samples}",
                 C.B
             ))
 
-            # Bloqueio: só bloqueia se AMBAS as IAs concordam que é ruim
-            if ia_samples >= AI_MIN_SAMPLES and ia_prob < AI_MIN_PROB and dashboard_prob < 0.6:
+            # Bloqueio: só se IA tem dados suficientes E prob é ruim
+            if ia_samples >= AI_MIN_SAMPLES and ia_prob < AI_MIN_PROB:
                 log.info(paint(
-                    f"  🚫 IA BLOQUEOU entrada: {ativo} {direcao} | "
-                    f"prob_final={ia_prob:.2f} | dashboard={dashboard_prob:.2f} | bot={bot_prob:.2f}",
+                    f"  🚫 IA BLOQUEOU entrada: {ativo} {direcao} | prob={ia_prob:.2f}",
                     C.Y
                 ))
                 print(f">>> IA: Entrada BLOQUEADA {ativo} {direcao} prob={ia_prob:.2f}", flush=True)
@@ -1078,7 +1363,7 @@ def main():
 
             # ═══ ENTRAR IMEDIATAMENTE (na seta do dashboard) ═══
             _log_live_trade(ativo, direcao, None, None, stake,
-                            confidence=dashboard_prob * 100, status="entry")
+                            confidence=ia_prob * 100, status="entry")
 
             op = enviar_ordem(bx, ativo, direcao, stake)
             if not op:
@@ -1090,10 +1375,10 @@ def main():
             op_type, op_id = op
             log.info(paint(
                 f"  ✅ ENTRADA: {ativo} {direcao} | Stake={stake:.2f} | Tipo={op_type} | "
-                f"Dashboard={dashboard_prob:.0%} | Final={ia_prob:.0%}",
+                f"IA={ia_prob:.0%} | Amostras={ia_samples}",
                 C.G if direcao == "CALL" else C.R
             ))
-            print(f">>> IA: Entrada {ativo} {direcao} stake={stake:.2f} dashboard={dashboard_prob:.2f}", flush=True)
+            print(f">>> IA: Entrada {ativo} {direcao} stake={stake:.2f} prob={ia_prob:.2f}", flush=True)
 
             # ═══ AGUARDAR RESULTADO ═══
             res = wait_result(bx, op_type, op_id)
@@ -1114,26 +1399,7 @@ def main():
                 print(f">>> RESULTADO: EMPATE {ativo}", flush=True)
 
             _log_live_trade(ativo, direcao, res, None, stake,
-                            confidence=dashboard_prob * 100, status=_live_status)
-
-            # ── Notificar dashboard em tempo real (POST) ──
-            if _live_status in ("win", "loss"):
-                try:
-                    _post_data = json.dumps({
-                        "ativo": ativo, "dir": direcao, "result": _live_status,
-                        "price": 0, "stake": stake, "profit": res,
-                        "time": datetime.now().strftime("%H:%M"),
-                        "ts": time.time(), "broker": _broker_suffix,
-                    }).encode("utf-8")
-                    _req = urllib.request.Request(
-                        f"{DASHBOARD_URL.rsplit('/api/', 1)[0]}/api/trade",
-                        data=_post_data,
-                        headers={"Content-Type": "application/json"},
-                        method="POST",
-                    )
-                    urllib.request.urlopen(_req, timeout=3)
-                except Exception:
-                    pass  # dashboard pode não estar rodando
+                            confidence=ia_prob * 100, status=_live_status)
 
             # ── IA: aprender com o resultado ──
             ai_update(ativo, setup, res, hs_stats)
