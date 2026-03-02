@@ -15,13 +15,38 @@ if sys.version_info >= (3, 10):
 # ===== FIX: PyArmor + urllib3 SSL PermissionError =====
 # PyArmor intercepta operações de arquivo e redireciona para
 # \\?\Volume{...}\virtual_file.log — que é read-only.
-# Pré-inicializar SSL/certifi ANTES de importar requests resolve isso.
+# requests/adapters.py chama create_urllib3_context() no nível do módulo
+# mas só trata ImportError, não PermissionError.
+# Monkey-patch + pré-importação via runtime_hook_ssl.py resolve.
+# Este bloco é fallback caso o runtime hook não execute.
 try:
     import ssl as _ssl_pre
     import certifi as _certifi_pre
     os.environ.setdefault('SSL_CERT_FILE', _certifi_pre.where())
     os.environ.setdefault('REQUESTS_CA_BUNDLE', _certifi_pre.where())
-    _ssl_pre.create_default_context()  # força cache do contexto SSL
+    os.environ.pop('SSLKEYLOGFILE', None)
+    _ssl_pre.create_default_context()
+    # Monkey-patch urllib3 create_urllib3_context para capturar PermissionError
+    try:
+        import urllib3.util.ssl_ as _u3ssl
+        if not hasattr(_u3ssl, '_wstrader_patched'):
+            _orig_fn = _u3ssl.create_urllib3_context
+            def _safe_fn(*a, **kw):
+                try:
+                    return _orig_fn(*a, **kw)
+                except PermissionError:
+                    ctx = _ssl_pre.SSLContext(_ssl_pre.PROTOCOL_TLS_CLIENT)
+                    ctx.check_hostname = True
+                    ctx.verify_mode = _ssl_pre.CERT_REQUIRED
+                    try:
+                        ctx.load_verify_locations(_certifi_pre.where())
+                    except Exception:
+                        pass
+                    return ctx
+            _u3ssl.create_urllib3_context = _safe_fn
+            _u3ssl._wstrader_patched = True
+    except Exception:
+        pass
 except Exception:
     pass
 
