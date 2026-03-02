@@ -1903,15 +1903,38 @@ def chat_screen(page: ft.Page, email: str, password: str):
                 return False
         if not _port_open(8899):
             try:
-                dash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_hs_ia.py")
-                if os.path.exists(dash_path):
-                    subprocess.Popen(
-                        [sys.executable, dash_path],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                    )
-                    time.sleep(2)
+                if getattr(sys, 'frozen', False):
+                    # Modo EXE: rodar dashboard em thread (sys.executable é o EXE, não Python)
+                    def _run_dashboard_inprocess():
+                        try:
+                            from dashboard_hs_ia import main as dash_main
+                            import argparse
+                            # Monkey-patch argparse para não ler sys.argv do EXE
+                            _orig_parse = argparse.ArgumentParser.parse_args
+                            def _fake_parse(self, args=None, namespace=None):
+                                return _orig_parse(self, args=[], namespace=namespace)
+                            argparse.ArgumentParser.parse_args = _fake_parse
+                            try:
+                                dash_main()
+                            finally:
+                                argparse.ArgumentParser.parse_args = _orig_parse
+                        except Exception as ex:
+                            logger.error(f"Erro dashboard in-process: {ex}")
+                    import threading as _th
+                    _dt = _th.Thread(target=_run_dashboard_inprocess, daemon=True)
+                    _dt.start()
+                    time.sleep(3)
+                else:
+                    # Modo dev: rodar como subprocesso normal
+                    dash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_hs_ia.py")
+                    if os.path.exists(dash_path):
+                        subprocess.Popen(
+                            [sys.executable, dash_path],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                        )
+                        time.sleep(2)
             except Exception as ex:
                 logger.error(f"Erro ao iniciar dashboard: {ex}")
 

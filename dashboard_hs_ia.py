@@ -2011,8 +2011,12 @@ def main():
     t2 = threading.Thread(target=_quick_candle_thread, daemon=True)
     t2.start()
     
-    # HTTP server
-    server = HTTPServer(("0.0.0.0", args.port), HSHandler)
+    # HTTP server com reuse_address para evitar travamento por TIME_WAIT
+    class ReusableHTTPServer(HTTPServer):
+        allow_reuse_address = True
+        allow_reuse_port = True
+    
+    server = ReusableHTTPServer(("0.0.0.0", args.port), HSHandler)
     log.info(f"Dashboard iniciado na porta {args.port}")
     
     try:
