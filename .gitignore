@@ -9,3 +9,72 @@
 !.gitignore
 !README.md
 !version.json
+!pricing.html
+
+# Protected build (código distribuído)
+!protected_build/
+!protected_build/**
+
+# Pastas de API
+!bullexapi/
+!bullexapi/**
+!casatraderapi/
+!casatraderapi/**
+!iqoptionapi/
+!iqoptionapi/**
+
+# Agents
+!agents/
+!agents/**
+
+# Imagens
+!Img/
+!Img/**
+
+# Backend
+!backend/
+!backend/**
+
+# Arquivos essenciais
+!dashboard_hs_ia.py
+!WS_AUTO_AI_BULLEX.py
+!TelaPrincipal.py
+!Login_Screen.py
+!trading_bot.py
+!operations_manager.py
+!ws_reversal_ai.py
+!ws_structure_map.py
+!ws_structure_patterns.py
+!ws_confluence_brain.py
+!ws_candle_color_ai.py
+!ws_data_manager.py
+!ws_auto_ai_engine.py
+!ia_autonomous_brain.py
+!final_entry_guard.py
+!config_keys.py
+!license_manager.py
+!license_activation_screen.py
+!backend_server.py
+!backend_license_endpoint.py
+!chat_screen_new.py
+!tutorial_screen.py
+!simple_sr_strategy.py
+!tutorial.html
+!index.html
+!version_info.txt
+!installer.nsi
+!"WS Trader.spec"
+
+# Ignorar cache e build
+__pycache__/
+*.pyc
+build/
+dist/
+*.egg-info/
+.env
+**/credentials.json
+credentials.json
+pyarmor-regcode*
+config_keys.py
+pyarmor_runtime_009928/
+protected_build/pyarmor_runtime_009928/

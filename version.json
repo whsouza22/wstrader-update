@@ -1,5 +1,5 @@
 {
-  "version": "5.2",
-  "changelog": "v5.2 - Warm-up 5min ao ligar + Guard preço longe do Ombro D (não entra se já caiu) + Horário 6h-18h + Scan :45 entrada :00",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v5.2/WsTrader_Setup_5.2.exe"
+  "version": "5.2.5",
+  "changelog": "v5.2.5 - Signal scan a cada 1min (independente do grafico) + IA training fallback disco + credenciais limpas",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v5.2.5/WsTrader_Setup_5.2.5.exe"
 }

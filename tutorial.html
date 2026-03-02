@@ -1,0 +1,1268 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WSTrader — Tutorial Completo</title>
+  <meta name="description" content="Tutorial completo do WSTrader: aprenda a usar cada tela, conectar corretoras, configurar a IA e operar de forma autônoma." />
+  <meta name="theme-color" content="#050508" />
+  <link rel="icon" href="logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#050508;
+      --bg2:#0a0c14;
+      --bg3:#0e1018;
+      --surface:rgba(255,255,255,.04);
+      --surface2:rgba(255,255,255,.07);
+      --surface3:rgba(255,255,255,.10);
+      --line:rgba(255,255,255,.08);
+      --line2:rgba(255,255,255,.14);
+      --text:#e8ecf4;
+      --muted:rgba(232,236,244,.60);
+      --brand:#ff6a00;
+      --brand2:#ff9d2b;
+      --brand3:#ffb84d;
+      --cyan:#00d4ff;
+      --cyan2:rgba(0,212,255,.15);
+      --purple:#8b5cf6;
+      --green:#22c55e;
+      --radius:16px;
+      --shadow:0 20px 60px rgba(0,0,0,.55);
+      --shadow2:0 30px 80px rgba(0,0,0,.65);
+      --glow:rgba(255,106,0,.12);
+      --glow2:rgba(0,212,255,.08);
+    }
+
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    html,body{height:100%}
+    body{
+      font-family:'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+      color:var(--text);
+      background:var(--bg);
+      overflow-x:hidden;
+      -webkit-font-smoothing:antialiased;
+    }
+
+    body::before{
+      content:"";position:fixed;inset:0;
+      background-image:
+        linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+      background-size:60px 60px;
+      mask-image:radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 70%);
+      -webkit-mask-image:radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 70%);
+      pointer-events:none;z-index:0;
+    }
+
+    .ambientOrb{position:fixed;border-radius:50%;pointer-events:none;filter:blur(100px);opacity:.4;z-index:0}
+    .orb1{width:600px;height:600px;top:-10%;left:-8%;background:var(--glow)}
+    .orb2{width:500px;height:500px;top:30%;right:-12%;background:var(--glow2)}
+    .orb3{width:400px;height:400px;bottom:5%;left:15%;background:rgba(139,92,246,.06)}
+
+    a{color:inherit;text-decoration:none}
+    img{max-width:100%;display:block}
+    button{font:inherit;color:inherit}
+
+    .wrap{max-width:900px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+    .section{padding:80px 0}
+    section[id]{scroll-margin-top:92px}
+
+    /* === TOPBAR === */
+    .topbar{
+      position:sticky;top:0;z-index:60;
+      background:rgba(5,5,8,.80);
+      backdrop-filter:blur(20px) saturate(1.4);
+      -webkit-backdrop-filter:blur(20px) saturate(1.4);
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .topbar .row{
+      display:grid;
+      grid-template-columns:minmax(200px,1fr) auto minmax(200px,1fr);
+      align-items:center;gap:18px;padding:16px 0;
+    }
+    .brand{display:flex;align-items:center;gap:12px}
+    .logoImg{height:40px;width:auto}
+    .brandName{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:2px;text-transform:uppercase;font-size:15px;color:var(--text)}
+    .brandFirst{font-size:20px;color:var(--brand);font-weight:700}
+
+    .nav{
+      display:flex;gap:2px;align-items:center;
+      background:rgba(255,255,255,.04);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:999px;padding:4px;
+      justify-self:center;
+    }
+    .nav a{
+      padding:8px 16px;border-radius:999px;
+      font-size:13px;font-weight:600;
+      color:var(--muted);transition:all .2s ease;
+    }
+    .nav a:hover{color:var(--text);background:rgba(255,255,255,.08)}
+
+    .actions{display:flex;gap:10px;align-items:center;justify-content:flex-end}
+    .langBtn{
+      width:28px;height:20px;border-radius:4px;cursor:pointer;
+      border:1px solid rgba(255,255,255,.12);object-fit:cover;
+      transition:opacity .2s;opacity:.7;
+    }
+    .langBtn:hover{opacity:1}
+
+    /* === BUTTONS === */
+    .btn{
+      border:1px solid var(--line2);background:var(--surface2);color:var(--text);
+      padding:10px 20px;border-radius:12px;font-weight:700;font-size:13px;
+      display:inline-flex;align-items:center;gap:10px;
+      transition:all .25s ease;cursor:pointer;white-space:nowrap;
+      position:relative;overflow:hidden;
+    }
+    .btn:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.22)}
+    .btn.primary{
+      border:none;
+      background:linear-gradient(135deg,var(--brand),var(--brand2));
+      color:#050508;font-weight:800;
+      box-shadow:0 0 30px rgba(255,106,0,.25),0 8px 30px rgba(255,106,0,.15);
+    }
+    .btn.primary:hover{box-shadow:0 0 40px rgba(255,106,0,.35),0 12px 40px rgba(255,106,0,.20)}
+
+    /* === HERO TUTORIAL === */
+    .tutHero{
+      padding:100px 0 60px;text-align:center;position:relative;
+    }
+    .tutHero::before{
+      content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);
+      width:800px;height:600px;
+      background:radial-gradient(circle,rgba(255,106,0,.08) 0%,transparent 70%);
+      pointer-events:none;
+    }
+    .tutHero .eyebrow{
+      font-family:'Space Grotesk',sans-serif;
+      font-size:12px;letter-spacing:.3em;
+      text-transform:uppercase;color:var(--brand2);font-weight:600;
+      display:inline-flex;align-items:center;gap:10px;
+    }
+    .tutHero .eyebrow::before{
+      content:"";width:24px;height:1px;
+      background:linear-gradient(90deg,var(--brand),transparent);
+    }
+    .tutHero h1{
+      font-family:'Space Grotesk',sans-serif;
+      font-size:clamp(32px,4.5vw,56px);
+      line-height:1.1;letter-spacing:-.03em;font-weight:700;
+      margin:20px 0 16px;
+    }
+    .tutHero h1 .accent{
+      color:transparent;
+      background:linear-gradient(135deg,var(--brand),var(--brand2),var(--brand3));
+      -webkit-background-clip:text;background-clip:text;
+    }
+    .tutHero .lead{color:var(--muted);font-size:16px;line-height:1.8;max-width:60ch;margin:0 auto}
+
+    /* === SIDEBAR NAV (TABLE OF CONTENTS) === */
+    .tocBox{
+      position:sticky;top:100px;
+      padding:24px;border-radius:20px;
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.02);
+      backdrop-filter:blur(16px);
+    }
+    .tocBox h4{
+      font-family:'Space Grotesk',sans-serif;
+      font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+      color:var(--brand2);margin-bottom:16px;font-weight:700;
+    }
+    .tocBox a{
+      display:flex;align-items:center;gap:10px;
+      padding:10px 14px;border-radius:12px;
+      font-size:13px;font-weight:600;color:var(--muted);
+      transition:all .2s ease;margin-bottom:4px;
+    }
+    .tocBox a:hover{color:var(--text);background:rgba(255,255,255,.06)}
+    .tocBox a .tocNum{
+      width:24px;height:24px;border-radius:8px;
+      display:inline-flex;align-items:center;justify-content:center;
+      background:rgba(255,106,0,.10);border:1px solid rgba(255,106,0,.15);
+      font-family:'Space Grotesk',sans-serif;font-size:11px;font-weight:700;
+      color:var(--brand2);flex:0 0 auto;
+    }
+
+    /* === TUTORIAL LAYOUT === */
+    .tutLayout{
+      display:grid;grid-template-columns:220px 1fr;
+      gap:40px;align-items:start;
+    }
+
+    /* === TUTORIAL STEP === */
+    .tutStep{
+      margin-bottom:60px;padding-bottom:60px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .tutStep:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+
+    .stepHeader{
+      display:flex;align-items:center;gap:16px;margin-bottom:24px;
+    }
+    .stepNum{
+      width:48px;height:48px;border-radius:16px;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,rgba(255,106,0,.15),rgba(0,212,255,.08));
+      border:1px solid rgba(255,106,0,.20);
+      font-family:'Space Grotesk',sans-serif;font-weight:800;font-size:20px;
+      color:var(--brand2);flex:0 0 auto;
+    }
+    .stepHeader h2{
+      font-family:'Space Grotesk',sans-serif;
+      font-size:clamp(20px,2.5vw,28px);font-weight:700;
+      letter-spacing:-.02em;
+    }
+
+    .tutText{
+      color:var(--muted);font-size:15px;line-height:1.85;margin-bottom:20px;
+    }
+    .tutText strong{color:var(--text)}
+
+    /* === SCREENSHOT FRAME === */
+    .screenshotFrame{
+      border-radius:20px;overflow:hidden;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(255,255,255,.02);
+      margin:24px 0;
+      box-shadow:0 20px 60px rgba(0,0,0,.40),0 0 40px rgba(255,106,0,.06);
+      position:relative;
+    }
+    .screenshotFrame::before{
+      content:"";position:absolute;top:0;left:0;right:0;height:2px;
+      background:linear-gradient(90deg,var(--brand),var(--cyan),transparent);
+      opacity:.6;
+    }
+    .screenshotFrame img{
+      width:100%;display:block;
+    }
+    .screenshotPlaceholder{
+      width:100%;min-height:300px;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,rgba(255,106,0,.04),rgba(0,212,255,.02));
+      color:var(--muted);font-size:14px;font-weight:600;
+      gap:10px;
+    }
+    .screenshotPlaceholder svg{width:24px;height:24px;color:var(--brand2);opacity:.6}
+
+    /* === TIP BOX === */
+    .tipBox{
+      display:flex;gap:16px;align-items:flex-start;
+      padding:18px 22px;border-radius:16px;
+      border:1px solid rgba(255,106,0,.15);
+      background:rgba(255,106,0,.04);
+      margin:20px 0;font-size:14px;line-height:1.75;color:var(--muted);
+    }
+    .tipBox strong{color:var(--brand2)}
+    .tipBox .tipIco{
+      width:32px;height:32px;border-radius:10px;flex:0 0 auto;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,rgba(255,106,0,.15),rgba(255,157,43,.08));
+      border:1px solid rgba(255,106,0,.18);
+    }
+    .tipBox .tipIco svg{width:16px;height:16px;color:var(--brand2)}
+
+    /* === WARNING BOX === */
+    .warnBox{
+      display:flex;gap:16px;align-items:flex-start;
+      padding:18px 22px;border-radius:16px;
+      border:1px solid rgba(0,212,255,.15);
+      background:rgba(0,212,255,.04);
+      margin:20px 0;font-size:14px;line-height:1.75;color:var(--muted);
+    }
+    .warnBox strong{color:var(--cyan)}
+    .warnBox .warnIco{
+      width:32px;height:32px;border-radius:10px;flex:0 0 auto;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,rgba(0,212,255,.12),rgba(139,92,246,.08));
+      border:1px solid rgba(0,212,255,.18);
+    }
+    .warnBox .warnIco svg{width:16px;height:16px;color:var(--cyan)}
+
+    /* === ETAPA HEADER (Step 7 sub-sections) === */
+    .etapaHeader{
+      display:flex;align-items:center;gap:14px;
+      margin:28px 0 16px;
+    }
+    .etapaHeader .etapaIco{
+      width:36px;height:36px;border-radius:12px;flex:0 0 auto;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,rgba(255,106,0,.15),rgba(0,212,255,.08));
+      border:1px solid rgba(255,106,0,.20);
+    }
+    .etapaHeader .etapaIco svg{width:18px;height:18px;color:var(--brand2)}
+    .etapaHeader h3{
+      font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--brand2);margin:0;
+    }
+
+    /* === FEATURE LIST === */
+    .featureList{
+      display:grid;gap:10px;margin:20px 0;
+    }
+    .featureItem{
+      display:flex;align-items:flex-start;gap:12px;
+      padding:14px 18px;border-radius:14px;
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.02);
+      font-size:14px;line-height:1.7;color:var(--muted);
+    }
+    .featureItem .fIcon{
+      width:28px;height:28px;border-radius:8px;flex:0 0 auto;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,rgba(255,106,0,.12),rgba(255,157,43,.08));
+      margin-top:1px;
+    }
+    .featureItem .fIcon svg{width:14px;height:14px;color:var(--brand2)}
+    .featureItem strong{color:var(--text)}
+
+    /* === INLINE BADGE === */
+    .iBadge{
+      display:inline-flex;align-items:center;gap:6px;
+      padding:4px 12px;border-radius:999px;
+      border:1px solid rgba(255,106,0,.15);
+      background:rgba(255,106,0,.06);
+      font-size:12px;font-weight:700;color:var(--brand2);
+      vertical-align:middle;
+    }
+
+    /* === DIVIDER === */
+    .divider{
+      height:1px;
+      background:linear-gradient(90deg,transparent,rgba(255,255,255,.08) 30%,rgba(255,255,255,.08) 70%,transparent);
+    }
+
+    /* === FOOTER === */
+    footer{padding:40px 0 48px;border-top:1px solid rgba(255,255,255,.06);color:var(--muted)}
+    .foot{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+    .small{font-size:12px;color:rgba(232,236,244,.40)}
+
+    /* === REVEAL ANIMATION === */
+    [data-reveal]{
+      opacity:0;transform:translateY(22px);
+      transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1);
+      transition-delay:var(--delay,0s);
+    }
+    [data-reveal].is-visible{opacity:1;transform:translateY(0)}
+
+    /* === HAMBURGER BUTTON === */
+    .menuBtn{
+      display:none;background:none;border:none;padding:6px;
+      cursor:pointer;z-index:70;position:relative;
+    }
+    .menuBtn span{
+      display:block;width:22px;height:2px;background:var(--text);
+      border-radius:2px;transition:all .3s ease;
+      margin:5px 0;
+    }
+    .menuBtn.active span:nth-child(1){transform:rotate(45deg) translate(5px,5px)}
+    .menuBtn.active span:nth-child(2){opacity:0}
+    .menuBtn.active span:nth-child(3){transform:rotate(-45deg) translate(5px,-5px)}
+
+    /* === MOBILE MENU OVERLAY === */
+    .mobileMenu{
+      position:fixed;inset:0;z-index:55;
+      background:rgba(5,5,8,.95);
+      backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+      opacity:0;pointer-events:none;
+      transition:opacity .3s ease;
+    }
+    .mobileMenu.open{opacity:1;pointer-events:auto}
+    .mobileMenu a{
+      font-family:'Space Grotesk',sans-serif;
+      font-size:20px;font-weight:700;color:var(--muted);
+      padding:14px 32px;border-radius:16px;
+      transition:all .2s ease;
+    }
+    .mobileMenu a:hover{color:var(--text);background:rgba(255,255,255,.06)}
+    .mobileMenu a.active{color:var(--brand2)}
+    .mobileMenu .btn.primary{
+      margin-top:16px;padding:14px 32px;font-size:15px;
+    }
+    .mobileMenu .langBtnMobile{
+      width:36px;height:26px;border-radius:6px;cursor:pointer;
+      border:1px solid rgba(255,255,255,.12);object-fit:cover;
+      margin-top:12px;opacity:.7;transition:opacity .2s;
+    }
+    .mobileMenu .langBtnMobile:hover{opacity:1}
+
+    /* === RESPONSIVE === */
+    @media(max-width:900px){
+      .tutLayout{grid-template-columns:1fr}
+      .tocBox{position:relative;top:0}
+      .nav{display:none}
+      .menuBtn{display:block}
+    }
+    @media(max-width:720px){
+      .section{padding:50px 0}
+      .wrap{padding:0 18px}
+      .topbar .row{grid-template-columns:1fr auto;gap:10px;padding:12px 0}
+      .logoImg{height:32px}
+      .brandName{font-size:13px;letter-spacing:1px}
+      .actions{gap:6px}
+      .actions .btn.primary{padding:8px 14px;font-size:12px}
+      .langBtn{width:24px;height:17px}
+      .tutHero{padding:60px 0 40px}
+      .tutHero h1{font-size:clamp(26px,7vw,36px)}
+      .tutStep{margin-bottom:40px;padding-bottom:40px}
+      .stepNum{width:40px;height:40px;font-size:16px;border-radius:12px}
+      .screenshotPlaceholder{min-height:200px}
+      .foot{flex-direction:column;text-align:center;gap:18px}
+    }
+    @media(max-width:380px){
+      .wrap{padding:0 14px}
+    }
+    @media(prefers-reduced-motion:reduce){
+      [data-reveal]{opacity:1;transform:none;transition:none}
+      .cursorDot,.cursorRing{display:none!important}
+    }
+
+    /* === CUSTOM MODERN CURSOR === */
+    .cursorDot{
+      position:fixed;top:0;left:0;width:8px;height:8px;
+      background:var(--brand);border-radius:50%;
+      pointer-events:none;z-index:9999;
+      transform:translate(-50%,-50%);
+      transition:width .2s ease,height .2s ease,background .2s ease;
+      mix-blend-mode:screen;
+    }
+    .cursorRing{
+      position:fixed;top:0;left:0;width:40px;height:40px;
+      border:2px solid rgba(255,106,0,.35);
+      border-radius:50%;pointer-events:none;z-index:9998;
+      transform:translate(-50%,-50%);
+      transition:width .3s ease,height .3s ease,border-color .3s ease,background .3s ease;
+    }
+    .cursorDot.hovering{
+      width:14px;height:14px;
+      background:var(--brand2);
+      box-shadow:0 0 20px rgba(255,106,0,.5),0 0 40px rgba(255,106,0,.2);
+    }
+    .cursorRing.hovering{
+      width:56px;height:56px;
+      border-color:rgba(255,106,0,.5);
+      background:rgba(255,106,0,.06);
+    }
+    .cursorDot.clicking{
+      width:5px;height:5px;
+      background:#fff;
+    }
+    .cursorRing.clicking{
+      width:30px;height:30px;
+      border-color:rgba(255,255,255,.4);
+    }
+    @media(max-width:1000px){
+      .cursorDot,.cursorRing{display:none!important}
+    }
+    @media(pointer:coarse){
+      .cursorDot,.cursorRing{display:none!important}
+    }
+  </style>
+</head>
+
+<body>
+  <div class="ambientOrb orb1" aria-hidden="true"></div>
+  <div class="ambientOrb orb2" aria-hidden="true"></div>
+  <div class="ambientOrb orb3" aria-hidden="true"></div>
+
+  <!-- === TOPBAR === -->
+  <header class="topbar">
+    <div class="wrap">
+      <div class="row">
+        <a class="brand" href="index.html" aria-label="WSTrader">
+          <img class="logoImg" src="logo.png" alt="Logo WSTrader" />
+          <span class="brandName"><span class="brandFirst">W</span>STRADER</span>
+        </a>
+        <nav class="nav" aria-label="Navegacao">
+          <a href="index.html" data-i18n="nav.home">Início</a>
+          <a href="pricing.html" data-i18n="nav.pricing">Preço</a>
+          <a href="#" style="color:var(--brand2)" data-i18n="nav.tutorial">Tutorial</a>
+          <a href="index.html#download" data-i18n="nav.download">Baixar</a>
+        </nav>
+
+        <div class="actions">
+          <img class="langBtn" id="langBtn"
+               src="https://flagcdn.com/w40/us.png"
+               alt="Switch language"
+               title="English">
+          <a class="btn primary" href="https://github.com/whsouza22/wstrader-update/releases/latest">Download</a>
+          <button class="menuBtn" id="menuBtn" aria-label="Menu">
+            <span></span><span></span><span></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- === MOBILE MENU === -->
+  <div class="mobileMenu" id="mobileMenu">
+    <a href="index.html" data-i18n="nav.home">Início</a>
+    <a href="pricing.html" data-i18n="nav.pricing">Preço</a>
+    <a href="#" class="active" data-i18n="nav.tutorial">Tutorial</a>
+    <a href="index.html#download" data-i18n="nav.download">Baixar</a>
+    <a class="btn primary" href="https://github.com/whsouza22/wstrader-update/releases/latest" data-i18n="nav.dl">Download</a>
+    <img class="langBtnMobile" id="langBtnMobile"
+         src="https://flagcdn.com/w40/us.png"
+         alt="Switch language"
+         title="English">
+  </div>
+
+  <main>
+    <!-- === HERO === -->
+    <section class="tutHero">
+      <div class="wrap">
+        <p class="eyebrow" data-reveal data-i18n="hero.eyebrow">Tutorial completo</p>
+        <h1 data-reveal style="--delay:.06s" data-i18n-html="hero.title">
+          Aprenda a usar o <span class="accent">WSTrader</span> do zero.
+        </h1>
+        <p class="lead" data-reveal style="--delay:.12s" data-i18n="hero.lead">
+          Guia passo a passo de cada tela do aplicativo. Da conexão com a corretora até a IA operando de forma autônoma.
+        </p>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- === TUTORIAL CONTENT === -->
+    <section class="section">
+      <div class="wrap">
+        <div class="tutLayout">
+
+          <!-- SIDEBAR TABLE OF CONTENTS -->
+          <aside>
+            <div class="tocBox">
+              <h4 data-i18n="toc.title">Índice</h4>
+              <a href="#step1"><span class="tocNum">1</span> <span data-i18n="toc.s1">Tela de Login</span></a>
+              <a href="#step2"><span class="tocNum">2</span> <span data-i18n="toc.s2">Tela Principal</span></a>
+              <a href="#step3"><span class="tocNum">3</span> <span data-i18n="toc.s3">Conectar a Corretora</span></a>
+              <a href="#step4"><span class="tocNum">4</span> <span data-i18n="toc.s4">Configurar Meta e Stop</span></a>
+              <a href="#step5"><span class="tocNum">5</span> <span data-i18n="toc.s5">Ligar a IA</span></a>
+              <a href="#step6"><span class="tocNum">6</span> <span data-i18n="toc.s6">Chat da IA</span></a>
+              <a href="#step7"><span class="tocNum">7</span> <span data-i18n="toc.s7">Dicas e Perguntas</span></a>
+            </div>
+          </aside>
+
+          <!-- TUTORIAL STEPS -->
+          <div>
+
+            <!-- ═══════════ STEP 1: LOGIN ═══════════ -->
+            <div class="tutStep" id="step1" data-reveal>
+              <div class="stepHeader">
+                <div class="stepNum">1</div>
+                <h2 data-i18n="s1.title">Tela de Login</h2>
+              </div>
+
+              <p class="tutText" data-i18n-html="s1.p1">
+                Ao abrir o WSTrader pela primeira vez, você verá a <strong>Tela de Login</strong>. 
+                É aqui que você insere o e-mail e senha da sua corretora para conectar.
+              </p>
+
+              <div class="screenshotFrame">
+                <!-- SUBSTITUIR: Salve a screenshot da tela de login como Img/tutorial_1.png -->
+                <img src="tutorial1_1.png" alt="Tela de Login do WSTrader" 
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"  />
+                <div class="screenshotPlaceholder" style="display:none">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                  Imagem: tutorial_1.png — Tela de Login
+                </div>
+              </div>
+
+              <div class="tipBox">
+                <span class="tipIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+                <div data-i18n-html="s1.tip1">
+                <strong>Importante:</strong> Use o <strong>mesmo e-mail e senha</strong> que você usa para entrar 
+                no site da corretora (IQ Option, Bullex ou CasaTrader). O WSTrader não cria uma conta nova — 
+                ele conecta na sua conta existente.
+                </div>
+              </div>
+
+              <div class="featureList">
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s1.f1"><strong>E-mail:</strong> Deve ser o mesmo que você usa para fazer login no site/app da corretora.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s1.f2"><strong>Senha:</strong> A mesma senha da sua conta na corretora. Ela é usada apenas para conectar e não é armazenada em nenhum servidor.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s1.f3"><strong>Corretora:</strong> Escolha entre IQ Option, Bullex ou CasaTrader. Se tiver conta em mais de uma, o e-mail e senha precisam ser os mesmos em todas.</div>
+                </div>
+              </div>
+
+              <div class="warnBox">
+                <span class="warnIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                <div data-i18n-html="s1.warn1">
+                <strong>Segurança:</strong> Suas credenciais são usadas apenas localmente, no seu computador, 
+                para autenticar com a API da corretora. Nenhum dado é enviado para servidores externos.
+                </div>
+              </div>
+            </div>
+
+            <!-- ═══════════ STEP 2: TELA PRINCIPAL ═══════════ -->
+            <div class="tutStep" id="step2" data-reveal style="--delay:.05s">
+              <div class="stepHeader">
+                <div class="stepNum">2</div>
+                <h2 data-i18n="s2.title">Tela Principal</h2>
+              </div>
+
+              <p class="tutText" data-i18n-html="s2.p1">
+                Após fazer login, você chega na <strong>Tela Principal</strong>. É o painel de controle do WSTrader, 
+                onde você configura tudo e acompanha o desempenho da IA em tempo real.
+              </p>
+
+              <div class="screenshotFrame">
+                <img src="tutorial_2.png" alt="Tela Principal do WSTrader" 
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+                <div class="screenshotPlaceholder" style="display:none">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                  Imagem: tutorial_2.png — Tela Principal
+                </div>
+              </div>
+
+              <p class="tutText" data-i18n="s2.p2">
+                Na tela principal você encontra:
+              </p>
+
+              <div class="featureList">
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s2.f1"><strong>Saldo da conta:</strong> Exibido no topo — mostra o saldo atual da sua conta na corretora (DEMO ou REAL).</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s2.f2"><strong>Meta diária (%):</strong> Defina quanto quer ganhar no dia em porcentagem do saldo. Quando atingir, a IA para sozinha.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s2.f3"><strong>Stop Loss (%):</strong> Limite máximo de perda no dia. A IA para automaticamente se atingir esse valor.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s2.f4"><strong>Valor de entrada (stake):</strong> Valor em dinheiro que a IA usará para cada operação.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s2.f5"><strong>Botão Iniciar/Parar:</strong> Liga ou desliga a IA. Quando ligada, ela começa a analisar o mercado e operar automaticamente.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s2.f6"><strong>Histórico de operações:</strong> Lista com todas as operações do dia — ativo, direção, resultado e lucro/perda.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ═══════════ STEP 3: CONECTAR CORRETORA ═══════════ -->
+            <div class="tutStep" id="step3" data-reveal style="--delay:.05s">
+              <div class="stepHeader">
+                <div class="stepNum">3</div>
+                <h2 data-i18n="s3.title">Conectar a Corretora</h2>
+              </div>
+
+              <p class="tutText" data-i18n-html="s3.p1">
+                O WSTrader suporta <strong>3 corretoras</strong>: IQ Option, Bullex e CasaTrader. 
+                Você precisa ter uma conta cadastrada na corretora antes de conectar.
+              </p>
+
+              <div class="screenshotFrame">
+                <img src="tutorial_3.png" alt="Conectar Corretora" 
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+                <div class="screenshotPlaceholder" style="display:none">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                  Imagem: tutorial_3.png — Conectar Corretora
+                </div>
+              </div>
+
+              <div class="warnBox">
+                <span class="warnIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+                <div data-i18n-html="s3.warn1">
+                <strong>Regra importante — E-mail e senha iguais:</strong><br><br>
+                Se você usa mais de uma corretora, o <strong>e-mail e a senha devem ser os mesmos</strong> em todas elas. 
+                O WSTrader usa as mesmas credenciais para conectar em qualquer corretora selecionada.<br><br>
+                Exemplo: se seu e-mail na IQ Option é <strong>joao@email.com</strong> e a senha é <strong>MinhaS3nha</strong>, 
+                use exatamente o mesmo e-mail e senha na Bullex e CasaTrader.
+                </div>
+              </div>
+
+              <div class="featureList">
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s3.f1"><strong>Passo 1:</strong> Selecione a corretora desejada (IQ Option, Bullex ou CasaTrader).</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s3.f2"><strong>Passo 2:</strong> Digite o e-mail e senha da sua conta na corretora.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s3.f3"><strong>Passo 3:</strong> Escolha o tipo de conta — <strong>DEMO</strong> (dinheiro virtual, para treinar) ou <strong>REAL</strong> (dinheiro de verdade).</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s3.f4"><strong>Passo 4:</strong> Clique em <strong>Conectar</strong>. Aguarde a confirmação (seu saldo aparecerá na tela).</div>
+                </div>
+              </div>
+
+              <div class="tipBox">
+                <span class="tipIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
+                <div data-i18n-html="s3.tip1">
+                <strong>Recomendação:</strong> Comece sempre com a conta <strong>DEMO</strong> para se familiarizar com a plataforma. 
+                Quando estiver confiante, mude para REAL.
+                </div>
+              </div>
+            </div>
+
+            <!-- ═══════════ STEP 4: META E STOP ═══════════ -->
+            <div class="tutStep" id="step4" data-reveal style="--delay:.05s">
+              <div class="stepHeader">
+                <div class="stepNum">4</div>
+                <h2 data-i18n="s4.title">Configurar Meta e Stop</h2>
+              </div>
+
+              <p class="tutText" data-i18n-html="s4.p1">
+                Antes de ligar a IA, configure a <strong>meta diária</strong> e o <strong>stop loss</strong>. 
+                Esses valores controlam quando a IA deve parar de operar.
+              </p>
+
+              <div class="screenshotFrame">
+                <img src="tutorial_4.png" alt="Configurar Meta e Stop" 
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+                <div class="screenshotPlaceholder" style="display:none">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                  Imagem: tutorial_4.png — Configurar Meta e Stop
+                </div>
+              </div>
+
+              <div class="featureList">
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s4.f1"><strong>Meta Diária (%):</strong> Porcentagem do seu saldo que deseja ganhar no dia. Exemplo: 5% de R$1.000 = a IA para ao lucrar R$50.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s4.f2"><strong>Stop Loss (%):</strong> Porcentagem máxima de perda aceita no dia. Exemplo: 10% de R$1.000 = se perder R$100, a IA para automaticamente.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s4.f3"><strong>Valor de Entrada:</strong> Valor em reais (ou dólares) para cada operação individual. Exemplo: R$5 por trade.</div>
+                </div>
+              </div>
+
+              <div class="tipBox">
+                <span class="tipIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg></span>
+                <div data-i18n-html="s4.tip1">
+                <strong>Sugestão para iniciantes:</strong> Meta de <strong>3-5%</strong> e Stop de <strong>10%</strong>. 
+                Valores conservadores protegem sua banca e deixam a IA trabalhar com tranquilidade.
+                </div>
+              </div>
+            </div>
+
+            <!-- ═══════════ STEP 5: LIGAR A IA ═══════════ -->
+            <div class="tutStep" id="step5" data-reveal style="--delay:.05s">
+              <div class="stepHeader">
+                <div class="stepNum">5</div>
+                <h2>Ligar a IA</h2>
+              </div>
+
+              <p class="tutText">
+                Com a corretora conectada e os parâmetros configurados, é hora de <strong>ligar a IA</strong>. 
+                Basta clicar no botão <strong>"Iniciar"</strong> e a IA começará a analisar o mercado automaticamente.
+              </p>
+
+              <div class="screenshotFrame">
+                <img src="tutorial_5.png" alt="Ligar a IA" 
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+                <div class="screenshotPlaceholder" style="display:none">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                  Imagem: tutorial_5.png — IA Ligada
+                </div>
+              </div>
+
+              <p class="tutText" data-i18n="s5.p2">
+                Quando a IA está ligada, ela passa a:
+              </p>
+
+              <div class="featureList">
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s5.f1"><strong>Escanear ativos:</strong> A IA analisa múltiplos pares de moedas/ativos simultaneamente para encontrar as melhores oportunidades.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s5.f2"><strong>Filtrar sinais:</strong> Nem toda oportunidade é boa. A IA filtra e descarta cenários desfavoráveis automaticamente.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s5.f3"><strong>Executar operações:</strong> Quando encontra uma oportunidade com alta confiança, a IA envia a ordem automaticamente.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div data-i18n-html="s5.f4"><strong>Parar sozinha:</strong> Ao atingir a meta OU o stop loss, a IA encerra automaticamente — sem necessidade de intervenção.</div>
+                </div>
+              </div>
+
+              <div class="warnBox">
+                <span class="warnIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+                <div data-i18n-html="s5.warn1">
+                <strong>Nota:</strong> Após ligar, você pode deixar o computador ligado e a IA operando. Não é necessário ficar olhando. 
+                Mas recomendamos acompanhar pelo Chat (próximo passo) para entender o que a IA está fazendo.
+                </div>
+              </div>
+            </div>
+
+            <!-- ═══════════ STEP 6: CHAT DA IA ═══════════ -->
+            <div class="tutStep" id="step6" data-reveal style="--delay:.05s">
+              <div class="stepHeader">
+                <div class="stepNum">6</div>
+                <h2 data-i18n="s6.title">Chat da IA — Painel em Tempo Real</h2>
+              </div>
+
+              <p class="tutText" data-i18n-html="s6.p1">
+                O <strong>Chat</strong> é o coração do WSTrader. É aqui que você acompanha 
+                <strong>tudo</strong> que a IA está fazendo em tempo real. Cada análise, cada decisão 
+                e cada resultado aparecem no chat.
+              </p>
+
+              <div class="screenshotFrame">
+                <img src="tutorial_6.png" alt="Chat da IA em tempo real" 
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+                <div class="screenshotPlaceholder" style="display:none">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                  Imagem: tutorial_6.png — Chat da IA
+                </div>
+              </div>
+
+              <p class="tutText">
+                O chat mostra as seguintes informações:
+              </p>
+
+              <div class="featureList">
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div><strong>Análise de ativos:</strong> A IA mostra qual ativo está analisando e as oportunidades encontradas.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div><strong>Decisão da IA:</strong> A IA avalia cada oportunidade e decide se deve entrar ou não, mostrando o nível de confiança.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div><strong>Entradas e resultados:</strong> "✅ WIN EUR/USD CALL +R$4.50" ou "❌ LOSS GBP/JPY PUT -R$5.00" — cada operação com resultado e valor.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div><strong>Bloqueios:</strong> Quando a IA identifica risco elevado, ela bloqueia a entrada e mostra o motivo.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div><strong>Meta e progresso:</strong> "Progresso: +R$23.50 / Meta: R$50.00 (47%)" — acompanhe quanto falta para bater a meta.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  <div><strong>Nível da IA:</strong> No topo do chat aparece o nível de experiência da IA (Iniciante → Intermediária → Avançada → Expert). Quanto mais opera, mais evolui.</div>
+                </div>
+              </div>
+
+              <div class="tipBox">
+                <span class="tipIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg></span>
+                <div data-i18n-html="s6.tip1">
+                <strong>Entenda o vocabulário:</strong><br>
+                • <strong>CALL</strong> = operação de compra (preço vai subir)<br>
+                • <strong>PUT</strong> = operação de venda (preço vai descer)<br>
+                • <strong>WIN</strong> = vitória — a IA acertou a direção<br>
+                • <strong>LOSS</strong> = derrota — a IA errou a direção<br>
+                • <strong>Meta</strong> = objetivo diário de lucro<br>
+                • <strong>Stop</strong> = limite de perda no dia
+                </div>
+              </div>
+            </div>
+
+            <!-- ═══════════ STEP 7: DICAS E FAQ ═══════════ -->
+            <div class="tutStep" id="step7" data-reveal style="--delay:.05s">
+              <div class="stepHeader">
+                <div class="stepNum">7</div>
+                <h2 data-i18n="s7.title">Dicas e Perguntas Frequentes</h2>
+              </div>
+
+              <div class="screenshotFrame">
+                <img src="tutorial_8.png" alt="Dicas e FAQ" 
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
+                <div class="screenshotPlaceholder" style="display:none">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+                  Imagem: tutorial_8.png — Dicas
+                </div>
+              </div>
+
+              <div class="etapaHeader">
+                <span class="etapaIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+                <h3 style="color:var(--text)" data-i18n="s7.subtitle">Perguntas comuns</h3>
+              </div>
+
+              <div class="featureList">
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg></span>
+                  <div data-i18n-html="s7.q1"><strong>Posso usar e-mails diferentes em cada corretora?</strong><br>
+                  Não. O WSTrader usa um único par de e-mail/senha para conectar. Se quiser trocar de corretora, use o mesmo e-mail e senha em todas.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg></span>
+                  <div data-i18n-html="s7.q2"><strong>Preciso ficar olhando o WSTrader o tempo todo?</strong><br>
+                  Não. A IA opera sozinha. Você pode deixar o computador ligado e conferir depois. O chat registra tudo.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg></span>
+                  <div data-i18n-html="s7.q3"><strong>A IA pode perder dinheiro?</strong><br>
+                  Sim. Nenhuma IA é infalível. É por isso que o stop loss existe — para limitar perdas. A IA busca consistência ao longo do tempo, não 100% de acerto.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg></span>
+                  <div data-i18n-html="s7.q4"><strong>O que acontece se cair a internet?</strong><br>
+                  O WSTrader detecta a queda e tenta reconectar automaticamente (até 10 tentativas). Se a conexão voltar, a IA retoma de onde parou.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg></span>
+                  <div data-i18n-html="s7.q5"><strong>A IA melhora com o tempo de verdade?</strong><br>
+                  Sim. O Brain usa machine learning real. Cada operação atualiza os pesos internos do modelo. Com mais dados, as decisões ficam mais refinadas.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg></span>
+                  <div data-i18n-html="s7.q6"><strong>O que é "SKIP" e "BLOCK" no chat?</strong><br>
+                  Significa que a IA analisou um ativo mas decidiu NÃO entrar. SKIP = probabilidade baixa. BLOCK = condição desfavorável (breakout, momentum contra). Isso é bom — significa que a IA está protegendo seu dinheiro.</div>
+                </div>
+                <div class="featureItem">
+                  <span class="fIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".5"/></svg></span>
+                  <div data-i18n-html="s7.q7"><strong>Por que a IA às vezes fica muito tempo sem operar?</strong><br>
+                  Porque não encontrou oportunidade com alta confiança. A IA prefere NÃO operar do que entrar em setups duvidosos. Paciência é parte da estratégia.</div>
+                </div>
+              </div>
+
+              <div class="tipBox" style="margin-top:28px">
+                <span class="tipIco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
+                <div data-i18n-html="s7.tip1">
+                <strong>Resumo rápido para começar:</strong><br><br>
+                1. Abra o WSTrader<br>
+                2. Insira e-mail e senha da corretora (mesmo para IQ, Bullex e CasaTrader)<br>
+                3. Selecione a corretora e tipo de conta (DEMO ou REAL)<br>
+                4. Configure meta diária e stop loss<br>
+                5. Clique em Iniciar e acompanhe pelo Chat<br>
+                6. A IA faz o resto!
+                </div>
+              </div>
+            </div>
+
+          </div><!-- end tutorial steps -->
+        </div><!-- end tutLayout -->
+      </div>
+    </section>
+
+    <!-- === BACK TO SITE === -->
+    <section style="padding:40px 0 80px">
+      <div class="wrap" style="text-align:center">
+        <a class="btn primary" href="index.html" style="padding:16px 32px;font-size:15px" data-i18n="back.site">
+          ← Voltar para o site
+        </a>
+        <a class="btn" href="https://github.com/whsouza22/wstrader-update/releases/latest" style="margin-left:12px;padding:16px 32px;font-size:15px" data-i18n="back.dl">
+          Download WSTrader
+        </a>
+      </div>
+    </section>
+
+    <!-- === FOOTER === -->
+    <footer>
+      <div class="wrap foot">
+        <div>
+          <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;color:var(--text);letter-spacing:1px">WSTRADER</div>
+          <div class="small">&copy; <span id="year"></span> <span data-i18n="foot.tagline">IA de última geração</span></div>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+          <a href="index.html" data-i18n="foot.home">Início</a>
+          <span class="small" style="opacity:.4">&bull;</span>
+          <a href="pricing.html" data-i18n="foot.pricing">Preço</a>
+          <span class="small" style="opacity:.4">&bull;</span>
+          <a href="https://t.me/WstraderFlow_bot" target="_blank" rel="noopener">Telegram</a>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    // Language toggle
+    let currentLang = "pt";
+    try { currentLang = localStorage.getItem("wstrader_lang") || "pt"; } catch(e){}
+    const langBtn = document.getElementById("langBtn");
+    const langBtnMob = document.getElementById("langBtnMobile");
+
+    const DICT = {
+      pt: {
+        "nav.home":"Início","nav.pricing":"Preço","nav.tutorial":"Tutorial","nav.download":"Baixar","nav.dl":"Download",
+        "hero.eyebrow":"Tutorial completo",
+        "hero.title":"Aprenda a usar o <span class=\"accent\">WSTrader</span> do zero.",
+        "hero.lead":"Guia passo a passo de cada tela do aplicativo. Da conexão com a corretora até a IA operando de forma autônoma.",
+        "toc.title":"Índice","toc.s1":"Tela de Login","toc.s2":"Tela Principal","toc.s3":"Conectar a Corretora",
+        "toc.s4":"Configurar Meta e Stop","toc.s5":"Ligar a IA","toc.s6":"Chat da IA","toc.s7":"Dicas e Perguntas",
+        "s1.title":"Tela de Login",
+        "s1.p1":"Ao abrir o WSTrader pela primeira vez, você verá a <strong>Tela de Login</strong>. É aqui que você insere o e-mail e senha da sua corretora para conectar.",
+        "s1.tip1":"<strong>Importante:</strong> Use o <strong>mesmo e-mail e senha</strong> que você usa para entrar no site da corretora (IQ Option, Bullex ou CasaTrader). O WSTrader não cria uma conta nova — ele conecta na sua conta existente.",
+        "s1.f1":"<strong>E-mail:</strong> Deve ser o mesmo que você usa para fazer login no site/app da corretora.",
+        "s1.f2":"<strong>Senha:</strong> A mesma senha da sua conta na corretora. Ela é usada apenas para conectar e não é armazenada em nenhum servidor.",
+        "s1.f3":"<strong>Corretora:</strong> Escolha entre IQ Option, Bullex ou CasaTrader. Se tiver conta em mais de uma, o e-mail e senha precisam ser os mesmos em todas.",
+        "s1.warn1":"<strong>Segurança:</strong> Suas credenciais são usadas apenas localmente, no seu computador, para autenticar com a API da corretora. Nenhum dado é enviado para servidores externos.",
+        "s2.title":"Tela Principal",
+        "s2.p1":"Após fazer login, você chega na <strong>Tela Principal</strong>. É o painel de controle do WSTrader, onde você configura tudo e acompanha o desempenho da IA em tempo real.",
+        "s2.p2":"Na tela principal você encontra:",
+        "s2.f1":"<strong>Saldo da conta:</strong> Exibido no topo — mostra o saldo atual da sua conta na corretora (DEMO ou REAL).",
+        "s2.f2":"<strong>Meta diária (%):</strong> Defina quanto quer ganhar no dia em porcentagem do saldo. Quando atingir, a IA para sozinha.",
+        "s2.f3":"<strong>Stop Loss (%):</strong> Limite máximo de perda no dia. A IA para automaticamente se atingir esse valor.",
+        "s2.f4":"<strong>Valor de entrada (stake):</strong> Valor em dinheiro que a IA usará para cada operação.",
+        "s2.f5":"<strong>Botão Iniciar/Parar:</strong> Liga ou desliga a IA. Quando ligada, ela começa a analisar o mercado e operar automaticamente.",
+        "s2.f6":"<strong>Histórico de operações:</strong> Lista com todas as operações do dia — ativo, direção, resultado e lucro/perda.",
+        "s3.title":"Conectar a Corretora",
+        "s3.p1":"O WSTrader suporta <strong>3 corretoras</strong>: IQ Option, Bullex e CasaTrader. Você precisa ter uma conta cadastrada na corretora antes de conectar.",
+        "s3.warn1":"<strong>Regra importante — E-mail e senha iguais:</strong><br><br>Se você usa mais de uma corretora, o <strong>e-mail e a senha devem ser os mesmos</strong> em todas elas. O WSTrader usa as mesmas credenciais para conectar em qualquer corretora selecionada.<br><br>Exemplo: se seu e-mail na IQ Option é <strong>joao@email.com</strong> e a senha é <strong>MinhaS3nha</strong>, use exatamente o mesmo e-mail e senha na Bullex e CasaTrader.",
+        "s3.f1":"<strong>Passo 1:</strong> Selecione a corretora desejada (IQ Option, Bullex ou CasaTrader).",
+        "s3.f2":"<strong>Passo 2:</strong> Digite o e-mail e senha da sua conta na corretora.",
+        "s3.f3":"<strong>Passo 3:</strong> Escolha o tipo de conta — <strong>DEMO</strong> (dinheiro virtual, para treinar) ou <strong>REAL</strong> (dinheiro de verdade).",
+        "s3.f4":"<strong>Passo 4:</strong> Clique em <strong>Conectar</strong>. Aguarde a confirmação (seu saldo aparecerá na tela).",
+        "s3.tip1":"<strong>Recomendação:</strong> Comece sempre com a conta <strong>DEMO</strong> para se familiarizar com a plataforma. Quando estiver confiante, mude para REAL.",
+        "s4.title":"Configurar Meta e Stop",
+        "s4.p1":"Antes de ligar a IA, configure a <strong>meta diária</strong> e o <strong>stop loss</strong>. Esses valores controlam quando a IA deve parar de operar.",
+        "s4.f1":"<strong>Meta Diária (%):</strong> Porcentagem do seu saldo que deseja ganhar no dia. Exemplo: 5% de R$1.000 = a IA para ao lucrar R$50.",
+        "s4.f2":"<strong>Stop Loss (%):</strong> Porcentagem máxima de perda aceita no dia. Exemplo: 10% de R$1.000 = se perder R$100, a IA para automaticamente.",
+        "s4.f3":"<strong>Valor de Entrada:</strong> Valor em reais (ou dólares) para cada operação individual. Exemplo: R$5 por trade.",
+        "s4.tip1":"<strong>Sugestão para iniciantes:</strong> Meta de <strong>3-5%</strong> e Stop de <strong>10%</strong>. Valores conservadores protegem sua banca e deixam a IA trabalhar com tranquilidade.",
+        "s5.title":"Ligar a IA",
+        "s5.p1":"Com a corretora conectada e os parâmetros configurados, é hora de <strong>ligar a IA</strong>. Basta clicar no botão <strong>\u201cIniciar\u201d</strong> e a IA começará a analisar o mercado automaticamente.",
+        "s5.p2":"Quando a IA está ligada, ela passa a:",
+        "s5.f1":"<strong>Escanear ativos:</strong> A IA analisa múltiplos pares de moedas/ativos simultaneamente para encontrar as melhores oportunidades.",
+        "s5.f2":"<strong>Filtrar sinais:</strong> Nem toda oportunidade é boa. A IA filtra e descarta cenários desfavoráveis automaticamente.",
+        "s5.f3":"<strong>Executar operações:</strong> Quando encontra uma oportunidade com alta confiança, a IA envia a ordem automaticamente.",
+        "s5.f4":"<strong>Parar sozinha:</strong> Ao atingir a meta OU o stop loss, a IA encerra automaticamente — sem necessidade de intervenção.",
+        "s5.warn1":"<strong>Nota:</strong> Após ligar, você pode deixar o computador ligado e a IA operando. Não é necessário ficar olhando. Mas recomendamos acompanhar pelo Chat (próximo passo) para entender o que a IA está fazendo.",
+        "s6.title":"Chat da IA — Painel em Tempo Real",
+        "s6.p1":"O <strong>Chat</strong> é o coração do WSTrader. É aqui que você acompanha <strong>tudo</strong> que a IA está fazendo em tempo real. Cada análise, cada decisão e cada resultado aparecem no chat.",
+        "s6.p2":"O chat mostra as seguintes informações:",
+        "s6.f1":"<strong>Análise de ativos:</strong> A IA mostra qual ativo está analisando e as oportunidades encontradas.",
+        "s6.f2":"<strong>Decisão da IA:</strong> A IA avalia cada oportunidade e decide se deve entrar ou não, mostrando o nível de confiança.",
+        "s6.f3":"<strong>Entradas e resultados:</strong> \u201c✅ WIN EUR/USD CALL +R$4.50\u201d ou \u201c❌ LOSS GBP/JPY PUT -R$5.00\u201d — cada operação com resultado e valor.",
+        "s6.f4":"<strong>Bloqueios:</strong> Quando a IA identifica risco elevado, ela bloqueia a entrada e mostra o motivo.",
+        "s6.f5":"<strong>Meta e progresso:</strong> \u201cProgresso: +R$23.50 / Meta: R$50.00 (47%)\u201d — acompanhe quanto falta para bater a meta.",
+        "s6.f6":"<strong>Nível da IA:</strong> No topo do chat aparece o nível de experiência da IA (Iniciante → Intermediária → Avançada → Expert). Quanto mais opera, mais evolui.",
+        "s6.tip1":"<strong>Entenda o vocabulário:</strong><br>• <strong>CALL</strong> = operação de compra (preço vai subir)<br>• <strong>PUT</strong> = operação de venda (preço vai descer)<br>• <strong>WIN</strong> = vitória — a IA acertou a direção<br>• <strong>LOSS</strong> = derrota — a IA errou a direção<br>• <strong>Meta</strong> = objetivo diário de lucro<br>• <strong>Stop</strong> = limite de perda no dia",
+        "s7.title":"Dicas e Perguntas Frequentes",
+        "s7.subtitle":"Perguntas comuns",
+        "s7.q1":"<strong>Posso usar e-mails diferentes em cada corretora?</strong><br>Não. O WSTrader usa um único par de e-mail/senha para conectar. Se quiser trocar de corretora, use o mesmo e-mail e senha em todas.",
+        "s7.q2":"<strong>Preciso ficar olhando o WSTrader o tempo todo?</strong><br>Não. A IA opera sozinha. Você pode deixar o computador ligado e conferir depois. O chat registra tudo.",
+        "s7.q3":"<strong>A IA pode perder dinheiro?</strong><br>Sim. Nenhuma IA é infalível. É por isso que o stop loss existe — para limitar perdas. A IA busca consistência ao longo do tempo, não 100% de acerto.",
+        "s7.q4":"<strong>O que acontece se cair a internet?</strong><br>O WSTrader detecta a queda e tenta reconectar automaticamente (até 10 tentativas). Se a conexão voltar, a IA retoma de onde parou.",
+        "s7.q5":"<strong>A IA melhora com o tempo de verdade?</strong><br>Sim. O Brain usa machine learning real. Cada operação atualiza os pesos internos do modelo. Com mais dados, as decisões ficam mais refinadas.",
+        "s7.q6":"<strong>O que é \"SKIP\" e \"BLOCK\" no chat?</strong><br>Significa que a IA analisou um ativo mas decidiu NÃO entrar. SKIP = probabilidade baixa. BLOCK = condição desfavorável (breakout, momentum contra). Isso é bom — significa que a IA está protegendo seu dinheiro.",
+        "s7.q7":"<strong>Por que a IA às vezes fica muito tempo sem operar?</strong><br>Porque não encontrou oportunidade com alta confiança. A IA prefere NÃO operar do que entrar em setups duvidosos. Paciência é parte da estratégia.",
+        "s7.tip1":"<strong>Resumo rápido para começar:</strong><br><br>1. Abra o WSTrader<br>2. Insira e-mail e senha da corretora (mesmo para IQ, Bullex e CasaTrader)<br>3. Selecione a corretora e tipo de conta (DEMO ou REAL)<br>4. Configure meta diária e stop loss<br>5. Clique em Iniciar e acompanhe pelo Chat<br>6. A IA faz o resto!",
+        "back.site":"← Voltar para o site","back.dl":"Download WSTrader",
+        "foot.tagline":"IA de última geração","foot.home":"Início","foot.pricing":"Preço"
+      },
+      en: {
+        "nav.home":"Home","nav.pricing":"Pricing","nav.tutorial":"Tutorial","nav.download":"Download","nav.dl":"Download",
+        "hero.eyebrow":"Complete Tutorial",
+        "hero.title":"Learn to use <span class=\"accent\">WSTrader</span> from scratch.",
+        "hero.lead":"Step-by-step guide for every screen in the app. From connecting your broker to the AI trading autonomously.",
+        "toc.title":"Index","toc.s1":"Login Screen","toc.s2":"Main Screen","toc.s3":"Connect Broker",
+        "toc.s4":"Set Goal & Stop","toc.s5":"Start the AI","toc.s6":"AI Chat","toc.s7":"Tips & FAQ",
+        "s1.title":"Login Screen",
+        "s1.p1":"When you open WSTrader for the first time, you'll see the <strong>Login Screen</strong>. This is where you enter your broker email and password to connect.",
+        "s1.tip1":"<strong>Important:</strong> Use the <strong>same email and password</strong> you use to log in to your broker's website (IQ Option, Bullex or CasaTrader). WSTrader does not create a new account — it connects to your existing one.",
+        "s1.f1":"<strong>Email:</strong> Must be the same one you use to log in to your broker's website/app.",
+        "s1.f2":"<strong>Password:</strong> The same password from your broker account. It is used only to connect and is not stored on any server.",
+        "s1.f3":"<strong>Broker:</strong> Choose between IQ Option, Bullex or CasaTrader. If you have accounts with more than one, the email and password must be the same for all.",
+        "s1.warn1":"<strong>Security:</strong> Your credentials are used only locally on your computer to authenticate with the broker's API. No data is sent to external servers.",
+        "s2.title":"Main Screen",
+        "s2.p1":"After logging in, you arrive at the <strong>Main Screen</strong>. This is WSTrader's control panel, where you configure everything and track the AI's performance in real time.",
+        "s2.p2":"On the main screen you'll find:",
+        "s2.f1":"<strong>Account balance:</strong> Shown at the top — displays your current broker account balance (DEMO or REAL).",
+        "s2.f2":"<strong>Daily goal (%):</strong> Set how much you want to earn per day as a percentage of your balance. When reached, the AI stops automatically.",
+        "s2.f3":"<strong>Stop Loss (%):</strong> Maximum loss limit for the day. The AI stops automatically if this value is reached.",
+        "s2.f4":"<strong>Entry amount (stake):</strong> The money amount the AI will use for each trade.",
+        "s2.f5":"<strong>Start/Stop button:</strong> Turns the AI on or off. When on, it begins analyzing the market and trading automatically.",
+        "s2.f6":"<strong>Trade history:</strong> List of all trades for the day — asset, direction, result and profit/loss.",
+        "s3.title":"Connect Broker",
+        "s3.p1":"WSTrader supports <strong>3 brokers</strong>: IQ Option, Bullex and CasaTrader. You need to have a registered account with the broker before connecting.",
+        "s3.warn1":"<strong>Important rule — Same email and password:</strong><br><br>If you use more than one broker, the <strong>email and password must be the same</strong> across all of them. WSTrader uses the same credentials to connect to any selected broker.<br><br>Example: if your IQ Option email is <strong>john@email.com</strong> and password is <strong>MyP4ssword</strong>, use exactly the same email and password on Bullex and CasaTrader.",
+        "s3.f1":"<strong>Step 1:</strong> Select the desired broker (IQ Option, Bullex or CasaTrader).",
+        "s3.f2":"<strong>Step 2:</strong> Enter the email and password from your broker account.",
+        "s3.f3":"<strong>Step 3:</strong> Choose the account type — <strong>DEMO</strong> (virtual money, for practice) or <strong>REAL</strong> (real money).",
+        "s3.f4":"<strong>Step 4:</strong> Click <strong>Connect</strong>. Wait for confirmation (your balance will appear on screen).",
+        "s3.tip1":"<strong>Recommendation:</strong> Always start with a <strong>DEMO</strong> account to get familiar with the platform. Switch to REAL when you feel confident.",
+        "s4.title":"Set Goal & Stop Loss",
+        "s4.p1":"Before starting the AI, configure the <strong>daily goal</strong> and <strong>stop loss</strong>. These values control when the AI should stop trading.",
+        "s4.f1":"<strong>Daily Goal (%):</strong> Percentage of your balance you want to earn per day. Example: 5% of $1,000 = the AI stops after profiting $50.",
+        "s4.f2":"<strong>Stop Loss (%):</strong> Maximum loss percentage accepted per day. Example: 10% of $1,000 = if you lose $100, the AI stops automatically.",
+        "s4.f3":"<strong>Entry Amount:</strong> Amount in currency for each individual trade. Example: $5 per trade.",
+        "s4.tip1":"<strong>Tip for beginners:</strong> Goal of <strong>3-5%</strong> and Stop of <strong>10%</strong>. Conservative values protect your balance and let the AI work with confidence.",
+        "s5.title":"Start the AI",
+        "s5.p1":"With the broker connected and parameters configured, it's time to <strong>start the AI</strong>. Just click the <strong>\"Start\"</strong> button and the AI will begin analyzing the market automatically.",
+        "s5.p2":"When the AI is running, it will:",
+        "s5.f1":"<strong>Scan assets:</strong> The AI analyzes multiple currency pairs/assets simultaneously to find the best opportunities.",
+        "s5.f2":"<strong>Filter signals:</strong> Not every opportunity is good. The AI filters and discards unfavorable scenarios automatically.",
+        "s5.f3":"<strong>Execute trades:</strong> When it finds a high-confidence opportunity, the AI places the order automatically.",
+        "s5.f4":"<strong>Stop on its own:</strong> Upon reaching the goal OR the stop loss, the AI stops automatically — no intervention needed.",
+        "s5.warn1":"<strong>Note:</strong> After starting, you can leave your computer on with the AI running. You don't need to watch it. But we recommend following along in the Chat (next step) to understand what the AI is doing.",
+        "s6.title":"AI Chat — Real-Time Panel",
+        "s6.p1":"The <strong>Chat</strong> is the heart of WSTrader. This is where you follow <strong>everything</strong> the AI is doing in real time. Every analysis, every decision and every result appears in the chat.",
+        "s6.p2":"The chat shows the following information:",
+        "s6.f1":"<strong>Asset analysis:</strong> The AI shows which asset it's analyzing and the opportunities found.",
+        "s6.f2":"<strong>AI decision:</strong> The AI evaluates each opportunity and decides whether to enter or not, showing the confidence level.",
+        "s6.f3":"<strong>Entries and results:</strong> \"✅ WIN EUR/USD CALL +$4.50\" or \"❌ LOSS GBP/JPY PUT -$5.00\" — each trade with result and amount.",
+        "s6.f4":"<strong>Blocks:</strong> When the AI identifies high risk, it blocks the entry and shows the reason.",
+        "s6.f5":"<strong>Goal and progress:</strong> \"Progress: +$23.50 / Goal: $50.00 (47%)\" — track how close you are to hitting the goal.",
+        "s6.f6":"<strong>AI Level:</strong> At the top of the chat, the AI's experience level is shown (Beginner → Intermediate → Advanced → Expert). The more it trades, the more it evolves.",
+        "s6.tip1":"<strong>Understand the vocabulary:</strong><br>• <strong>CALL</strong> = buy trade (price will go up)<br>• <strong>PUT</strong> = sell trade (price will go down)<br>• <strong>WIN</strong> = victory — the AI predicted correctly<br>• <strong>LOSS</strong> = defeat — the AI predicted wrong<br>• <strong>Goal</strong> = daily profit target<br>• <strong>Stop</strong> = daily loss limit",
+        "s7.title":"Tips & Frequently Asked Questions",
+        "s7.subtitle":"Common questions",
+        "s7.q1":"<strong>Can I use different emails for each broker?</strong><br>No. WSTrader uses a single email/password pair to connect. If you want to switch brokers, use the same email and password for all of them.",
+        "s7.q2":"<strong>Do I need to watch WSTrader all the time?</strong><br>No. The AI operates on its own. You can leave your computer on and check later. The chat logs everything.",
+        "s7.q3":"<strong>Can the AI lose money?</strong><br>Yes. No AI is infallible. That's why stop loss exists — to limit losses. The AI aims for consistency over time, not 100% accuracy.",
+        "s7.q4":"<strong>What happens if the internet drops?</strong><br>WSTrader detects the drop and tries to reconnect automatically (up to 10 attempts). If the connection returns, the AI resumes where it left off.",
+        "s7.q5":"<strong>Does the AI really improve over time?</strong><br>Yes. The Brain uses real machine learning. Each trade updates the model's internal weights. With more data, decisions become more refined.",
+        "s7.q6":"<strong>What is \"SKIP\" and \"BLOCK\" in the chat?</strong><br>It means the AI analyzed an asset but decided NOT to enter. SKIP = low probability. BLOCK = unfavorable condition (breakout, counter-momentum). This is good — it means the AI is protecting your money.",
+        "s7.q7":"<strong>Why does the AI sometimes go a long time without trading?</strong><br>Because it hasn't found a high-confidence opportunity. The AI prefers NOT to trade rather than enter questionable setups. Patience is part of the strategy.",
+        "s7.tip1":"<strong>Quick summary to get started:</strong><br><br>1. Open WSTrader<br>2. Enter your broker email and password (same for IQ, Bullex and CasaTrader)<br>3. Select the broker and account type (DEMO or REAL)<br>4. Configure daily goal and stop loss<br>5. Click Start and follow along in the Chat<br>6. The AI does the rest!",
+        "back.site":"← Back to website","back.dl":"Download WSTrader",
+        "foot.tagline":"Next-generation AI","foot.home":"Home","foot.pricing":"Pricing"
+      }
+    };
+
+    function applyLang(lang){
+      currentLang = lang;
+      const d = DICT[lang] || DICT.pt;
+      document.querySelectorAll("[data-i18n]").forEach(el=>{
+        const k = el.getAttribute("data-i18n");
+        if(d[k] !== undefined) el.textContent = d[k];
+      });
+      document.querySelectorAll("[data-i18n-html]").forEach(el=>{
+        const k = el.getAttribute("data-i18n-html");
+        if(d[k] !== undefined) el.innerHTML = d[k];
+      });
+      [langBtn, langBtnMob].forEach(btn=>{
+        if(!btn) return;
+        if(lang==="pt"){
+          btn.src="https://flagcdn.com/w40/us.png"; btn.alt="Switch to English"; btn.title="English";
+        } else {
+          btn.src="https://flagcdn.com/w40/br.png"; btn.alt="Mudar para Português"; btn.title="Português";
+        }
+      });
+      document.documentElement.lang = lang;
+      try { localStorage.setItem("wstrader_lang", lang); } catch(e){}
+    }
+    applyLang(currentLang);
+    function toggleLang(){
+      applyLang(currentLang==="pt"?"en":"pt");
+    }
+    langBtn.addEventListener("click", toggleLang);
+    langBtnMob.addEventListener("click", toggleLang);
+
+    // Mobile menu toggle
+    const menuBtn = document.getElementById("menuBtn");
+    const mobileMenu = document.getElementById("mobileMenu");
+    menuBtn.addEventListener("click", ()=>{
+      menuBtn.classList.toggle("active");
+      mobileMenu.classList.toggle("open");
+      document.body.style.overflow = mobileMenu.classList.contains("open") ? "hidden" : "";
+    });
+    mobileMenu.querySelectorAll("a").forEach(a=>{
+      a.addEventListener("click", ()=>{
+        menuBtn.classList.remove("active");
+        mobileMenu.classList.remove("open");
+        document.body.style.overflow = "";
+      });
+    });
+
+    // Reveal animations
+    const revealEls = document.querySelectorAll("[data-reveal]");
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if(prefersReducedMotion){
+      revealEls.forEach(el=>el.classList.add("is-visible"));
+    }else{
+      const obs = new IntersectionObserver((entries)=>{
+        entries.forEach(entry=>{
+          if(entry.isIntersecting){ entry.target.classList.add("is-visible"); obs.unobserve(entry.target) }
+        });
+      }, { threshold: 0.12 });
+      revealEls.forEach(el=>obs.observe(el));
+    }
+
+    // Smooth scroll for TOC
+    document.querySelectorAll(".tocBox a").forEach(a=>{
+      a.addEventListener("click", e=>{
+        const href = a.getAttribute("href");
+        if(href && href.startsWith("#")){
+          e.preventDefault();
+          const target = document.querySelector(href);
+          if(target) target.scrollIntoView({behavior:"smooth",block:"start"});
+        }
+      });
+    });
+
+    /* ===================== CUSTOM CURSOR ===================== */
+    (function(){
+      if(window.matchMedia("(pointer:coarse)").matches) return;
+      if(window.matchMedia("(prefers-reduced-motion:reduce)").matches) return;
+      const dot = document.createElement("div");
+      dot.className = "cursorDot";
+      const ring = document.createElement("div");
+      ring.className = "cursorRing";
+      document.body.appendChild(dot);
+      document.body.appendChild(ring);
+
+      let mx=0, my=0, rx=0, ry=0;
+      document.addEventListener("mousemove", e=>{ mx=e.clientX; my=e.clientY; });
+
+      function lerp(a,b,n){ return a + (b - a) * n; }
+      function animate(){
+        rx = lerp(rx, mx, 0.15);
+        ry = lerp(ry, my, 0.15);
+        dot.style.left = mx + "px";
+        dot.style.top = my + "px";
+        ring.style.left = rx + "px";
+        ring.style.top = ry + "px";
+        requestAnimationFrame(animate);
+      }
+      animate();
+
+      const hoverTargets = "a, button, .btn, .tocBox a, .featureItem, .tipBox, .warnBox, .stepNum";
+      document.addEventListener("mouseover", e=>{
+        if(e.target.closest(hoverTargets)){
+          dot.classList.add("hovering");
+          ring.classList.add("hovering");
+        }
+      });
+      document.addEventListener("mouseout", e=>{
+        if(e.target.closest(hoverTargets)){
+          dot.classList.remove("hovering");
+          ring.classList.remove("hovering");
+        }
+      });
+      document.addEventListener("mousedown", ()=>{
+        dot.classList.add("clicking");
+        ring.classList.add("clicking");
+      });
+      document.addEventListener("mouseup", ()=>{
+        dot.classList.remove("clicking");
+        ring.classList.remove("clicking");
+      });
+
+      // Hide default cursor on desktop
+      const style = document.createElement("style");
+      style.textContent = "@media(pointer:fine){*{cursor:none!important}}";
+      document.head.appendChild(style);
+    })();
+  </script>
+</body>
+</html>

@@ -152,8 +152,8 @@
 
     /* === PRICING CARDS === */
     .pricingWrap{
-      display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
-      gap:24px;max-width:900px;margin:0 auto;
+      display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:24px;max-width:1200px;margin:0 auto;
       padding:0 24px 60px;position:relative;z-index:1;
     }
     .pricingCard{
@@ -211,7 +211,7 @@
     }
     .priceValue{
       font-family:'Space Grotesk',sans-serif;
-      font-size:clamp(48px,5vw,72px);font-weight:700;
+      font-size:clamp(36px,4vw,56px);font-weight:700;
       background:linear-gradient(135deg,var(--brand),var(--brand2),var(--brand3));
       -webkit-background-clip:text;background-clip:text;color:transparent;
       line-height:1;margin:16px 0 4px;
@@ -338,9 +338,9 @@
       .pricingHero{padding:80px 0 30px}
       .pricingHero h1{font-size:clamp(26px,7vw,36px)}
       .pricingHero .lead{font-size:15px}
-      .pricingWrap{grid-template-columns:1fr;max-width:480px}
+      .pricingWrap{grid-template-columns:1fr;max-width:520px}
       .pricingCard{padding:32px 24px}
-      .priceValue{font-size:clamp(40px,10vw,56px)}
+      .priceValue{font-size:clamp(32px,8vw,48px)}
       .priceFeature{font-size:14px}
       .btn.buy{padding:16px 28px;font-size:16px}
       .trustGrid{grid-template-columns:1fr;gap:12px}
@@ -359,7 +359,7 @@
       .wrap{padding:0 14px}
       .pricingHero{padding:68px 0 24px}
       .pricingCard{padding:28px 18px}
-      .priceValue{font-size:36px}
+      .priceValue{font-size:30px}
     }
     @media(prefers-reduced-motion:reduce){
       .priceBadge::before{animation:none}
@@ -610,6 +610,70 @@
       <p class="priceFine" data-i18n="price.fine">Pagamento seguro via Stripe. Cancele a qualquer momento no portal do assinante.</p>
     </div>
 
+    <!-- ── PLANO PREMIUM ── -->
+    <div class="pricingCard" style="border-color:rgba(255,157,43,.22);background:linear-gradient(160deg,rgba(255,157,43,.08) 0%,rgba(10,12,20,.95) 35%,rgba(139,92,246,.04) 100%);box-shadow:0 0 100px rgba(255,157,43,.10),0 30px 80px rgba(0,0,0,.45)">
+      <div class="recoBadge" style="background:linear-gradient(135deg,#ff9d2b,#ffb84d);color:#050508" data-i18n="premium.reco">Elite</div>
+      <div class="priceBadge" style="border-color:rgba(255,157,43,.25);background:rgba(255,157,43,.08);color:var(--brand2)">
+        <span data-i18n="premium.badge" style="color:var(--brand2)">Acesso Premium</span>
+      </div>
+      <h3 data-i18n="premium.plan">WSTrader Premium</h3>
+      <div class="priceValue" style="background:linear-gradient(135deg,#ff9d2b,#ffb84d,#ffd700);-webkit-background-clip:text;background-clip:text;color:transparent">R$499,99</div>
+      <div class="pricePeriod" data-i18n="premium.period">/mês — cancele quando quiser</div>
+
+      <div class="priceFeatures">
+        <div class="priceFeature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93"/><path d="M8 6a4 4 0 0 1 .67-2.22"/><circle cx="12" cy="17" r="5"/><path d="M12 14v3l2 1"/><path d="M3.34 17A10 10 0 0 1 2 12C2 6.48 6.48 2 12 2"/><path d="M21 12a10 10 0 0 1-1.34 5"/></svg>
+          <span data-i18n="premium.f1">IA WSTrader de última geração</span>
+        </div>
+        <div class="priceFeature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><path d="M7 9h2l2 4 2-6 2 4h2"/></svg>
+          <span data-i18n="premium.f2">3 corretoras: IQ Option, Bullex, CasaTrader</span>
+        </div>
+        <div class="priceFeature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span data-i18n="premium.f3">Operação 100% autônoma 24/7</span>
+        </div>
+        <div class="priceFeature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span data-i18n="premium.f4">Aprendizado contínuo e evolução</span>
+        </div>
+        <div class="priceFeature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+          <span data-i18n="premium.f5">Meta diária + Stop automático</span>
+        </div>
+        <div class="priceFeature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span data-i18n="premium.f6">Painel em tempo real completo</span>
+        </div>
+        <div class="priceFeature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+          <span data-i18n="premium.f7">Conta DEMO + Conta REAL</span>
+        </div>
+        <div class="priceFeature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01"/><path d="M12 10h.01"/><path d="M16 10h.01"/></svg>
+          <span data-i18n="premium.f8">Suporte via Telegram</span>
+        </div>
+        <div class="priceFeature">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><circle cx="12" cy="10" r="3"/><path d="M12 13v2"/></svg>
+          <span data-i18n="premium.f9">IA Generativa WsTrader</span>
+        </div>
+        <div class="priceFeature" style="color:var(--brand2);font-weight:600">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--brand2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          <span data-i18n="premium.f10">Gráfico Personalizado Exclusivo</span>
+        </div>
+        <div class="priceFeature" style="color:var(--brand2);font-weight:600">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--brand2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <span data-i18n="premium.f11">Dashboard IA H&S em tempo real</span>
+        </div>
+      </div>
+
+      <div class="priceActions">
+        <a class="btn buy" id="btnCompraPremium" href="https://buy.stripe.com/dRmeVed5Y4mob6kbK22kw09" target="_blank" rel="noopener" style="background:linear-gradient(135deg,#ff9d2b,#ffb84d);box-shadow:0 0 50px rgba(255,157,43,.30),0 12px 40px rgba(255,157,43,.20)" data-i18n="premium.cta">Assinar Premium — R$499,99/mês</a>
+        <a class="btn portal" id="btnPortalPremium" href="https://billing.stripe.com/p/login/00g6oQcPN8tl3VC9AA" target="_blank" rel="noopener" data-i18n="price.portal">Já é assinante? Gerenciar conta</a>
+      </div>
+      <p class="priceFine" data-i18n="premium.fine">Tudo do plano Pro + gráfico personalizado e dashboard exclusivo. Cancele quando quiser.</p>
+    </div>
+
   </div>
 
   <!-- ======================== TRUST BADGES ======================== -->
@@ -714,6 +778,23 @@
         "demo.fine": "Somente conta DEMO (dinheiro virtual). Ideal para treinar a IA sem risco.",
         "pro.reco": "Recomendado",
         "pro.f7": "Conta DEMO + Conta REAL",
+        "premium.reco": "Elite",
+        "premium.badge": "Acesso Premium",
+        "premium.plan": "WSTrader Premium",
+        "premium.period": "/mês — cancele quando quiser",
+        "premium.f1": "IA WSTrader de última geração",
+        "premium.f2": "3 corretoras: IQ Option, Bullex, CasaTrader",
+        "premium.f3": "Operação 100% autônoma 24/7",
+        "premium.f4": "Aprendizado contínuo e evolução",
+        "premium.f5": "Meta diária + Stop automático",
+        "premium.f6": "Painel em tempo real completo",
+        "premium.f7": "Conta DEMO + Conta REAL",
+        "premium.f8": "Suporte via Telegram",
+        "premium.f9": "IA Generativa WsTrader",
+        "premium.f10": "Gráfico Personalizado Exclusivo",
+        "premium.f11": "Dashboard IA H&S em tempo real",
+        "premium.cta": "Assinar Premium — R$499,99/mês",
+        "premium.fine": "Tudo do plano Pro + gráfico personalizado e dashboard exclusivo. Cancele quando quiser.",
         "price.badge": "Acesso completo",
         "price.plan": "WSTrader Pro",
         "price.period": "/mês — cancele quando quiser",
@@ -778,6 +859,23 @@
         "demo.fine": "DEMO account only (virtual money). Ideal for training the AI risk-free.",
         "pro.reco": "Recommended",
         "pro.f7": "DEMO + REAL account",
+        "premium.reco": "Elite",
+        "premium.badge": "Premium Access",
+        "premium.plan": "WSTrader Premium",
+        "premium.period": "/month — cancel anytime",
+        "premium.f1": "Next-gen WSTrader AI",
+        "premium.f2": "3 brokers: IQ Option, Bullex, CasaTrader",
+        "premium.f3": "100% autonomous 24/7 operation",
+        "premium.f4": "Continuous learning and evolution",
+        "premium.f5": "Daily target + Auto stop",
+        "premium.f6": "Full real-time panel",
+        "premium.f7": "DEMO + REAL account",
+        "premium.f8": "Telegram support",
+        "premium.f9": "Generative AI WsTrader",
+        "premium.f10": "Exclusive Custom Chart",
+        "premium.f11": "Real-time IA H&S Dashboard",
+        "premium.cta": "Subscribe Premium — R$499.99/mo",
+        "premium.fine": "Everything in Pro + custom chart and exclusive dashboard. Cancel anytime.",
         "price.badge": "Full access",
         "price.plan": "WSTrader Pro",
         "price.period": "/month — cancel anytime",
