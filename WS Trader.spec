@@ -133,10 +133,8 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
-    exclude_binaries=False,
+    exclude_binaries=True,
     name='WsTrader',
     debug=False,
     bootloader_ignore_signals=False,
@@ -150,4 +148,13 @@ exe = EXE(
     entitlements_file=None,
     icon=['Img\\app_icon.ico'],
     version='version_info.txt',
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='WsTrader',
 )
