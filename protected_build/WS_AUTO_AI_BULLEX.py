@@ -804,12 +804,8 @@ def main():
     # ── Iniciar Dashboard IA H&S automaticamente (fonte única de sinais) ──
     _ensure_dashboard_running()
 
-    # ── TREINAMENTO INICIAL: importar backtest do Dashboard ou arquivo local ──
-    log.info(paint("🧠 Importando treinamento do Dashboard (900 velas × 20 ativos)...", C.B))
-    print(">>> IA: Importando treinamento do dashboard...", flush=True)
-    _train_imported = False
-
-    # 1) Tentar carregar do arquivo do Dashboard diretamente (mais rápido, não depende do scan)
+    # ── TREINAMENTO INICIAL: carregar arquivo do Dashboard do disco (sem bloquear) ──
+    log.info(paint("🧠 Carregando IA do disco...", C.B))
     _DASHBOARD_STATS_FILE = os.path.join(os.path.expanduser("~"), ".wstrader", "hs_ia_dashboard_stats.json")
     try:
         if os.path.exists(_DASHBOARD_STATS_FILE):
@@ -817,11 +813,9 @@ def main():
                 _disk_data = json.load(_df)
             _disk_stats = _disk_data.get("stats", {})
             if _disk_stats:
-                if "arms" not in hs_stats:
-                    hs_stats["arms"] = {}
+                hs_stats["arms"] = {}
                 _imported_count = 0
                 for _stat_key, _stat_val in _disk_stats.items():
-                    # Converter chave do dashboard (ATIVO_TYPE_MODE) → bot (ATIVO_TYPE)
                     _parts = _stat_key.split("_")
                     _bot_key = f"{_parts[0]}_{_parts[1]}" if len(_parts) >= 2 else _stat_key
                     if _bot_key not in hs_stats["arms"]:
@@ -837,66 +831,15 @@ def main():
                 if _n_total > 0:
                     _safe_save_json(AI_STATS_FILE, hs_stats)
                     _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
-                    log.info(paint(
-                        f"✅ IA TREINADA com arquivo do Dashboard! {_imported_count} chaves | "
-                        f"{_n_total} amostras | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}",
-                        C.G
-                    ))
+                    log.info(paint(f"✅ IA carregada! {_n_total} amostras | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
                     print(f">>> IA: Treinada! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome})", flush=True)
-                    _train_imported = True
     except Exception as _fe:
-        log.debug(f"Arquivo do dashboard não disponível: {_fe}")
+        log.debug(f"Arquivo IA não disponível: {_fe}")
 
-    # 2) Se não importou do arquivo, tentar via API (dashboard pode já ter dados na memória)
-    if not _train_imported:
-        for _try in range(30):  # tenta por até ~2.5min (scan 900 velas pode demorar)
-            try:
-                _req = urllib.request.urlopen(DASHBOARD_URL, timeout=10)
-                _data = json.loads(_req.read().decode("utf-8"))
-                _training = _data.get("ia_training_stats", {})
-                _train_arms = _training.get("arms", {})
-                _train_total = _training.get("meta", {}).get("total", 0)
-                if _train_total > 0 and _train_arms:
-                    if "arms" not in hs_stats:
-                        hs_stats["arms"] = {}
-                    _imported_count = 0
-                    for _arm_key, _arm_data in _train_arms.items():
-                        if _arm_key not in hs_stats["arms"]:
-                            hs_stats["arms"][_arm_key] = {"wins": 0, "total": 0}
-                        _d_total = _arm_data.get("total", 0)
-                        _b_total = hs_stats["arms"][_arm_key].get("total", 0)
-                        if _d_total > _b_total:
-                            hs_stats["arms"][_arm_key]["wins"] = _arm_data.get("wins", 0)
-                            hs_stats["arms"][_arm_key]["total"] = _d_total
-                            _imported_count += 1
-                    hs_stats["meta"] = {"total": sum(v.get("total", 0) for v in hs_stats["arms"].values())}
-                    _safe_save_json(AI_STATS_FILE, hs_stats)
-                    _n_total = hs_stats["meta"]["total"]
-                    _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
-                    log.info(paint(
-                        f"✅ IA TREINADA com Dashboard API! {_imported_count} ativos | "
-                        f"{_n_total} amostras | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}",
-                        C.G
-                    ))
-                    print(f">>> IA: Treinada! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome})", flush=True)
-                    _train_imported = True
-                    break
-                else:
-                    log.info(paint(f"  ⏳ Dashboard ainda sem dados ({_try+1}/30)... aguardando scan...", C.Y))
-                    time.sleep(5)
-            except Exception as _te:
-                log.info(paint(f"  ⏳ Dashboard não respondeu ({_try+1}/30): {_te}", C.Y))
-                time.sleep(5)
-
-    if not _train_imported:
-        _n_total = sum(v.get("total", 0) for v in hs_stats.get("arms", {}).values())
-        if _n_total > 0:
-            _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
-            log.info(paint(f"✅ IA H&S: Stats locais ({_n_total} amostras) | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
-            print(f">>> IA: Nível {_lvl_num} ({_lvl_nome}) — {_n_total} amostras", flush=True)
-        else:
-            log.info(paint("🌱 IA H&S: Nenhuma amostra — IA iniciando do zero.", C.Y))
-            print(">>> IA: Sem amostras — aguardando primeiro scan do dashboard.", flush=True)
+    _n_total = hs_stats["meta"].get("total", 0)
+    if _n_total == 0:
+        log.info(paint("🌱 IA H&S: Sem stats salvos — iniciando do zero. Dashboard vai treinar em background.", C.Y))
+        print(">>> IA: Iniciando do zero — dashboard treina em background.", flush=True)
 
     log.info("=" * 60)
     log.info(paint(f"🚀 WS TRADER — Cabeça e Ombros (H&S) ({_BROKER_LABEL})", C.G))
