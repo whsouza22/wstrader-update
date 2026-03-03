@@ -63,6 +63,20 @@ import socket
 import ctypes
 import atexit
 import time
+
+# ===== FIX: Flet desktop client não encontrado no PyInstaller OneFile =====
+# No modo frozen (OneFile), flet_desktop.get_package_bin_dir() usa __file__
+# que pode não resolver corretamente para o diretório _MEIPASS.
+# Sem o flet.exe, o Flet cai para modo WEB (abre localhost no navegador).
+# Patch: forçar o path correto usando sys._MEIPASS.
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    try:
+        import flet_desktop
+        def _frozen_get_package_bin_dir():
+            return os.path.join(sys._MEIPASS, 'flet_desktop', 'app')
+        flet_desktop.get_package_bin_dir = _frozen_get_package_bin_dir
+    except Exception:
+        pass
 import re
 
 # ===== FORÇAR ÍCONE DA TASKBAR NO WINDOWS =====
