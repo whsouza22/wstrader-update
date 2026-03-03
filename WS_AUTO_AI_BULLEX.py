@@ -192,34 +192,28 @@ def _safe_save_json(filepath, data):
 
 
 # ═══════════════════════════════════════════════════════════════
-# CONTROLE DE RETRAIN SEMANAL (compartilhado entre corretoras)
+# CONTROLE DE TREINO — MEMÓRIA PERMANENTE (NUNCA RESETA)
+# A IA ACUMULA conhecimento para sempre. Cada vez que liga,
+# carrega do disco e treina APENAS ativos que ainda não têm dados.
 # ═══════════════════════════════════════════════════════════════
 _TRAIN_CONTROL_FILE = os.path.join(os.path.expanduser("~"), ".wstrader", "hs_bot_train_control.json")
 
 
 def _need_retrain_bot():
-    """Verifica se precisa limpar hs_stats (nova semana ISO)."""
-    try:
-        if os.path.exists(_TRAIN_CONTROL_FILE):
-            with open(_TRAIN_CONTROL_FILE, "r") as f:
-                ctrl = json.load(f)
-            now = datetime.now().isocalendar()
-            if ctrl.get("iso_week") == now[1] and ctrl.get("iso_year") == now[0]:
-                return False
-    except Exception:
-        pass
-    return True
+    """Retorna sempre False — IA NUNCA reseta. Memória permanente."""
+    return False
 
 
 def _save_retrain_control():
-    """Marca semana atual como treinada."""
+    """Salva timestamp do último treino (apenas informativo)."""
     try:
         os.makedirs(os.path.dirname(_TRAIN_CONTROL_FILE), exist_ok=True)
         now = datetime.now()
         iso = now.isocalendar()
         with open(_TRAIN_CONTROL_FILE, "w") as f:
-            json.dump({"iso_year": iso[0], "iso_week": iso[1], "date": now.isoformat()}, f)
-        log.info(paint(f"[RETRAIN] Controle salvo: semana {iso[1]}/{iso[0]}", C.G))
+            json.dump({"iso_year": iso[0], "iso_week": iso[1], "date": now.isoformat(),
+                       "mode": "permanent_memory"}, f)
+        log.info(paint(f"[TREINO] Controle salvo: {now.strftime('%d/%m/%Y %H:%M')}", C.G))
     except Exception:
         pass
 
@@ -492,22 +486,46 @@ def backtest_pattern(pat, C, O, H, L, n):
 
 
 def _train_ia_from_history(bx, hs_stats: dict) -> dict:
-    """Treina IA a partir do histórico de velas — IGUAL ao dashboard _update_thread.
+    """Treina IA a partir do histórico de velas — MEMÓRIA PERMANENTE.
     Busca N_M1 candles para cada ativo top, detecta todos os padrões H&S,
-    faz backtest de cada um, e alimenta hs_stats com WIN/LOSS.
-    Isso faz a IA já iniciar com dados, subindo o nível imediatamente."""
+    faz backtest de cada um, e ACUMULA WIN/LOSS nos stats existentes.
+    NUNCA limpa dados anteriores — apenas ADICIONA novos padrões.
+    Ativos que já possuem dados são re-treinados para ACUMULAR mais."""
     ativos = obter_top_ativos_otc(bx)
     if not ativos:
-        log.warning(paint("⚠️ Nenhum ativo para treino — IA inicia do zero", C.Y))
+        log.warning(paint("⚠️ Nenhum ativo para treino — IA mantém memória anterior", C.Y))
         return hs_stats
 
-    log.info(paint(f"🏋️ Treinando IA com {len(ativos)} ativos ({N_M1} velas cada)...", C.B))
+    # Identificar quais ativos já têm dados suficientes
+    existing_arms = hs_stats.get("arms", {})
+    ativos_novos = []
+    ativos_retreino = []
+    for ativo in ativos:
+        # Verificar se ALGUM arm desse ativo existe com dados
+        has_data = False
+        for arm_key in existing_arms:
+            if arm_key.startswith(f"{ativo}_") and existing_arms[arm_key].get("total", 0) >= 5:
+                has_data = True
+                break
+        if has_data:
+            ativos_retreino.append(ativo)
+        else:
+            ativos_novos.append(ativo)
+
+    if ativos_novos:
+        log.info(paint(f"🆕 Ativos NOVOS para treinar: {', '.join(ativos_novos)}", C.B))
+    if ativos_retreino:
+        log.info(paint(f"📚 Ativos com memória (acumulando): {', '.join(ativos_retreino)}", C.G))
+
+    # Treinar TODOS — novos do zero, existentes acumulam
+    all_ativos = ativos_novos + ativos_retreino
+    log.info(paint(f"🏋️ Treinando IA com {len(all_ativos)} ativos ({N_M1} velas cada)...", C.B))
 
     total_wins = 0
     total_losses = 0
     total_patterns = 0
 
-    for ativo in ativos:
+    for ativo in all_ativos:
         try:
             df = get_candles_df(bx, ativo, TF_M1, N_M1)
             if df is None or len(df) < 100:
@@ -519,7 +537,7 @@ def _train_ia_from_history(bx, hs_stats: dict) -> dict:
             O = df["open"].values
             n = len(H)
 
-            # ATR (14 períodos) — IGUAL ao dashboard
+            # ATR (14 períodos)
             atr_vals = [float(H[k] - L[k]) for k in range(max(0, n - 14), n)]
             atr = float(np.mean(atr_vals)) if atr_vals else 0.001
             if atr <= 0:
@@ -536,7 +554,7 @@ def _train_ia_from_history(bx, hs_stats: dict) -> dict:
             for pat in all_hs:
                 bt = backtest_pattern(pat, C_arr, O, H, L, n)
                 if bt is not None and bt["result"] in ("win", "loss"):
-                    # Alimentar IA — IGUAL ao dashboard _ia_new.learn()
+                    # ACUMULAR na IA — nunca sobrescrever
                     pat_type = pat.get("type", "HS")
                     mode = pat.get("mode", "classic")
                     arm = f"{ativo}_{pat_type}_{mode}"
@@ -571,17 +589,17 @@ def _train_ia_from_history(bx, hs_stats: dict) -> dict:
     wr = (total_wins / max(total_wins + total_losses, 1)) * 100
 
     log.info(paint("=" * 50, C.G))
-    log.info(paint(f"🏋️ TREINO CONCLUÍDO!", C.G))
-    log.info(paint(f"  📊 Total: {total_patterns} padrões | {total_wins}W / {total_losses}L | WR: {wr:.1f}%", C.G))
-    log.info(paint(f"  🧠 IA: {_n_total} amostras | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
+    log.info(paint(f"🏋️ TREINO CONCLUÍDO — MEMÓRIA PERMANENTE!", C.G))
+    log.info(paint(f"  📊 Sessão: {total_patterns} padrões | {total_wins}W / {total_losses}L | WR: {wr:.1f}%", C.G))
+    log.info(paint(f"  🧠 IA TOTAL: {_n_total} amostras acumuladas | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
+    log.info(paint(f"  💾 Memória NUNCA é apagada — quanto mais roda, mais aprende!", C.G))
     log.info(paint("=" * 50, C.G))
 
-    print(f">>> IA: Treinada! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome}) | WR: {wr:.1f}%", flush=True)
+    print(f">>> IA: Treinada! {_n_total} amostras acumuladas | Nível {_lvl_num} ({_lvl_nome}) | WR: {wr:.1f}%", flush=True)
 
-    # Salvar no disco
+    # Salvar no disco — PERMANENTE
     _safe_save_json(AI_STATS_FILE, hs_stats)
-    if _n_total > 0:
-        _save_retrain_control()
+    _save_retrain_control()
 
     return hs_stats
 
@@ -1110,37 +1128,24 @@ def main():
     # Inicializar ReversalAI (para stats e compatibilidade)
     reversal_ai = ReversalAI("unified")
 
-    # ── Carregar / Treinar IA — IGUAL ao dashboard _update_thread ──
-    log.info(paint("🧠 Verificando IA H&S...", C.B))
+    # ── Carregar / Treinar IA — MEMÓRIA PERMANENTE ──
+    # A IA NUNCA perde memória. Carrega do disco e ACUMULA.
+    log.info(paint("🧠 Carregando memória da IA H&S...", C.B))
 
-    if _need_retrain_bot():
-        # Nova semana ISO → limpar stats e retreinar do zero
-        log.info(paint("=" * 50, C.Y))
-        log.info(paint("🔄 RETRAIN SEMANAL — Nova semana detectada!", C.Y))
-        log.info(paint("   Limpando IA antiga e retreinando do zero...", C.Y))
-        log.info(paint("=" * 50, C.Y))
-        hs_stats = {"meta": {"total": 0}, "arms": {}}
-        # Remover stats antigos do disco
-        try:
-            if os.path.exists(AI_STATS_FILE):
-                os.remove(AI_STATS_FILE)
-                log.info(paint("[RETRAIN] Stats antigos removidos do disco", C.Y))
-        except Exception:
-            pass
-        # Treinar com histórico (busca N_M1 candles de cada ativo — backtest + learn)
-        hs_stats = _train_ia_from_history(bx, hs_stats)
+    # SEMPRE carregar stats existentes do disco (memória permanente)
+    hs_stats = _safe_load_json(AI_STATS_FILE)
+    _n_total = hs_stats.get("meta", {}).get("total", 0)
+
+    if _n_total > 0:
+        _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
+        log.info(paint(f"💾 IA carregada do disco! {_n_total} amostras acumuladas | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
+        print(f">>> IA: Memória carregada! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome})", flush=True)
     else:
-        # Mesma semana → carregar stats existentes
-        hs_stats = _safe_load_json(AI_STATS_FILE)
-        _n_total = hs_stats.get("meta", {}).get("total", 0)
-        if _n_total > 0:
-            _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
-            log.info(paint(f"✅ IA carregada do disco! {_n_total} amostras | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
-            print(f">>> IA: Treinada! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome})", flush=True)
-        else:
-            # Sem stats salvos — treinar com histórico
-            log.info(paint("🌱 Sem stats salvos — treinando IA com dados históricos...", C.Y))
-            hs_stats = _train_ia_from_history(bx, hs_stats)
+        log.info(paint("🌱 Primeira execução — treinando IA do zero...", C.Y))
+
+    # SEMPRE treinar para ACUMULAR mais dados (novos ativos + padrões recentes)
+    log.info(paint("🏋️ Treinando IA (acumulando novos padrões na memória)...", C.B))
+    hs_stats = _train_ia_from_history(bx, hs_stats)
 
     log.info("=" * 60)
     log.info(paint(f"🚀 WS TRADER — Cabeça e Ombros (H&S) ({_BROKER_LABEL})", C.G))
@@ -1150,8 +1155,8 @@ def main():
     log.info(f"✅ Expiração: {EXP_FIXA} minuto(s)")
     log.info(f"✅ Horário: 1:30 às 18:00")
     log.info(f"✅ Sinais: Detecção LOCAL (direto da corretora, sem delay)")
-    log.info(f"✅ Retrain: IA aprende em tempo real com cada trade")
-    log.info(f"✅ IA: ATIVA — aprendendo padrões H&S")
+    log.info(f"✅ Memória: PERMANENTE — IA nunca perde conhecimento")
+    log.info(f"✅ IA: ATIVA — acumula padrões H&S a cada execução")
     log.info("=" * 60)
 
     # Saldo inicial
