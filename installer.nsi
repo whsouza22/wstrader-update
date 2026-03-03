@@ -81,7 +81,7 @@ Section "WS Trader AI" SecMain
     SetOverwrite try
 
     ; Copia o executável OneFile
-    File "dist2\WsTrader.exe"
+    File "dist\WsTrader.exe"
 
     ; Cria atalhos
     CreateDirectory "$SMPROGRAMS\WS Trader AI"
