@@ -669,12 +669,12 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict):
             pat_type = pat["type"]
             mode = pat.get("mode", "classic")
 
-            # IA predict — IGUAL ao dashboard
+            # IA predict — IGUAL ao dashboard (usa fallback global)
             ia_prob = ai_predict_hs(ativo, pat, hs_stats)
             ia_n = hs_stats.get("arms", {}).get(f"{ativo}_{pat_type}_{mode}", {}).get("total", 0)
 
-            # Score: se IA tem dados usa, senão 0.5
-            score = ia_prob if ia_n >= AI_MIN_SAMPLES else 0.5
+            # Score: usa ia_prob SEMPRE (ai_predict_hs já faz fallback correto)
+            score = ia_prob
 
             setup = {
                 "dir": direction,
@@ -693,8 +693,8 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict):
             if best_any is None or score > best_any[0]:
                 best_any = (score, ativo, setup, atr)
 
-            # Filtro: IA não bloqueia se poucos dados
-            if ia_n >= AI_MIN_SAMPLES and ia_prob < AI_MIN_PROB:
+            # Filtro: IA bloqueia se prob muito baixa (fallback já considerado)
+            if ia_prob < AI_MIN_PROB and ia_prob != 0.5:
                 continue
 
             if best_trade is None or score > best_trade[0]:
@@ -1291,17 +1291,16 @@ def main():
             _arm_key = f"{ativo}_{pat_type}_{setup.get('mode', 'classic')}"
             ia_samples = hs_stats.get("arms", {}).get(_arm_key, {}).get("total", 0)
 
-            # Se IA sem dados: 0.5 (neutro)
-            if ia_samples < AI_MIN_SAMPLES:
-                ia_prob = 0.5
+            # IA: usa prob do ai_predict_hs DIRETO (já faz fallback para global)
+            # NÃO sobrescrever com 0.5 — respeitar a decisão da IA
 
             log.info(paint(
                 f"  🤖 IA H&S: {ativo} | prob={ia_prob:.2f} | amostras={ia_samples}",
                 C.B
             ))
 
-            # Bloqueio: só se IA tem dados suficientes E prob é ruim
-            if ia_samples >= AI_MIN_SAMPLES and ia_prob < AI_MIN_PROB:
+            # Bloqueio: se IA tem opinião (prob != 0.5) E prob é ruim
+            if ia_prob < AI_MIN_PROB and ia_prob != 0.5:
                 log.info(paint(
                     f"  🚫 IA BLOQUEOU entrada: {ativo} {direcao} | prob={ia_prob:.2f}",
                     C.Y
@@ -1363,10 +1362,90 @@ def main():
                 time.sleep(min(s + 1, 30))
                 continue
 
+            # ═══ GUARD 2: QUEBRA DE PADRÃO — OMBRO DIREITO + MOMENTUM + MARUBOZU ═══
+            _break_ok = True
+            try:
+                _guard_df = get_candles_df(bx, ativo, TF_M1, 5)
+                if _guard_df is not None and len(_guard_df) >= 3:
+                    _closes = _guard_df["close"].values
+                    _opens = _guard_df["open"].values
+                    _highs = _guard_df["high"].values
+                    _lows = _guard_df["low"].values
+                    _cur_close = float(_closes[-1])
+                    _cur_open = float(_opens[-1])
+                    _cur_high = float(_highs[-1])
+                    _cur_low = float(_lows[-1])
+
+                    # (A) Violação do Ombro Direito — padrão QUEBRADO
+                    if direcao == "PUT":
+                        if _cur_close > _rs_price:
+                            log.info(paint(
+                                f"  🚫 BREAK GUARD: Preço ({_cur_close:.6f}) > Ombro D ({_rs_price:.6f}) — padrão QUEBRADO",
+                                C.Y
+                            ))
+                            _break_ok = False
+                    else:  # CALL (iH&S)
+                        if _cur_close < _rs_price:
+                            log.info(paint(
+                                f"  🚫 BREAK GUARD: Preço ({_cur_close:.6f}) < Ombro D ({_rs_price:.6f}) — padrão QUEBRADO",
+                                C.Y
+                            ))
+                            _break_ok = False
+
+                    # (B) Momentum contrário — 3 candles consecutivos CONTRA o trade
+                    if _break_ok and len(_closes) >= 4:
+                        c1, c2, c3 = float(_closes[-4]), float(_closes[-3]), float(_closes[-2])
+                        if direcao == "PUT" and c1 < c2 < c3 < _cur_close:
+                            log.info(paint(
+                                f"  🚫 BREAK GUARD: 4 candles bullish consecutivos — tendência contra PUT",
+                                C.Y
+                            ))
+                            _break_ok = False
+                        elif direcao == "CALL" and c1 > c2 > c3 > _cur_close:
+                            log.info(paint(
+                                f"  🚫 BREAK GUARD: 4 candles bearish consecutivos — tendência contra CALL",
+                                C.Y
+                            ))
+                            _break_ok = False
+
+                    # (C) Marubozu forte na direção ERRADA — candle de rompimento
+                    if _break_ok:
+                        _range = _cur_high - _cur_low
+                        _body = abs(_cur_close - _cur_open)
+                        if _range > 0 and (_body / _range) > 0.70:
+                            if direcao == "PUT" and _cur_close > _cur_open:
+                                log.info(paint(
+                                    f"  🚫 BREAK GUARD: Marubozu bullish forte (corpo={(_body/_range)*100:.0f}%) — contra PUT",
+                                    C.Y
+                                ))
+                                _break_ok = False
+                            elif direcao == "CALL" and _cur_close < _cur_open:
+                                log.info(paint(
+                                    f"  🚫 BREAK GUARD: Marubozu bearish forte (corpo={(_body/_range)*100:.0f}%) — contra CALL",
+                                    C.Y
+                                ))
+                                _break_ok = False
+
+                    if _break_ok:
+                        log.info(paint(
+                            f"  ✅ BREAK GUARD OK: padrão válido, sem quebra detectada",
+                            C.G
+                        ))
+            except Exception as _be:
+                log.warning(paint(f"  ⚠️ BREAK GUARD: Erro ({_be})", C.Y))
+
+            if not _break_ok:
+                print(f">>> IA: BREAK GUARD bloqueou {ativo} {direcao} — padrão H&S quebrado", flush=True)
+                s = seconds_to_next(TF_M1)
+                time.sleep(min(s + 1, 30))
+                continue
+
             # Calcular stake
             stake = calcular_stake(bx)
 
-            # ═══ ENTRAR IMEDIATAMENTE (na seta do dashboard) ═══
+            # ═══ ESPERAR VIRADA DA VELA (:00) PARA ENTRAR COM PRECISÃO ═══
+            wait_candle_open()
+
             _log_live_trade(ativo, direcao, None, None, stake,
                             confidence=ia_prob * 100, status="entry")
 
