@@ -1939,10 +1939,33 @@ def chat_screen(page: ft.Page, email: str, password: str):
                 logger.error(f"Erro ao iniciar dashboard: {ex}")
 
     def open_hs_dashboard(e):
-        """Abre o Dashboard H&S IA no navegador."""
+        """Abre o Dashboard H&S IA em janela própria (sem barra de endereço)."""
         _start_dashboard_server()
+        import subprocess as _sp
+        url = "http://localhost:8899"
+        # Tenta abrir como --app (janela limpa, sem abas/barra de endereço)
+        edge_paths = [
+            os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
+            os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
+            os.path.expandvars(r"%LocalAppData%\Microsoft\Edge\Application\msedge.exe"),
+        ]
+        for p in edge_paths:
+            if os.path.exists(p):
+                _sp.Popen([p, f"--app={url}", "--window-size=1100,700"])
+                return
+        # Fallback Chrome
+        chrome_paths = [
+            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+        ]
+        for p in chrome_paths:
+            if os.path.exists(p):
+                _sp.Popen([p, f"--app={url}", "--window-size=1100,700"])
+                return
+        # Fallback navegador padrão
         import webbrowser
-        webbrowser.open_new("http://localhost:8899")
+        webbrowser.open_new(url)
 
     # Botão do dashboard (só aparece para PREMIUM)
     dashboard_button = None
@@ -4722,20 +4745,20 @@ def chat_screen(page: ft.Page, email: str, password: str):
         bk = broker_key or get_active_broker()
         palette = broker_colors.get(bk, ["#F59E0B", "#FF9800", "#5B8DEF", "#10B981"])
 
-        # Expert: 2000+ exp OU 40000+ updates
-        if total_exp >= 2000 or model_updates >= 40000:
+        # Expert: 50+ exp OU 2500+ updates
+        if total_exp >= 50 or model_updates >= 2500:
             return (t["ai_phase_full"], palette[3], 1.0, t["ai_phase_desc_full"])
-        # Avançada: 500+ exp OU 15000+ updates
-        elif total_exp >= 500 or model_updates >= 15000:
-            progress = min(1.0, total_exp / 2000.0 * 0.6 + model_updates / 40000.0 * 0.4)
+        # Avançada: 30+ exp OU 1500+ updates
+        elif total_exp >= 30 or model_updates >= 1500:
+            progress = min(1.0, total_exp / 50.0 * 0.6 + model_updates / 2500.0 * 0.4)
             return (t["ai_phase_lgbm"], palette[2], progress, t["ai_phase_desc_lgbm"])
-        # Intermediária: 100+ exp OU 5000+ updates
-        elif total_exp >= 100 or model_updates >= 5000:
-            progress = min(1.0, total_exp / 500.0 * 0.6 + model_updates / 15000.0 * 0.4)
+        # Intermediária: 15+ exp OU 750+ updates
+        elif total_exp >= 15 or model_updates >= 750:
+            progress = min(1.0, total_exp / 30.0 * 0.6 + model_updates / 1500.0 * 0.4)
             return (t["ai_phase_bayes"], palette[1], progress, t["ai_phase_desc_bayes"])
-        # Iniciante: < 100 exp
+        # Iniciante: < 15 exp
         else:
-            progress = min(1.0, total_exp / 100.0 * 0.6 + model_updates / 5000.0 * 0.4)
+            progress = min(1.0, total_exp / 15.0 * 0.6 + model_updates / 750.0 * 0.4)
             return (t["ai_phase_warmup"], palette[0], progress, t["ai_phase_desc_warmup"])
 
     _ai_total_init, _ai_wr_init, _ai_live_init, _ai_lwr_init, _ai_train_init, _ai_updates_init = _get_ai_stats_chat()

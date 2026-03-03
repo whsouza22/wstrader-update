@@ -1550,11 +1550,11 @@ class ConfluenceBrain:
         """
         total = self.training_samples + self.total_trades
         updates = self.model.n_updates
-        if total >= 2000 or updates >= 40000:
+        if total >= 50 or updates >= 2500:
             return "EXPERT"
-        elif total >= 500 or updates >= 15000:
+        elif total >= 30 or updates >= 1500:
             return "AVANCADA"
-        elif total >= 100 or updates >= 5000:
+        elif total >= 15 or updates >= 750:
             return "INTERMEDIARIA"
         else:
             return "INICIANTE"
