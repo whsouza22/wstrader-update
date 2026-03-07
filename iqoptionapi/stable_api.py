@@ -264,6 +264,7 @@ class IQ_Option:
                         break
                 except:
                     pass
+                time.sleep(0.1)
             try:
                 if self.api.api_option_init_all_result["isSuccessful"] == True:
                     return self.api.api_option_init_all_result
@@ -282,6 +283,7 @@ class IQ_Option:
             if time.time() - start_t >= 30:
                 logging.error('**warning** get_all_init_v2 late 30 sec')
                 return None
+            time.sleep(0.1)
         return self.api.api_option_init_all_result_v2
 
         # return OP_code.ACTIVES
@@ -801,6 +803,7 @@ class IQ_Option:
                     break
             except:
                 pass
+            time.sleep(0.1)  # Libera GIL para outras threads (live candles, WebSocket)
         x = self.api.socket_option_closed[id_number]
         return x['msg']['win'], (0 if x['msg']['win'] == 'equal' else float(x['msg']['sum']) * -1 if x['msg']['win'] == 'loose' else float(x['msg']['win_amount']) - float(x['msg']['sum']))
 

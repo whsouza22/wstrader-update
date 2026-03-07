@@ -23,6 +23,7 @@ from WS_AUTO_AI_BULLEX import (
     ai_predict, ai_update,
     _safe_load_json, _safe_save_json,
     cooldown,
+    _log_live_trade,
 )
 
 # ===================== MULTI-BROKER SUPPORT =====================
@@ -238,6 +239,11 @@ class TradingEngine:
             self.total_trades += 1
             cooldown[ativo] = time.time()
 
+            # ── Log para dashboard: registra entrada ──
+            _ia_prob = pred.get("prob", 0.5) if IA_ON and 'pred' in dir() else 0.5
+            _log_live_trade(ativo, direcao, None, None, stake,
+                            confidence=_ia_prob * 100, status="entry")
+
             if self.operation_callback:
                 payout = 85
                 try:
@@ -270,6 +276,8 @@ class TradingEngine:
             lucro = resultado_valor - stake
             self._log(f"✅ WIN! +R$ {lucro:.2f}")
             self.wins += 1
+            # ── Log para dashboard: WIN ──
+            _log_live_trade(ativo, direcao, lucro, None, stake, status="win")
             if self.result_callback:
                 self.result_callback(order_id, "win", lucro)
             if IA_ON:
@@ -278,6 +286,8 @@ class TradingEngine:
         else:
             self._log(f"❌ LOSS! -R$ {stake:.2f}")
             self.losses += 1
+            # ── Log para dashboard: LOSS ──
+            _log_live_trade(ativo, direcao, -stake, None, stake, status="loss")
             if self.result_callback:
                 self.result_callback(order_id, "loss", -stake)
             if self.loss_analyzer:

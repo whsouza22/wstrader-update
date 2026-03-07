@@ -2353,6 +2353,8 @@ def chat_screen(page: ft.Page, email: str, password: str):
         win_rate_text.value = f"{win_rate:.0f}%"
         # Mostrar box se conectado OU se há dados restaurados do dia
         wins_losses_box.visible = any_broker_connected() or total_val > 0
+        if total_val > 0:
+            logger.info(f"[UI-COUNTER] active_bk={active_bk} | W={wins_val} L={losses_val} WR={win_rate:.0f}%")
 
     def add_status_message(text: str, color: str = None):
         line_text = ft.Text(text, size=12, color=COLORS["muted"] if color is None else color)
@@ -2548,7 +2550,10 @@ def chat_screen(page: ft.Page, email: str, password: str):
         
         ganhos_pill.data["text"].value = ganhos_txt
 
-        update_wins_losses_box()
+        try:
+            update_wins_losses_box()
+        except Exception as _wl_err:
+            logger.error(f"[SIDEBAR] Erro ao atualizar wins/losses box: {_wl_err}")
 
         # Desabilitar TODOS os botões quando QUALQUER corretora estiver conectada
         any_connected = any_broker_connected()
@@ -3302,8 +3307,10 @@ def chat_screen(page: ft.Page, email: str, password: str):
 
         threading.Thread(target=watch_process, daemon=True).start()
 
-        # Ler stdout
-        for line in proc.stdout:
+        # Ler stdout — com proteção contra crash silencioso
+        try:
+         for line in proc.stdout:
+          try:
             msg = (line or "").strip()
             if not msg:
                 continue
@@ -3466,7 +3473,13 @@ def chat_screen(page: ft.Page, email: str, password: str):
                         check_reset_daily_stats()
                         daily_stats_broker[broker_key][broker_acct]["wins"] += 1
                         daily_stats[broker_acct]["wins"] += 1
-                        logger.info(f"[WIN] {broker_key} {broker_acct}: R$ {valor:.2f} | Acumulado: R$ {_get_ganhos(broker_key, broker_acct):.2f}")
+                        _w = daily_stats_broker[broker_key][broker_acct]["wins"]
+                        logger.info(f"[WIN] {broker_key} {broker_acct}: R$ {valor:.2f} | Wins={_w} | Acumulado: R$ {_get_ganhos(broker_key, broker_acct):.2f}")
+                        # Mostrar WIN no chat para o usuário
+                        _ativo_win = re.search(r'WIN\s+(\S+)\s+(CALL|PUT)', clean)
+                        _par_win = _ativo_win.group(1) if _ativo_win else ""
+                        _dir_win = _ativo_win.group(2) if _ativo_win else ""
+                        ui(add_status_message, f"WIN {_par_win} {_dir_win} +R$ {valor:.2f}", COLORS.get("green", "#10B981"))
                         # Atualizar resultado do último trade no arquivo unificado
                         _update_last_trade_result(broker_key, broker_acct, "WIN", valor)
                         _save_daily_report_data(broker_key, _get_broker_wins(broker_key, broker_acct), _get_broker_losses(broker_key, broker_acct), _get_ganhos(broker_key, broker_acct), broker_acct)
@@ -3526,7 +3539,13 @@ def chat_screen(page: ft.Page, email: str, password: str):
                         check_reset_daily_stats()
                         daily_stats_broker[broker_key][broker_acct]["losses"] += 1
                         daily_stats[broker_acct]["losses"] += 1
-                        logger.info(f"[LOSS] {broker_key} {broker_acct}: R$ {valor:.2f} | Acumulado: R$ {_get_ganhos(broker_key, broker_acct):.2f}")
+                        _l = daily_stats_broker[broker_key][broker_acct]["losses"]
+                        logger.info(f"[LOSS] {broker_key} {broker_acct}: R$ {valor:.2f} | Losses={_l} | Acumulado: R$ {_get_ganhos(broker_key, broker_acct):.2f}")
+                        # Mostrar LOSS no chat para o usuário
+                        _ativo_loss = re.search(r'LOSS\s+(\S+)\s+(CALL|PUT)', clean)
+                        _par_loss = _ativo_loss.group(1) if _ativo_loss else ""
+                        _dir_loss = _ativo_loss.group(2) if _ativo_loss else ""
+                        ui(add_status_message, f"LOSS {_par_loss} {_dir_loss} R$ {valor:.2f}", COLORS.get("red", "#EF4444"))
                         # Atualizar resultado do último trade no arquivo unificado
                         _update_last_trade_result(broker_key, broker_acct, "LOSS", valor)
                         _save_daily_report_data(broker_key, _get_broker_wins(broker_key, broker_acct), _get_broker_losses(broker_key, broker_acct), _get_ganhos(broker_key, broker_acct), broker_acct)
@@ -3534,7 +3553,6 @@ def chat_screen(page: ft.Page, email: str, password: str):
                         ui(update_accuracy_chart)  # Atualizar gráfico após LOSS
                         ui(_refresh_report_charts)
                         ui(_update_ai_phase_ui)
-                        # LOSS não é exibido no chat (informação interna)
                 elif "EMPATE" in clean:
                     # Formato: >>> RESULTADO: EMPATE 0.00
                     ui(add_status_message, "EMPATE (devolucao)", COLORS["text"])
@@ -3594,6 +3612,12 @@ def chat_screen(page: ft.Page, email: str, password: str):
                         ui(update_status_header)
                         ui(update_send_button)
                     threading.Thread(target=_stop_bot_meta_stdout, daemon=True).start()
+
+          except Exception as _line_err:
+              logger.error(f"[STDOUT-ERR] Erro ao processar linha stdout ({broker_key}): {_line_err} | Linha: {msg[:100] if msg else ''}")
+              continue  # Não crashar — continuar lendo próximas linhas
+        except Exception as _stdout_err:
+            logger.error(f"[STDOUT-FATAL] Erro no leitor de stdout ({broker_key}): {_stdout_err}", exc_info=True)
 
 
     def connect_iq():
@@ -4667,7 +4691,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
     _brain_suffix_map = {"iq_option": "iq", "bullex": "bullex", "casatrader": "casatrader"}
 
     def _read_brain_training_stats(broker_key=None):
-        """Lê stats da IA H&S (Cabeça e Ombros).
+        """Lê stats da IA H&S (Cabeça e Ombros) — usa meta.total (mesmo valor que o bot exibe).
         Retorna (total_samples, wins, 0, 0, model_updates)."""
         try:
             import json as _json
@@ -4677,10 +4701,20 @@ def chat_screen(page: ft.Page, email: str, password: str):
             if os.path.exists(hs_file):
                 with open(hs_file, "r") as _f:
                     data = _json.load(_f)
-                arms = data.get("arms", {})
-                for arm_data in arms.values():
-                    total += arm_data.get("total", 0)
-                    wins += arm_data.get("wins", 0)
+                # Usar meta.total — acumulado global (mesmo que o bot mostra)
+                meta = data.get("meta", {})
+                total = meta.get("total", 0)
+                wins = meta.get("wins", 0)
+                # Fallback: se meta.wins não existe ainda, calcular de geometry_history (backtest)
+                if wins == 0 and total > 0:
+                    geo = data.get("geometry_history", [])
+                    bt_geo = [g for g in geo if g.get("source") != "live"]
+                    if bt_geo:
+                        wins = sum(1 for g in bt_geo if g.get("result") == 1)
+                    else:
+                        # Último fallback: somar dos arms
+                        arms = data.get("arms", {})
+                        wins = sum(ad.get("wins", 0) for ad in arms.values())
             # IA H&S está sempre ativa — model_updates reflete experiência
             model_updates = max(total * 50, 1000)  # Sempre mostra como ativa
             return total, wins, 0, 0, model_updates

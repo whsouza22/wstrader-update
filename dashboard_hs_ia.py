@@ -1,16 +1,20 @@
 """
-dashboard_hs_ia.py — Dashboard IA H&S (Cabeça e Ombros)
+dashboard_hs_ia.py — Dashboard IA Double Touch (Duplo Toque) — SOMENTE LEITURA
 ============================================================================
 Servidor HTTP local que:
-  1. Conecta à IQ Option e busca 900 velas M1 para cada ativo OTC
-  2. Detecta TODOS os padrões H&S históricos
-  3. Backtest: verifica se cada padrão deu WIN ou LOSS (3 velas após entrada)
-  4. Treina a IA com os resultados (aprende quais setups são bons)
-  5. Mostra em tempo real: gráfico, padrões, sinais, win rate
-  6. Atualiza a cada 1 minuto
+  1. Lê dados de velas do cache do bot (ws_dashboard_cache.json)
+  2. NÃO conecta ao broker — apenas visualiza sinais
+  3. Detecta TODOS os padrões Double Touch históricos nos dados do cache
+  4. Backtest: verifica se cada padrão deu WIN ou LOSS (3 velas após entrada)
+  5. Treina a IA com os resultados (aprende quais setups são bons)
+  6. Mostra: gráfico, padrões, sinais, win rate
+
+IMPORTANTE: O dashboard NÃO faz trades. O bot (WS_AUTO_AI_BULLEX.py) é
+a ÚNICA fonte de dados e a ÚNICA conexão ao broker.
+O dashboard é SOMENTE VISUALIZAÇÃO.
 
 Uso:
-  python dashboard_hs_ia.py                   (conecta IQ Option)
+  python dashboard_hs_ia.py                   (porta padrão 8899)
   python dashboard_hs_ia.py --port 9999       (porta customizada)
 
 Acesse: http://localhost:8899
@@ -21,6 +25,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, parse_qs
 
 try:
@@ -45,6 +50,9 @@ PIVOT_WINDOW = 5
 _USER_DIR = os.path.join(os.path.expanduser("~"), ".wstrader")
 IA_PERSIST_FILE = os.path.join(_USER_DIR, "hs_ia_dashboard_stats.json")
 TRAIN_CONTROL_FILE = os.path.join(_USER_DIR, "hs_ia_train_control.json")
+
+# ── Cache compartilhado: o BOT escreve, dashboard apenas LÊ ──
+_DASHBOARD_CACHE_FILE = os.path.join(_USER_DIR, "ws_dashboard_cache.json")
 
 # ── Premium Gate ──
 _PREMIUM_PRODUCT_ID = "prod_U4ZxrEEApDg2Hb"   # PREMIUM — acesso total
@@ -87,12 +95,76 @@ def detect_pivots(H, L, window=5):
     return ph, pl
 
 
+def _extract_geometry(pat, atr_val):
+    """Extrai features geométricas de um padrão H&S para a IA aprender."""
+    try:
+        iL = pat["left_shoulder"]["idx"]
+        iH = pat["head"]["idx"]
+        iR = pat["right_shoulder"]["idx"]
+        span = iR - iL
+        depth = pat.get("depth", 0)
+        neck = pat.get("neckline", 0)
+        v1 = pat.get("valley1", {}).get("price", neck)
+        v2 = pat.get("valley2", {}).get("price", neck)
+        d_left = iH - iL
+        d_right = iR - iH
+        symmetry = min(d_left, d_right) / max(d_left, d_right) if max(d_left, d_right) > 0 else 0
+        depth_ratio = depth / atr_val if atr_val > 0 else 0
+        neck_align = abs(v1 - v2) / atr_val if atr_val > 0 else 0
+        return {
+            "span": span,
+            "symmetry": round(symmetry, 4),
+            "depth_ratio": round(depth_ratio, 4),
+            "neck_align": round(neck_align, 4),
+        }
+    except Exception:
+        return None
+
+
+def ia_pattern_quality(pat, atr_val, geo_history=None):
+    """IA que APRENDE da geometria dos padrões — sem regras hardcoded.
+    Compara features geométricas do padrão atual contra o perfil
+    estatístico dos padrões que deram WIN no histórico.
+    Retorna fator 0.50-1.0. Quando não há dados suficientes, retorna 1.0 (neutro).
+    """
+    geo = _extract_geometry(pat, atr_val)
+    if geo is None or geo_history is None:
+        return 1.0
+    if len(geo_history) < 10:
+        return 1.0
+    win_geos = [g for g in geo_history if g.get("result") == 1]
+    if len(win_geos) < 5:
+        return 1.0
+    features = ["span", "symmetry", "depth_ratio", "neck_align"]
+    score_sum = 0.0
+    n_feat = 0
+    for feat in features:
+        win_vals = [g[feat] for g in win_geos if feat in g]
+        if len(win_vals) < 3:
+            continue
+        mean_w = sum(win_vals) / len(win_vals)
+        variance = sum((v - mean_w) ** 2 for v in win_vals) / len(win_vals)
+        std_w = variance ** 0.5 if variance > 0 else mean_w * 0.3
+        if std_w < 0.001:
+            std_w = 0.001
+        current_val = geo.get(feat, mean_w)
+        distance = abs(current_val - mean_w) / std_w
+        feat_score = max(0.50, 1.0 - distance * 0.12)
+        score_sum += feat_score
+        n_feat += 1
+    if n_feat == 0:
+        return 1.0
+    final = score_sum / n_feat
+    return round(max(0.50, min(1.0, final)), 4)
+
+
 # ══════════════════════════════════════════════════════════════════
 # DETECÇÃO H&S COMPLETA (todos os padrões históricos)
 # ══════════════════════════════════════════════════════════════════
 def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
     """Detecta TODOS os padrões H&S/iH&S no histórico de 900 velas.
-    Inclui validações: cabeça não pode ter sido rompida."""
+    Inclui validações: cabeça não pode ter sido rompida.
+    Simetria temporal: braços não podem diferir mais de 3:1."""
     patterns = []
     n = len(H)
     tol = atr * 1.5
@@ -101,6 +173,7 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
     max_span = 100
     trend_lookback = 30
     symmetry_min = 0.90
+    temporal_sym_min = 0.30  # braço curto >= 30% do braço longo (max 3.3:1)
     seen_heads = set()
 
     # ── MODO 1: H&S Clássico (3 pivot highs) ──
@@ -112,6 +185,10 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
         if abs(pL - pR) > tol: continue
         if iH - iL < min_spacing or iR - iH < min_spacing: continue
         if iR - iL > max_span: continue
+        # Simetria temporal: braços devem ser proporcionais
+        d_left = iH - iL
+        d_right = iR - iH
+        if min(d_left, d_right) / max(d_left, d_right) < temporal_sym_min: continue
         shoulder_avg = (pL + pR) / 2
         head_depth = pH - shoulder_avg
         if head_depth < min_depth: continue
@@ -141,7 +218,8 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
             "depth": round(float(head_depth), 6),
             "target": round(neckline - head_depth, 6),
             "stop": round(float(pH), 6),
-            "entry_idx": int(iR) + 1,
+            "entry_idx": int(iR),
+            "entry_price": round(float(C[int(iR)]), 6),
         })
 
     # ── MODO 1: iH&S Clássico (3 pivot lows) ──
@@ -153,6 +231,10 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
         if abs(pL - pR) > tol: continue
         if iH - iL < min_spacing or iR - iH < min_spacing: continue
         if iR - iL > max_span: continue
+        # Simetria temporal
+        d_left = iH - iL
+        d_right = iR - iH
+        if min(d_left, d_right) / max(d_left, d_right) < temporal_sym_min: continue
         shoulder_avg = (pL + pR) / 2
         head_depth = shoulder_avg - pH
         if head_depth < min_depth: continue
@@ -181,7 +263,8 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
             "depth": round(float(head_depth), 6),
             "target": round(neckline + head_depth, 6),
             "stop": round(float(pH), 6),
-            "entry_idx": int(iR) + 1,
+            "entry_idx": int(iR),
+            "entry_price": round(float(C[int(iR)]), 6),
         })
 
     # ── MODO 2: H&S Tempo Real (PUT) ──
@@ -197,7 +280,10 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
             if float(C[iL]) <= float(C[iL - trend_lookback]): continue
         search_start = iH + min_spacing
         if search_start >= n: continue
-        region = H[search_start:n]
+        # Limitar busca: máx 3x a distância do braço esquerdo
+        d_left = iH - iL
+        search_end = min(n, iH + int(d_left * 3.5))
+        region = H[search_start:search_end]
         if len(region) < 2: continue
         local_max_rel = int(np.argmax(region))
         iR = search_start + local_max_rel
@@ -205,6 +291,15 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
         if abs(pL - pR) > tol or pR >= pH: continue
         if min(pL, pR) / max(pL, pR) < symmetry_min: continue
         if iR - iL > max_span: continue
+        # Validar que iR é um pivot real (não apenas argmax da região)
+        _pivot_check = min(3, iR - search_start, n - 1 - iR)
+        if _pivot_check < 2: continue
+        _is_pivot = all(H[iR] >= H[iR - j] for j in range(1, _pivot_check + 1)) and \
+                    all(H[iR] >= H[iR + j] for j in range(1, min(_pivot_check + 1, n - iR)))
+        if not _is_pivot: continue
+        # Simetria temporal
+        d_right = iR - iH
+        if min(d_left, d_right) / max(d_left, d_right) < temporal_sym_min: continue
         # Validação cabeça
         if float(max(H[iH+1:n])) >= pH: continue
         v1_region = L[iL:iH + 1]
@@ -226,7 +321,8 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
             "depth": round(float(head_depth), 6),
             "target": round(neckline - head_depth, 6),
             "stop": round(float(pH), 6),
-            "entry_idx": int(iR) + 1,
+            "entry_idx": int(iR),
+            "entry_price": round(float(C[int(iR)]), 6),
         })
 
     # ── MODO 2: iH&S Tempo Real (CALL) ──
@@ -241,7 +337,10 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
             if float(C[iL]) >= float(C[iL - trend_lookback]): continue
         search_start = iH + min_spacing
         if search_start >= n: continue
-        region = L[search_start:n]
+        # Limitar busca: máx 3x a distância do braço esquerdo
+        d_left = iH - iL
+        search_end = min(n, iH + int(d_left * 3.5))
+        region = L[search_start:search_end]
         if len(region) < 2: continue
         local_min_rel = int(np.argmin(region))
         iR = search_start + local_min_rel
@@ -249,6 +348,15 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
         if abs(pL - pR) > tol or pR <= pH: continue
         if min(pL, pR) / max(pL, pR) < symmetry_min: continue
         if iR - iL > max_span: continue
+        # Validar que iR é um pivot real (não apenas argmin da região)
+        _pivot_check = min(3, iR - search_start, n - 1 - iR)
+        if _pivot_check < 2: continue
+        _is_pivot = all(L[iR] <= L[iR - j] for j in range(1, _pivot_check + 1)) and \
+                    all(L[iR] <= L[iR + j] for j in range(1, min(_pivot_check + 1, n - iR)))
+        if not _is_pivot: continue
+        # Simetria temporal
+        d_right = iR - iH
+        if min(d_left, d_right) / max(d_left, d_right) < temporal_sym_min: continue
         if float(min(L[iH+1:n])) <= pH: continue
         v1_region = H[iL:iH + 1]
         v1_rel = int(np.argmax(v1_region)); v1_idx = iL + v1_rel; v1_price = float(v1_region[v1_rel])
@@ -269,8 +377,186 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
             "depth": round(float(head_depth), 6),
             "target": round(neckline + head_depth, 6),
             "stop": round(float(pH), 6),
-            "entry_idx": int(iR) + 1,
+            "entry_idx": int(iR),
+            "entry_price": round(float(C[int(iR)]), 6),
         })
+
+    return patterns
+
+
+# ══════════════════════════════════════════════════════════════════
+# DETECÇÃO DOUBLE TOUCH (Duplo Toque)
+# ══════════════════════════════════════════════════════════════════
+def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
+                        max_candles_ago=9999, training=False):
+    """Detecta Duplo Toque: preço toca o MESMO nível 2x + rejeição (wick).
+    Double Top (PUT): 2 toques em resistência + wick rejeição → preço cai
+    Double Bottom (CALL): 2 toques em suporte + wick rejeição → preço sobe
+    """
+    patterns = []
+    tol = atr * 0.4
+    min_spacing = 8
+    max_spacing = 60
+    min_depth = atr * 1.0
+    min_candle_range = atr * 0.20
+
+    # ═══ DOUBLE TOP (PUT) ═══
+    for i, (idx1, price1) in enumerate(pivot_highs):
+        if training or max_candles_ago >= 9999:
+            for j_idx in range(i + 1, len(pivot_highs)):
+                idx2, price2 = pivot_highs[j_idx]
+                spacing = idx2 - idx1
+                if spacing < min_spacing or spacing > max_spacing:
+                    continue
+                if abs(price1 - price2) > tol:
+                    continue
+                v_reg = L[idx1:idx2 + 1]
+                if len(v_reg) < 3:
+                    continue
+                v_rel = int(np.argmin(v_reg))
+                v_idx = idx1 + v_rel
+                v_price = float(v_reg[v_rel])
+                touch_level = max(float(price1), float(price2))
+                depth = touch_level - v_price
+                if depth < min_depth:
+                    continue
+                patterns.append({
+                    "type": "DOUBLE_TOP", "direction": "PUT", "mode": "double_touch",
+                    "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
+                    "head": {"idx": int(v_idx), "price": round(float(touch_level), 6)},
+                    "right_shoulder": {"idx": int(idx2), "price": round(float(price2), 6)},
+                    "valley1": {"idx": int(v_idx), "price": round(v_price, 6)},
+                    "valley2": {"idx": int(v_idx), "price": round(v_price, 6)},
+                    "neckline": round(v_price, 6),
+                    "neck_slope": 0.0,
+                    "depth": round(depth, 6),
+                    "target": round(v_price, 6),
+                    "stop": round(touch_level + atr * 0.3, 6),
+                    "entry_idx": int(idx2),
+                    "entry_price": round(float(C_arr[int(idx2)]), 6),
+                    "candles_ago": n - 1 - idx2,
+                })
+        else:
+            if n - 1 - idx1 < min_spacing:
+                continue
+            j_start = max(idx1 + min_spacing, n - 1 - max_candles_ago)
+            for j in range(j_start, n):
+                h_j, c_j, o_j, l_j = float(H[j]), float(C_arr[j]), float(O[j]), float(L[j])
+                candle_range = h_j - l_j
+                if candle_range < min_candle_range:
+                    continue
+                if h_j < price1 - tol or h_j > price1 + tol:
+                    continue
+                wick_up = h_j - max(c_j, o_j)
+                if wick_up < candle_range * 0.35:
+                    continue
+                if c_j > l_j + candle_range * 0.40:
+                    continue
+                v_reg = L[idx1:j + 1]
+                if len(v_reg) < 3:
+                    continue
+                v_rel = int(np.argmin(v_reg))
+                v_idx = idx1 + v_rel
+                v_price = float(v_reg[v_rel])
+                touch_level = max(float(price1), h_j)
+                depth = touch_level - v_price
+                if depth < min_depth:
+                    continue
+                patterns.append({
+                    "type": "DOUBLE_TOP", "direction": "PUT", "mode": "double_touch",
+                    "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
+                    "head": {"idx": int(v_idx), "price": round(float(touch_level), 6)},
+                    "right_shoulder": {"idx": int(j), "price": round(float(h_j), 6)},
+                    "valley1": {"idx": int(v_idx), "price": round(v_price, 6)},
+                    "valley2": {"idx": int(v_idx), "price": round(v_price, 6)},
+                    "neckline": round(v_price, 6),
+                    "neck_slope": 0.0,
+                    "depth": round(depth, 6),
+                    "target": round(v_price, 6),
+                    "stop": round(touch_level + atr * 0.3, 6),
+                    "entry_idx": int(j),
+                    "entry_price": round(c_j, 6),
+                    "candles_ago": n - 1 - j,
+                })
+
+    # ═══ DOUBLE BOTTOM (CALL) ═══
+    for i, (idx1, price1) in enumerate(pivot_lows):
+        if training or max_candles_ago >= 9999:
+            for j_idx in range(i + 1, len(pivot_lows)):
+                idx2, price2 = pivot_lows[j_idx]
+                spacing = idx2 - idx1
+                if spacing < min_spacing or spacing > max_spacing:
+                    continue
+                if abs(price1 - price2) > tol:
+                    continue
+                p_reg = H[idx1:idx2 + 1]
+                if len(p_reg) < 3:
+                    continue
+                p_rel = int(np.argmax(p_reg))
+                p_idx = idx1 + p_rel
+                p_price = float(p_reg[p_rel])
+                touch_level = min(float(price1), float(price2))
+                depth = p_price - touch_level
+                if depth < min_depth:
+                    continue
+                patterns.append({
+                    "type": "DOUBLE_BOTTOM", "direction": "CALL", "mode": "double_touch",
+                    "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
+                    "head": {"idx": int(p_idx), "price": round(float(touch_level), 6)},
+                    "right_shoulder": {"idx": int(idx2), "price": round(float(price2), 6)},
+                    "valley1": {"idx": int(p_idx), "price": round(p_price, 6)},
+                    "valley2": {"idx": int(p_idx), "price": round(p_price, 6)},
+                    "neckline": round(p_price, 6),
+                    "neck_slope": 0.0,
+                    "depth": round(depth, 6),
+                    "target": round(p_price, 6),
+                    "stop": round(touch_level - atr * 0.3, 6),
+                    "entry_idx": int(idx2),
+                    "entry_price": round(float(C_arr[int(idx2)]), 6),
+                    "candles_ago": n - 1 - idx2,
+                })
+        else:
+            if n - 1 - idx1 < min_spacing:
+                continue
+            j_start = max(idx1 + min_spacing, n - 1 - max_candles_ago)
+            for j in range(j_start, n):
+                h_j, c_j, o_j, l_j = float(H[j]), float(C_arr[j]), float(O[j]), float(L[j])
+                candle_range = h_j - l_j
+                if candle_range < min_candle_range:
+                    continue
+                if l_j > price1 + tol or l_j < price1 - tol:
+                    continue
+                wick_down = min(c_j, o_j) - l_j
+                if wick_down < candle_range * 0.35:
+                    continue
+                if c_j < h_j - candle_range * 0.40:
+                    continue
+                p_reg = H[idx1:j + 1]
+                if len(p_reg) < 3:
+                    continue
+                p_rel = int(np.argmax(p_reg))
+                p_idx = idx1 + p_rel
+                p_price = float(p_reg[p_rel])
+                touch_level = min(float(price1), l_j)
+                depth = p_price - touch_level
+                if depth < min_depth:
+                    continue
+                patterns.append({
+                    "type": "DOUBLE_BOTTOM", "direction": "CALL", "mode": "double_touch",
+                    "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
+                    "head": {"idx": int(p_idx), "price": round(float(touch_level), 6)},
+                    "right_shoulder": {"idx": int(j), "price": round(float(l_j), 6)},
+                    "valley1": {"idx": int(p_idx), "price": round(p_price, 6)},
+                    "valley2": {"idx": int(p_idx), "price": round(p_price, 6)},
+                    "neckline": round(p_price, 6),
+                    "neck_slope": 0.0,
+                    "depth": round(depth, 6),
+                    "target": round(p_price, 6),
+                    "stop": round(touch_level - atr * 0.3, 6),
+                    "entry_idx": int(j),
+                    "entry_price": round(c_j, 6),
+                    "candles_ago": n - 1 - j,
+                })
 
     return patterns
 
@@ -281,7 +567,7 @@ def detect_all_hs(H, L, C, O, pivot_highs, pivot_lows, atr):
 def backtest_pattern(pat, C, O, H, L, n):
     """Verifica se o padrão H&S resultaria em WIN ou LOSS.
     
-    Regra: entra na abertura da vela entry_idx na direção pat['direction'].
+    Regra: entra no CLOSE da vela de confirmação (entry_idx = ombro direito).
     Verifica o close EXP_CANDLES velas depois.
     PUT: WIN se close < entry_price
     CALL: WIN se close > entry_price
@@ -290,7 +576,7 @@ def backtest_pattern(pat, C, O, H, L, n):
     - Preço não pode estar acima da cabeça (PUT) ou abaixo (CALL)
     - Preço não pode estar longe demais do ombro D
     """
-    entry_idx = pat.get("entry_idx", pat["right_shoulder"]["idx"] + 1)
+    entry_idx = pat.get("entry_idx", pat["right_shoulder"]["idx"])
     
     if entry_idx >= n or entry_idx < 0:
         return None  # sem dados para verificar
@@ -299,7 +585,8 @@ def backtest_pattern(pat, C, O, H, L, n):
     if exit_idx >= n:
         return None  # padrão muito recente, sem resultado ainda
 
-    entry_price = float(O[entry_idx])  # entrada na abertura
+    # Entrada no close da vela de confirmação (ombro direito)
+    entry_price = float(C[entry_idx])
     exit_price = float(C[exit_idx - 1])  # close da última vela
     
     head_price = pat["head"]["price"]
@@ -335,8 +622,9 @@ class HS_IA:
     def __init__(self):
         self.stats = {}  # {ativo: {type: {wins, total, features...}}}
         self.global_stats = {"wins": 0, "total": 0, "by_type": {}}
+        self.geometry_history = []  # IA aprende geometria dos padrões
     
-    def learn(self, ativo, pat, result):
+    def learn(self, ativo, pat, result, atr_val=0):
         """Registra resultado de um padrão."""
         if result["result"] not in ("win", "loss"):
             return
@@ -370,19 +658,59 @@ class HS_IA:
             "entry_price": result.get("entry_price", 0),
             "exit_price": result.get("exit_price", 0),
         })
+
+        # ── IA: armazenar geometria para aprendizado contínuo ──
+        geo = _extract_geometry(pat, atr_val)
+        if geo is not None:
+            geo["result"] = 1 if result["result"] == "win" else 0
+            geo["ativo"] = ativo
+            geo["type"] = pat.get("type", "HS")
+            geo["source"] = "backtest"  # marcado como backtest (learn vem do treino)
+            self.geometry_history.append(geo)
+            if len(self.geometry_history) > 300:
+                self.geometry_history = self.geometry_history[-300:]
     
     def predict(self, ativo, pat):
-        """Prediz probabilidade de WIN para um setup."""
+        """Prediz probabilidade de WIN para um setup — com fallback hierárquico ponderado."""
+        import math
         key = f"{ativo}_{pat['type']}_{pat['mode']}"
         data = self.stats.get(key, None)
         if data and data["total"] >= 3:
-            return data["wins"] / data["total"]
-        # Fallback: stats globais do tipo
-        t = pat["type"]
-        gdata = self.global_stats["by_type"].get(t, None)
-        if gdata and gdata["total"] >= 5:
-            return gdata["wins"] / gdata["total"]
-        return 0.5  # sem dados
+            return (data["wins"] + 2) / (data["total"] + 4)  # Bayesian
+
+        # Fallback hierárquico ponderado (não para no primeiro raso)
+        pat_type = pat.get("type", "HS")
+        pat_mode = pat.get("mode", "classic")
+
+        # F1: mesmo tipo + modo
+        f1_w, f1_t = 0, 0
+        for k, v in self.stats.items():
+            if f"_{pat_type}_{pat_mode}" in k:
+                f1_w += v.get("wins", 0)
+                f1_t += v.get("total", 0)
+        # F2: mesmo tipo qualquer modo
+        f2_w, f2_t = 0, 0
+        for k, v in self.stats.items():
+            if f"_{pat_type}_" in k:
+                f2_w += v.get("wins", 0)
+                f2_t += v.get("total", 0)
+        # F3: global
+        f3_t = self.global_stats.get("total", 0)
+        f3_w = self.global_stats.get("wins", 0)
+
+        candidates = []
+        if f1_t >= 3:
+            candidates.append(((f1_w + 2) / (f1_t + 4), f1_t))
+        if f2_t >= 5:
+            candidates.append(((f2_w + 2) / (f2_t + 4), f2_t))
+        if f3_t >= 10:
+            candidates.append(((f3_w + 2) / (f3_t + 4), f3_t))
+
+        if candidates:
+            total_weight = sum(math.sqrt(n) for _, n in candidates)
+            return sum(p * math.sqrt(n) for p, n in candidates) / total_weight
+
+        return 0.5  # sem NENHUM dado
     
     def get_summary(self):
         """Resumo global para o dashboard."""
@@ -449,6 +777,8 @@ class HS_IA:
             for k, v in self.stats.items():
                 entry = {"wins": v["wins"], "total": v["total"]}
                 data["stats"][k] = entry
+            # IA: persistir geometria aprendida
+            data["geometry_history"] = self.geometry_history[-300:]
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
@@ -464,7 +794,9 @@ class HS_IA:
                 for k, v in data.get("stats", {}).items():
                     self.stats[k] = {"wins": v.get("wins", 0), "total": v.get("total", 0), "patterns": []}
                 self.global_stats = data.get("global_stats", {"wins": 0, "total": 0, "by_type": {}})
-                log.info(f"[IA] Stats carregadas do disco: {self.global_stats['total']} padrões | WR={self.global_stats['wins']/max(1,self.global_stats['total'])*100:.1f}%")
+                # IA: carregar geometria aprendida
+                self.geometry_history = data.get("geometry_history", [])
+                log.info(f"[IA] Stats carregadas do disco: {self.global_stats['total']} padrões | WR={self.global_stats['wins']/max(1,self.global_stats['total'])*100:.1f}% | geo={len(self.geometry_history)}")
                 return True
         except Exception as e:
             log.warning(f"Erro carregando IA: {e}")
@@ -522,116 +854,16 @@ def _get_ia_level(n_total: int) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════
-# BROKER / DATA
+# DATA (leitura do cache do bot — SEM conexão ao broker)
 # ══════════════════════════════════════════════════════════════════
-_FOREX_CURRENCIES = {'EUR','USD','GBP','JPY','AUD','NZD','CAD','CHF',
-                     'SEK','NOK','DKK','PLN','HUF','TRY','MXN','ZAR',
-                     'SGD','THB','BRL','INR','CZK','ILS','PHP','CLP','COP'}
-
-def _is_forex(name):
-    clean = name.replace("-OTC","").replace("_","/").replace("-","/").strip().upper()
-    if len(clean) >= 6:
-        base = clean[:3]; quote = clean[3:6]
-        if base in _FOREX_CURRENCIES and quote in _FOREX_CURRENCIES:
-            return True
-    return False
-
-
-def connect_broker():
-    _user_dir = os.path.join(os.path.expanduser("~"), ".wstrader")
-    env_file = os.path.join(_user_dir, ".env")
-    if os.path.exists(env_file):
-        with open(env_file) as f:
-            for line in f:
-                if "=" in line and not line.strip().startswith("#"):
-                    k, v = line.strip().split("=", 1)
-                    os.environ.setdefault(k.strip(), v.strip())
-    
-    # ── Detecção automática da corretora (mesmo padrão do bot) ──
-    broker_type = os.getenv("BROKER_TYPE", "iq_option").strip().lower()
-    
-    if broker_type == "casatrader":
-        from casatraderapi.stable_api import Casa_Trader as BrokerCls
-        email = os.getenv("CASATRADER_EMAIL", "")
-        senha = os.getenv("CASATRADER_PASS", "")
-        label = "CasaTrader"
-    elif broker_type == "bullex":
-        from bullexapi.stable_api import Bullex as BrokerCls
-        email = os.getenv("BULLUX_EMAIL", "") or os.getenv("BULLEX_EMAIL", "")
-        senha = os.getenv("BULLUX_PASS", "") or os.getenv("BULLEX_PASS", "")
-        label = "Bullex"
-    else:
-        # iq_option (padrão)
-        from iqoptionapi.stable_api import IQ_Option as BrokerCls
-        email = os.getenv("IQ_EMAIL", "")
-        senha = os.getenv("IQ_PASS", "") or os.getenv("IQ_PASSWORD", "")
-        label = "IQ Option"
-    
-    log.info(f"Conectando à {label}...")
-    bx = BrokerCls(email, senha)
-    check, reason = bx.connect()
-    if not check:
-        raise ConnectionError(f"Falha ao conectar {label}: {reason}")
-    try:
-        bx.update_ACTIVES_OPCODE()
-    except: pass
-    log.info(f"Conectado à {label}!")
-    return bx
-
-
-def get_top_assets(bx):
-    try:
-        all_profit = bx.get_all_profit()
-        if not all_profit:
-            return [], {}
-        pairs = []
-        payouts = {}
-        for ativo, data in all_profit.items():
-            if not _is_forex(ativo): continue
-            p = 0
-            if isinstance(data, dict):
-                p = data.get("turbo", data.get("binary", 0))
-            elif isinstance(data, (int, float)):
-                p = data
-            pct = int(p * 100) if p <= 1 else int(p)
-            if pct >= MIN_PAYOUT:
-                pairs.append((ativo, pct))
-                payouts[ativo] = pct
-        pairs.sort(key=lambda x: -x[1])
-        assets = [a for a, _ in pairs[:MAX_ASSETS]]
-        return assets, payouts
-    except Exception as e:
-        log.warning(f"Erro payouts: {e}")
-        return [], {}
-
-
-def fetch_candles(bx, ativo, count=N_CANDLES):
-    try:
-        velas = bx.get_candles(ativo, 60, count, int(time.time()))
-        if not velas: return None
-        df = pd.DataFrame(velas)
-        for col in ['open','close','min','max','volume','from']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        df = df.dropna()
-        df['from'] = pd.to_datetime(df['from'], unit='s')
-        df.rename(columns={'from':'time','min':'low','max':'high'}, inplace=True)
-        df = df[['time','open','high','low','close','volume']]
-        df.set_index('time', inplace=True)
-        return df
-    except Exception as e:
-        log.warning(f"Erro {ativo}: {e}")
-        return None
-
 
 # ══════════════════════════════════════════════════════════════════
 # CACHE GLOBAL
 # ══════════════════════════════════════════════════════════════════
 _lock = threading.Lock()
-_broker_lock = threading.Lock()  # serializa chamadas ao broker (websocket não é thread-safe)
-_scanning = False  # True durante o scan pesado — quick thread pausa
+_scanning = False  # True durante o scan pesado
 _ia = HS_IA()
-_broker_ref = None  # referência global para o broker conectado
-_selected_ativo = ""  # ativo selecionado no frontend — atualizado com prioridade
+_selected_ativo = ""  # ativo selecionado no frontend
 _cache = {
     "assets_data": {},          # {ativo: DataFrame}
     "assets_patterns": {},      # {ativo: [patterns with results]}
@@ -660,7 +892,7 @@ def _load_bot_trade_logs() -> list:
                 with open(fpath, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 for t in data.get("trades", []):
-                    if t.get("status") in ("win", "loss"):
+                    if t.get("status") in ("win", "loss", "entry", "tie"):
                         entries.append({
                             "ativo": t.get("ativo", "?"),
                             "dir": t.get("dir", "?"),
@@ -674,54 +906,54 @@ def _load_bot_trade_logs() -> list:
                         })
         except Exception:
             pass
-    # Ordenar por timestamp descrescente
-    entries.sort(key=lambda x: x.get("ts", 0), reverse=True)
-    return entries[:_REAL_TRADES_MAX]
+    # Deduplicar: se há um resultado (win/loss/tie) para um entry do mesmo ativo, manter só o resultado
+    deduped = []
+    seen_results = set()  # (ativo, ts_approx) já resolvidos
+    # Primeiro pass: coletar todos os resultados
+    for e in entries:
+        if e["result"] in ("win", "loss", "tie"):
+            seen_results.add(e["ativo"] + "_" + str(int(e.get("ts", 0) // 300)))
+    # Segundo pass: filtrar entries que já têm resultado
+    for e in entries:
+        if e["result"] == "entry":
+            key = e["ativo"] + "_" + str(int(e.get("ts", 0) // 300))
+            if key in seen_results:
+                continue  # pular entry duplicado — já temos o resultado
+        deduped.append(e)
+    # Ordenar por timestamp decrescente
+    deduped.sort(key=lambda x: x.get("ts", 0), reverse=True)
+    return deduped[:_REAL_TRADES_MAX]
 
 
-def _update_single_asset(bx, ativo):
-    """Busca as últimas 3 velas de um ativo e atualiza o cache imediatamente."""
+def _load_candles_from_cache():
+    """Lê dados de velas do cache compartilhado (escrito pelo bot).
+    Retorna dict {ativo: DataFrame} e {ativo: payout}."""
+    assets_data = {}
+    payouts = {}
     try:
-        with _broker_lock:
-            velas = bx.get_candles(ativo, 60, 3, int(time.time()))
-        if not velas:
-            return
-        with _lock:
-            df_existing = _cache["assets_data"].get(ativo)
-        if df_existing is None or len(df_existing) < 10:
-            return
-        
-        changed = False
-        for v in velas:
-            ts = pd.to_datetime(int(v.get('from', 0)), unit='s')
-            o = float(v.get('open', 0))
-            h = float(v.get('max', 0))
-            l = float(v.get('min', 0))
-            c = float(v.get('close', 0))
-            vol = float(v.get('volume', 0))
-            
-            if ts in df_existing.index:
-                df_existing.loc[ts, 'open'] = o
-                df_existing.loc[ts, 'high'] = h
-                df_existing.loc[ts, 'low'] = l
-                df_existing.loc[ts, 'close'] = c
-                df_existing.loc[ts, 'volume'] = vol
-                changed = True
-            else:
-                new_row = pd.DataFrame(
-                    {'open': [o], 'high': [h], 'low': [l], 'close': [c], 'volume': [vol]},
-                    index=pd.DatetimeIndex([ts], name='time')
-                )
-                df_existing = pd.concat([df_existing, new_row])
-                if len(df_existing) > N_CANDLES + 10:
-                    df_existing = df_existing.iloc[-N_CANDLES:]
-                changed = True
-        
-        if changed:
-            with _lock:
-                _cache["assets_data"][ativo] = df_existing
-    except Exception:
-        pass
+        if not os.path.exists(_DASHBOARD_CACHE_FILE):
+            return assets_data, payouts
+        with open(_DASHBOARD_CACHE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for ativo, adata in data.get("assets", {}).items():
+            candles = adata.get("candles", [])
+            if len(candles) < 50:
+                continue
+            df = pd.DataFrame(candles)
+            df.rename(columns={"t": "time", "o": "open", "h": "high", "l": "low", "c": "close"}, inplace=True)
+            for col in ["open", "high", "low", "close"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            df["time"] = pd.to_datetime(df["time"], errors="coerce")
+            df = df.dropna(subset=["time", "open", "high", "low", "close"])
+            df.set_index("time", inplace=True)
+            df.sort_index(inplace=True)
+            if "volume" not in df.columns:
+                df["volume"] = 0
+            assets_data[ativo] = df
+            payouts[ativo] = adata.get("payout", 0)
+    except Exception as e:
+        log.debug(f"Erro ao ler cache do bot: {e}")
+    return assets_data, payouts
 
 
 def _signal_scan_thread():
@@ -761,9 +993,9 @@ def _signal_scan_thread():
                 atr_vals = [float(H[k] - L[k]) for k in range(max(0, n - 14), n)]
                 atr = float(np.mean(atr_vals)) if atr_vals else 0.001
 
-                # Detectar pivots e H&S
+                # Detectar pivots e Double Touch (somente DT)
                 ph, pl = detect_pivots(H, L, PIVOT_WINDOW)
-                all_hs = detect_all_hs(H, L, C, O, ph, pl, atr)
+                all_hs = detect_double_touch(H, L, C, O, ph, pl, atr, n, max_candles_ago=1)
 
                 for pat in all_hs:
                     bt = backtest_pattern(pat, C, O, H, L, n)
@@ -775,7 +1007,9 @@ def _signal_scan_thread():
                         pat["candles_ago"] = max(0, n - 1 - rs_idx)
                         pat["scan_ts"] = time.time()  # timestamp FRESCO
                         ia_prob = _ia.predict(ativo, pat)
-                        pat["ia_prob"] = round(ia_prob, 3)
+                        _pq = ia_pattern_quality(pat, atr, _ia.geometry_history)
+                        ia_prob = round(ia_prob * _pq, 3)
+                        pat["ia_prob"] = ia_prob
                         pat["ativo"] = ativo
                         fresh_signals.append(pat)
 
@@ -794,80 +1028,45 @@ def _signal_scan_thread():
             time.sleep(10)
 
 
-def _quick_candle_thread():
-    """Thread rápida: atualiza velas em tempo real.
-    - Pausa automaticamente durante o scan pesado (evita conflito no websocket)
-    - Ativo selecionado no frontend: a cada 1s (vela se movendo ao vivo)
-    - Demais ativos: round-robin 1 por ciclo (background)
-    """
-    global _broker_ref
-    bg_idx = 0
-    while True:
-        try:
-            # Pausa durante scan pesado — websocket não é thread-safe
-            if _scanning:
-                time.sleep(0.5)
-                continue
-            
-            bx = _broker_ref
-            if bx is None:
-                time.sleep(1)
-                continue
-            
-            with _lock:
-                all_assets = list(_cache["assets_data"].keys())
-            
-            if not all_assets:
-                time.sleep(1)
-                continue
-            
-            # 1) Ativo selecionado — SEMPRE atualiza (prioridade)
-            sel = _selected_ativo
-            if sel and sel in all_assets:
-                _update_single_asset(bx, sel)
-            
-            # 2) Um ativo extra em round-robin (background)
-            other = [a for a in all_assets if a != sel]
-            if other:
-                bg_idx = bg_idx % len(other)
-                _update_single_asset(bx, other[bg_idx])
-                bg_idx += 1
-            
-        except Exception as e:
-            log.debug(f"Quick candle refresh error: {e}")
-        
-        time.sleep(1)
-
-
 def _update_thread():
-    """Thread principal: busca dados, detecta padrões, backtest, treina IA.
+    """Thread principal: lê dados do cache do bot, detecta padrões, backtest, treina IA.
+    O dashboard NÃO conecta ao broker — apenas lê o cache escrito pelo bot.
     Retrain semanal: limpa IA e retreina do zero 1x por semana.
-    Compartilhado entre IQ/Bullex/CasaTrader (mesmo arquivo de controle).
     """
-    global _ia, _broker_ref, _scanning
-    bx = None
+    global _ia, _scanning
     _first_cycle = True
+    _last_cache_ts = 0
     
     while True:
         try:
-            if bx is None:
-                log.info("Conectando ao broker...")
-                bx = connect_broker()
-                _broker_ref = bx
-                log.info("Conectado!")
+            # ── Ler dados do cache do bot (NÃO conecta ao broker) ──
+            if not os.path.exists(_DASHBOARD_CACHE_FILE):
+                log.info("Aguardando bot escrever cache (ws_dashboard_cache.json)...")
                 with _lock:
-                    _cache["connected"] = True
-                    _cache["error"] = None
-            
-            # ── Retrain semanal (1x por semana, compartilhado entre corretoras) ──
+                    _cache["connected"] = False
+                    _cache["error"] = "Aguardando bot iniciar scan..."
+                time.sleep(10)
+                continue
+
+            # Verificar se cache foi atualizado
+            try:
+                _cache_mtime = os.path.getmtime(_DASHBOARD_CACHE_FILE)
+            except Exception:
+                _cache_mtime = 0
+            if _cache_mtime <= _last_cache_ts:
+                # Cache não mudou — aguardar
+                time.sleep(2)
+                continue
+            _last_cache_ts = _cache_mtime
+
+            # ── Retrain semanal (1x por semana) ──
             if _first_cycle:
                 _first_cycle = False
                 if _need_retrain():
                     log.info("=" * 60)
                     log.info("[RETRAIN] Nova semana detectada — LIMPANDO IA e retreinando do zero!")
                     log.info("=" * 60)
-                    _ia = HS_IA()  # limpa tudo
-                    # Remove stats antigos do disco
+                    _ia = HS_IA()
                     try:
                         if os.path.exists(IA_PERSIST_FILE):
                             os.remove(IA_PERSIST_FILE)
@@ -875,116 +1074,109 @@ def _update_thread():
                     except Exception:
                         pass
                 else:
-                    # Mesma semana — carrega stats existentes
                     loaded = _ia.load_from_disk()
                     if loaded:
                         log.info("[IA] Stats da semana carregados — continuando acumulação")
                     else:
                         log.info("[IA] Sem stats salvos — treinando do zero")
-            
-            # Top ativos
-            top_assets, payouts = get_top_assets(bx)
-            if not top_assets:
-                log.warning("Nenhum ativo com payout >= 80%")
-                time.sleep(30)
+
+            # ── Carregar dados do cache do bot ──
+            bot_assets, payouts = _load_candles_from_cache()
+            if not bot_assets:
+                log.warning("Cache do bot vazio ou sem ativos")
+                with _lock:
+                    _cache["connected"] = False
+                    _cache["error"] = "Cache do bot sem dados"
+                time.sleep(10)
                 continue
-            
+
             with _lock:
+                _cache["connected"] = True
+                _cache["error"] = None
                 _cache["payouts"] = payouts
-            
+
             assets_patterns = {}
             live_signals = []
-            _ia_new = HS_IA()  # rebuild a cada ciclo com dados frescos
-            
-            log.info(f"Scanning {len(top_assets)} ativos ({N_CANDLES} velas cada)...")
-            _scanning = True  # sinaliza quick thread para pausar
-            
-            for ativo in top_assets:
-                with _broker_lock:
-                    df = fetch_candles(bx, ativo, N_CANDLES)
+            _ia_new = HS_IA()
+
+            log.info(f"Processando {len(bot_assets)} ativos do cache do bot...")
+            _scanning = True
+
+            for ativo, df in bot_assets.items():
                 if df is None or len(df) < 100:
                     continue
-                
-                # Atualizar cache POR ATIVO durante o scan (não esperar o final)
+
                 with _lock:
                     _cache["assets_data"][ativo] = df
+
                 H = df["high"].values
                 L = df["low"].values
                 C = df["close"].values
                 O = df["open"].values
                 n = len(C)
-                
-                # ATR
+
                 atr_vals = [float(H[k] - L[k]) for k in range(max(0, n-14), n)]
                 atr = np.mean(atr_vals) if atr_vals else 0.001
-                
-                # Detectar pivots e H&S
+
                 ph, pl = detect_pivots(H, L, PIVOT_WINDOW)
-                all_hs = detect_all_hs(H, L, C, O, ph, pl, atr)
-                
+                all_hs = detect_double_touch(H, L, C, O, ph, pl, atr, n, max_candles_ago=9999, training=True)
+
                 patterns_with_results = []
                 for pat in all_hs:
                     bt = backtest_pattern(pat, C, O, H, L, n)
                     if bt is None:
-                        # Padrão recente sem resultado = sinal LIVE
                         entry_idx = pat.get("entry_idx", pat["right_shoulder"]["idx"] + 1)
-                        pat["entry_pending"] = entry_idx >= n   # True = vela de entrada AINDA NÃO existe
+                        pat["entry_pending"] = entry_idx >= n
                         rs_idx = pat["right_shoulder"]["idx"]
-                        pat["candles_ago"] = max(0, n - 1 - rs_idx)  # 0=ombro é a última vela, 1=penúltima...
-                        pat["scan_ts"] = time.time()  # timestamp do scan
+                        pat["candles_ago"] = max(0, n - 1 - rs_idx)
+                        pat["scan_ts"] = time.time()
                         ia_prob = _ia.predict(ativo, pat)
-                        pat["ia_prob"] = round(ia_prob, 3)
+                        _pq = ia_pattern_quality(pat, atr, _ia.geometry_history)
+                        ia_prob = round(ia_prob * _pq, 3)
+                        pat["ia_prob"] = ia_prob
                         pat["ativo"] = ativo
                         live_signals.append(pat)
-                        patterns_with_results.append({**pat, "backtest": None, "ia_prob": round(ia_prob, 3)})
+                        patterns_with_results.append({**pat, "backtest": None, "ia_prob": ia_prob})
                     elif bt["result"] in ("win", "loss"):
-                        _ia_new.learn(ativo, pat, bt)
+                        _ia_new.learn(ativo, pat, bt, atr)
                         ia_prob = _ia.predict(ativo, pat)
                         patterns_with_results.append({**pat, "backtest": bt, "ia_prob": round(ia_prob, 3)})
-                
+
                 if patterns_with_results:
                     assets_patterns[ativo] = patterns_with_results
                     _w = sum(1 for p in patterns_with_results if (p.get('backtest') or {}).get('result') == 'win')
                     _l = sum(1 for p in patterns_with_results if (p.get('backtest') or {}).get('result') == 'loss')
                     _lv = sum(1 for p in patterns_with_results if p.get('backtest') is None)
                     log.info(f"  {ativo}: {len(all_hs)} padrões | {_w}W / {_l}L | Live: {_lv}")
-            
-            _scanning = False  # scan finalizado — quick thread pode voltar
-            
+
+            _scanning = False
+
             _ia = _ia_new
             summary = _ia.get_summary()
-            
-            # ── Persistir IA no disco + marcar semana como treinada (só se houver dados) ──
+
             _ia.save_to_disk()
             if summary.get("total", 0) > 0:
                 _save_train_control()
-            
+
             with _lock:
                 _cache["assets_patterns"] = assets_patterns
                 _cache["ia_summary"] = summary
                 _cache["live_signals"] = live_signals
                 _cache["last_update"] = time.time()
                 _cache["scan_count"] += 1
-            
+
             log.info(f"[IA] Total: {summary['total']} padrões | WR: {summary['wr']:.1f}% | "
                      f"Live: {len(live_signals)} sinais")
-            
+
         except Exception as e:
-            _scanning = False  # garantir que quick thread não fica travada
+            _scanning = False
             log.error(f"Erro: {e}", exc_info=True)
             with _lock:
                 _cache["error"] = str(e)
                 _cache["connected"] = False
-            bx = None
-            _broker_ref = None
-        
-        # Sleep até :05 do próximo minuto
-        now_ts = time.time()
-        secs_in_min = now_ts % 60
-        wait = (65 - secs_in_min) % 60
-        if wait < 5: wait += 60
-        log.info(f"[SLEEP] Próximo scan em {wait:.0f}s")
-        time.sleep(wait)
+
+        # Sleep 3s e verificar novamente se cache foi atualizado  
+        time.sleep(3)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1071,10 +1263,17 @@ def build_api_data():
     
     # Broker entries: APENAS trades REAIS feitos pelo bot (lidos dos logs)
     broker_entries = _load_bot_trade_logs()
-    # Mesclar com trades recebidos via POST (tempo real)
+    # Mesclar com trades recebidos via POST (tempo real), sem duplicar
+    # Cria set de chaves únicas dos trades já lidos do arquivo
+    _seen = set()
+    for be in broker_entries:
+        _seen.add((be.get("ativo",""), int(be.get("ts", 0) // 60)))
     with _real_trades_lock:
         for rt in _real_trades:
-            broker_entries.append(rt)
+            key = (rt.get("ativo",""), int(rt.get("ts", 0) // 60))
+            if key not in _seen:
+                broker_entries.append(rt)
+                _seen.add(key)
     broker_entries.sort(key=lambda x: x.get("ts", 0), reverse=True)
     broker_entries = broker_entries[:50]
 
@@ -1252,6 +1451,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 .result-row .rr-res{font-weight:800;font-size:12px;display:flex;align-items:center;gap:3px}
 .result-row.win{border-left:3px solid var(--green)} .result-row.win .rr-res{color:var(--green)} .result-row.win .rr-profit{color:var(--green)}
 .result-row.loss{border-left:3px solid var(--red)} .result-row.loss .rr-res{color:var(--red)} .result-row.loss .rr-profit{color:var(--red)}
+.result-row.entry{border-left:3px solid var(--purple)} .result-row.entry .rr-res{color:var(--purple)} .result-row.entry .rr-profit{color:var(--purple)}
 .result-row .rr-broker{font-size:8px;color:var(--text-muted);text-transform:uppercase;font-weight:600;letter-spacing:0.5px}
 
 /* ── FOOTER ── */
@@ -1382,7 +1582,13 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 let mainChart = null, mainSeries = null, selectedAtivo = null, latestData = null, candleData = [], allAtivos = [];
 let firstRender = true;
 
-function parseTime(t) { var d = new Date(t); return Math.floor(d.getTime() / 1000); }
+function parseTime(t) {
+  if (typeof t === 'number') return t;
+  if (typeof t === 'string' && /^\d+$/.test(t)) return parseInt(t, 10);
+  /* ISO string — append Z if no timezone to force UTC */
+  if (typeof t === 'string' && t.indexOf('Z') < 0 && t.indexOf('+') < 0 && !/\d{2}:\d{2}$/.test(t.slice(-5))) t = t + 'Z';
+  var d = new Date(t); return Math.floor(d.getTime() / 1000);
+}
 
 /* Live clock + candle countdown */
 var CIRC = 2 * Math.PI * 10; /* 62.83 */
@@ -1479,12 +1685,35 @@ function renderChart(data) {
     ctDir.style.display = 'none';
   }
 
-  // Candles — update data without resetting view
+  // Candles — setData no primeiro render ou troca de ativo.
+  // Depois, usa update() para manter em sincronia sem resetar o gráfico.
+  // Se o streaming live atualizou recentemente, NÃO sobrescrever com dados do scan (stale).
+  var _skipCandleUpdate = (_liveUpdateTs > 0 && (Date.now() - _liveUpdateTs) < 15000);
   var newCandles = (cdata.candles || []).map(function(c) {
     return { time: parseTime(c.t), open: c.o, high: c.h, low: c.l, close: c.c };
   });
-  candleData = newCandles;
-  mainSeries.setData(candleData);
+  var needFullSet = firstRender || candleData.length === 0;
+  if (!needFullSet && newCandles.length > 0 && candleData.length > 0) {
+    /* Trocar apenas se ativo mudou (timestamps muito diferentes) */
+    var lastOld = candleData[0] ? candleData[0].time : 0;
+    var lastNew = newCandles[0] ? newCandles[0].time : 0;
+    if (Math.abs(lastOld - lastNew) > 120) needFullSet = true;
+  }
+  if (needFullSet) {
+    candleData = newCandles;
+    mainSeries.setData(candleData);
+  } else if (newCandles.length > 0 && !_skipCandleUpdate) {
+    /* Atualizar as últimas 5 velas via update() — só se live stream NÃO atualizou recentemente */
+    var lastFive = newCandles.slice(-5);
+    lastFive.forEach(function(bar) {
+      mainSeries.update(bar);
+      var found = false;
+      for (var i = candleData.length - 1; i >= 0; i--) {
+        if (candleData[i].time === bar.time) { candleData[i] = bar; found = true; break; }
+      }
+      if (!found) candleData.push(bar);
+    });
+  }
   if (firstRender) {
     mainChart.timeScale().fitContent();
     firstRender = false;
@@ -1504,7 +1733,8 @@ function renderChart(data) {
         else if (bt.result === 'loss') { cls = 'loss'; icoRef = '#i-x'; txt = 'LOSS'; }
         else { cls = 'skip'; icoRef = '#i-arrow-down'; txt = 'SKIP'; }
       }
-      return '<div class="pat-row"><span class="pr-type"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> ' + (p.type === 'HEAD_SHOULDERS' ? 'H&S' : 'iH&S') + ' ' + p.mode + '</span><span class="pr-ia"><svg class="icon-svg" style="width:11px;height:11px;stroke:var(--purple)"><use href="#i-brain"/></svg> ' + ((p.ia_prob||0.5)*100).toFixed(0) + '%</span><span class="pr-res ' + cls + '"><svg class="icon-svg" style="width:11px;height:11px"><use href="' + icoRef + '"/></svg> ' + txt + '</span></div>';
+      var typeName = p.type === 'DOUBLE_TOP' ? 'DT \u25BC' : p.type === 'DOUBLE_BOTTOM' ? 'DB \u25B2' : (p.type === 'HEAD_SHOULDERS' ? 'H&S' : 'iH&S');
+      return '<div class="pat-row"><span class="pr-type"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> ' + typeName + ' ' + p.mode + '</span><span class="pr-ia"><svg class="icon-svg" style="width:11px;height:11px;stroke:var(--purple)"><use href="#i-brain"/></svg> ' + ((p.ia_prob||0.5)*100).toFixed(0) + '%</span><span class="pr-res ' + cls + '"><svg class="icon-svg" style="width:11px;height:11px"><use href="' + icoRef + '"/></svg> ' + txt + '</span></div>';
     }).join('');
   } else {
     patEl.style.display = 'none';
@@ -1544,9 +1774,10 @@ function drawHSOverlay() {
     var lsx = gx(lsi), lsy = gy(ls.price), hdx = gx(hdi), hdy = gy(hd.price), rsx = gx(rsi), rsy = gy(rs.price);
     if ([lsx,lsy,hdx,hdy,rsx,rsy].some(function(v){return v===null||isNaN(v)})) return;
 
-    var isBear = pat.type === 'HEAD_SHOULDERS';
-    var mainC = isBear ? '#ef4444' : '#10b981';
-    var mainCa = isBear ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)';
+    var isDT = pat.mode === 'double_touch';
+    var isBear = pat.type === 'HEAD_SHOULDERS' || pat.type === 'DOUBLE_TOP';
+    var mainC = isDT ? '#a855f7' : (isBear ? '#ef4444' : '#10b981');
+    var mainCa = isDT ? 'rgba(168,85,247,0.15)' : (isBear ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)');
 
     // ── Fill area (shoulder-to-shoulder shape) ──
     var hasV = v1i >= 0 && v2i >= 0;
@@ -1558,13 +1789,32 @@ function drawHSOverlay() {
 
     if (hasV) {
       ctx.fillStyle = mainCa; ctx.beginPath();
-      ctx.moveTo(lsx, lsy); ctx.lineTo(v1x, v1y); ctx.lineTo(hdx, hdy); ctx.lineTo(v2x, v2y); ctx.lineTo(rsx, rsy);
-      ctx.closePath(); ctx.fill();
+      if (isDT) {
+        // DT: draw simple shape Touch1 → Valley → Touch2
+        ctx.moveTo(lsx, lsy); ctx.lineTo(v1x, v1y); ctx.lineTo(rsx, rsy);
+        ctx.closePath(); ctx.fill();
+        // Lines: Touch1 → Valley → Touch2
+        ctx.strokeStyle = mainC; ctx.lineWidth = 2.5; ctx.setLineDash([]); ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.moveTo(lsx, lsy); ctx.lineTo(v1x, v1y); ctx.lineTo(rsx, rsy);
+        ctx.stroke(); ctx.globalAlpha = 1;
+        // Horizontal touch level line (resistance/support)
+        var touchY = gy(pat.head.price);
+        if (touchY !== null && !isNaN(touchY)) {
+          var tL = gx(Math.max(0, lsi - 3)) || lsx;
+          var tR = gx(Math.min(candleData.length - 1, rsi + 5)) || rsx;
+          ctx.strokeStyle = isDT ? 'rgba(168,85,247,0.7)' : 'rgba(59,130,246,0.7)';
+          ctx.lineWidth = 2; ctx.setLineDash([8, 4]);
+          ctx.beginPath(); ctx.moveTo(tL, touchY); ctx.lineTo(tR, touchY); ctx.stroke(); ctx.setLineDash([]);
+        }
+      } else {
+        ctx.moveTo(lsx, lsy); ctx.lineTo(v1x, v1y); ctx.lineTo(hdx, hdy); ctx.lineTo(v2x, v2y); ctx.lineTo(rsx, rsy);
+        ctx.closePath(); ctx.fill();
 
-      // ── Lines: LS -> V1 -> Head -> V2 -> RS ──
-      ctx.strokeStyle = mainC; ctx.lineWidth = 2.5; ctx.setLineDash([]); ctx.globalAlpha = 0.9;
-      ctx.beginPath(); ctx.moveTo(lsx, lsy); ctx.lineTo(v1x, v1y); ctx.lineTo(hdx, hdy); ctx.lineTo(v2x, v2y); ctx.lineTo(rsx, rsy);
-      ctx.stroke(); ctx.globalAlpha = 1;
+        // ── Lines: LS -> V1 -> Head -> V2 -> RS ──
+        ctx.strokeStyle = mainC; ctx.lineWidth = 2.5; ctx.setLineDash([]); ctx.globalAlpha = 0.9;
+        ctx.beginPath(); ctx.moveTo(lsx, lsy); ctx.lineTo(v1x, v1y); ctx.lineTo(hdx, hdy); ctx.lineTo(v2x, v2y); ctx.lineTo(rsx, rsy);
+        ctx.stroke(); ctx.globalAlpha = 1;
+      }
 
       // ── Neckline: dashed line through valleys ──
       ctx.strokeStyle = 'rgba(59,130,246,0.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
@@ -1589,53 +1839,57 @@ function drawHSOverlay() {
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(pt.x, pt.y, 6, 0, Math.PI*2); ctx.stroke();
     });
 
-    // ── Head: ORANGE circle with glow ──
-    ctx.shadowColor = '#f59e0b'; ctx.shadowBlur = 12;
-    ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(hdx, hdy, 9, 0, Math.PI*2); ctx.fill();
+    // ── Head: ORANGE for H&S, PURPLE for DT ──
+    var headCol = isDT ? '#a855f7' : '#f59e0b';
+    ctx.shadowColor = headCol; ctx.shadowBlur = 12;
+    ctx.fillStyle = headCol; ctx.beginPath(); ctx.arc(hdx, hdy, 9, 0, Math.PI*2); ctx.fill();
     ctx.shadowBlur = 0;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hdx, hdy, 9, 0, Math.PI*2); ctx.stroke();
-    // H label inside
+    // Label inside
     ctx.fillStyle = '#000'; ctx.font = 'bold 11px Inter, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('H', hdx, hdy);
+    ctx.fillText(isDT ? 'DT' : 'H', hdx, hdy);
     ctx.textBaseline = 'alphabetic';
 
     // ── Labels ──
     ctx.font = '600 10px Inter, sans-serif'; ctx.textAlign = 'center';
     ctx.fillStyle = mainC;
-    ctx.fillText('Ombro E', lsx, isBear ? lsy - 14 : lsy + 18);
-    ctx.fillText('Ombro D', rsx, isBear ? rsy - 14 : rsy + 18);
-    ctx.fillStyle = '#f59e0b'; ctx.font = '700 11px Inter, sans-serif';
-    ctx.fillText(isBear ? 'CABECA' : 'CABECA', hdx, isBear ? hdy - 18 : hdy + 22);
+    ctx.fillText(isDT ? 'Toque 1' : 'Ombro E', lsx, isBear ? lsy - 14 : lsy + 18);
+    ctx.fillText(isDT ? 'Toque 2' : 'Ombro D', rsx, isBear ? rsy - 14 : rsy + 18);
+    ctx.fillStyle = isDT ? '#a855f7' : '#f59e0b'; ctx.font = '700 11px Inter, sans-serif';
+    ctx.fillText(isDT ? (isBear ? 'RESIST\xCANCIA' : 'SUPORTE') : 'CABECA', hdx, isBear ? hdy - 18 : hdy + 22);
 
     if (hasV) {
       ctx.fillStyle = 'rgba(59,130,246,0.7)'; ctx.font = '600 9px Inter, sans-serif';
       ctx.fillText('Neckline', (v1x+v2x)/2, isBear ? Math.max(v1y,v2y)+14 : Math.min(v1y,v2y)-8);
     }
 
-    // ── Entry marker at RS ──
-    var entryChartIdx = pat.entry_chart_idx || rsi + 1;
+    // ── Entry marker at confirmation candle (Close price) ──
+    var entryChartIdx = (pat.entry_chart_idx != null) ? pat.entry_chart_idx : rsi;
     if (entryChartIdx >= 0 && entryChartIdx < candleData.length) {
-      var ex = gx(entryChartIdx), ey = gy(rs.price);
+      // Usar preço real de entrada (Close) em vez do preço do ombro (High/Low)
+      var entryPrice = pat.entry_price || (pat.backtest && pat.backtest.entry_price) || rs.price;
+      var ex = gx(entryChartIdx), ey = gy(entryPrice);
       if (ex !== null && ey !== null && !isNaN(ex) && !isNaN(ey)) {
-        // Entry dashed line
+        // Entry dashed line at CLOSE price level (preço real de entrada)
         var esleft = gx(Math.max(0, rsi - 2));
-        var esright = gx(Math.min(candleData.length - 1, entryChartIdx + 20));
+        var esright = gx(Math.min(candleData.length - 1, entryChartIdx + 12));
         if (esleft && esright) {
           ctx.setLineDash([5, 3]); ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.moveTo(esleft, rsy); ctx.lineTo(esright, rsy); ctx.stroke(); ctx.setLineDash([]);
+          ctx.beginPath(); ctx.moveTo(esleft, ey); ctx.lineTo(esright, ey); ctx.stroke(); ctx.setLineDash([]);
         }
-        // Modern entry icon (circle with arrow)
+        // Modern entry icon (circle with arrow) — deslocado 1 vela à direita para não sobrepor Ombro D
+        var entryDrawX = gx(Math.min(candleData.length - 1, entryChartIdx + 1)) || ex;
         ctx.shadowColor = '#f59e0b'; ctx.shadowBlur = 10;
-        ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(ex, ey, 10, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(entryDrawX, ey, 10, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ex, ey, 10, 0, Math.PI*2); ctx.stroke();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(entryDrawX, ey, 10, 0, Math.PI*2); ctx.stroke();
         // Arrow inside circle
         ctx.fillStyle = '#000'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(isBear ? '\u25BC' : '\u25B2', ex, ey);
+        ctx.fillText(isBear ? '\u25BC' : '\u25B2', entryDrawX, ey);
         ctx.textBaseline = 'alphabetic';
-        // ENTRADA label
+        // ENTRADA label com preço
         ctx.fillStyle = '#f59e0b'; ctx.font = '700 10px Inter, sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('ENTRADA', ex + 16, ey + 4);
+        ctx.fillText('ENTRADA ' + entryPrice.toFixed(5), entryDrawX + 16, ey + 4);
       }
     }
 
@@ -1698,7 +1952,7 @@ function drawHSOverlay() {
 
     // ── Pattern name ──
     ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '600 9px Inter, sans-serif';
-    ctx.fillText(isBear ? 'Head & Shoulders' : 'Inverse H&S', hdx, by + (isBear ? -28 : 34));
+    ctx.fillText(isDT ? (isBear ? 'Double Top' : 'Double Bottom') : (isBear ? 'Head & Shoulders' : 'Inverse H&S'), hdx, by + (isBear ? -28 : 34));
   });
 }
 
@@ -1777,8 +2031,8 @@ function buildResultsPanel(data) {
     return;
   }
   el.innerHTML = entries.map(function(r) {
-    var cls = r.result === 'win' ? 'win' : 'loss';
-    var icoRef = r.result === 'win' ? '#i-check' : '#i-x';
+    var cls = r.result === 'win' ? 'win' : r.result === 'entry' ? 'entry' : 'loss';
+    var icoRef = r.result === 'win' ? '#i-check' : r.result === 'entry' ? '#i-clock' : '#i-x';
     var priceStr = r.price ? parseFloat(r.price).toFixed(5) : '';
     var dirIcon = r.dir === 'PUT' ? '#i-arrow-down' : '#i-arrow-up';
     var profitStr = '';
@@ -1846,31 +2100,52 @@ async function fetchData() {
 fetchData();
 setInterval(fetchData, 5000);
 
-/* ═══ LIVE CANDLE STREAMING — atualiza velas em tempo real a cada 1s ═══ */
+/* ═══ LIVE CANDLE STREAMING — atualiza a cada 5s ═══ */
 var _liveInterval = null;
+var _lastCandleTime = 0;
+var _liveFetching = false;
+var _liveFetchStart = 0;
+var _liveUpdateTs = 0;  /* timestamp do último update live bem-sucedido */
+var _liveErrorCount = 0;
 function startLiveCandles() {
   if (_liveInterval) clearInterval(_liveInterval);
+  _liveErrorCount = 0;
   _liveInterval = setInterval(async function() {
     if (!selectedAtivo || !mainSeries || !mainChart) return;
+    /* Safety: se _liveFetching ficou true por >15s, forçar reset */
+    if (_liveFetching) {
+      if (Date.now() - _liveFetchStart > 15000) { _liveFetching = false; }
+      else return;
+    }
+    _liveFetchStart = Date.now();
+    _liveFetching = true;
     try {
       var r = await fetch('/api/live_candles?ativo=' + encodeURIComponent(selectedAtivo));
-      if (!r.ok) return;
+      if (!r.ok) { _liveFetching = false; return; }
       var d = await r.json();
-      if (!d.candles || d.candles.length === 0 || d.ativo !== selectedAtivo) return;
+      if (!d.candles || d.candles.length === 0 || d.ativo !== selectedAtivo) { _liveFetching = false; return; }
       d.candles.forEach(function(c) {
         var t = parseTime(c.t);
+        if (isNaN(t) || t <= 0) return;
         var bar = { time: t, open: c.o, high: c.h, low: c.l, close: c.c };
-        /* update() atualiza a ultima vela ou adiciona nova — sem resetar o grafico */
         mainSeries.update(bar);
-        /* Atualizar candleData local */
+        if (t > _lastCandleTime && _lastCandleTime > 0) {
+          requestAnimationFrame(drawHSOverlay);
+        }
+        _lastCandleTime = Math.max(_lastCandleTime, t);
         var found = false;
         for (var i = candleData.length - 1; i >= 0; i--) {
           if (candleData[i].time === t) { candleData[i] = bar; found = true; break; }
         }
         if (!found) candleData.push(bar);
       });
-    } catch(e) { /* silencioso */ }
-  }, 1000);
+      _liveUpdateTs = Date.now();
+      _liveErrorCount = 0;
+    } catch(e) {
+      _liveErrorCount++;
+    }
+    _liveFetching = false;
+  }, 5000);
 }
 /* Iniciar streaming de velas automaticamente */
 startLiveCandles();
@@ -1904,19 +2179,34 @@ class HSHandler(SimpleHTTPRequestHandler):
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 body = json.loads(self.rfile.read(length)) if length else {}
-                if body.get("ativo") and body.get("result") in ("win", "loss"):
+                if body.get("ativo") and body.get("result") in ("win", "loss", "entry", "tie"):
                     with _real_trades_lock:
-                        _real_trades.append({
+                        new_status = body["result"]
+                        new_entry = {
                             "ativo": body["ativo"],
                             "dir": body.get("dir", "?"),
-                            "result": body["result"],
+                            "result": new_status,
                             "price": body.get("price", 0),
                             "stake": body.get("stake", 0),
                             "profit": body.get("profit", 0),
                             "time": body.get("time", ""),
                             "ts": body.get("ts", time.time()),
                             "broker": body.get("broker", "?"),
-                        })
+                        }
+                        # Se é resultado, atualizar o entry existente do mesmo ativo
+                        if new_status in ("win", "loss", "tie"):
+                            updated = False
+                            for i in range(len(_real_trades) - 1, -1, -1):
+                                if _real_trades[i]["ativo"] == body["ativo"] and _real_trades[i]["result"] == "entry":
+                                    _real_trades[i]["result"] = new_status
+                                    _real_trades[i]["profit"] = body.get("profit", 0)
+                                    _real_trades[i]["ts"] = body.get("ts", time.time())
+                                    updated = True
+                                    break
+                            if not updated:
+                                _real_trades.append(new_entry)
+                        else:
+                            _real_trades.append(new_entry)
                         if len(_real_trades) > _REAL_TRADES_MAX:
                             del _real_trades[:-_REAL_TRADES_MAX]
                 self.send_response(200)
@@ -1954,29 +2244,66 @@ class HSHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
 
         elif path == "/api/live_candles":
-            # Retorna velas em tempo real para o ativo selecionado (polling rápido 1s)
+            # Retorna velas em tempo real — lê arquivo live do bot (streaming 1s)
             global _selected_ativo
             ativo = (qs.get("ativo") or [""])[0]
             if ativo:
-                _selected_ativo = ativo  # informar a thread rápida qual ativo priorizar
+                _selected_ativo = ativo
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self._cors_headers()
             self.end_headers()
             try:
-                with _lock:
-                    df = _cache["assets_data"].get(ativo)
-                if df is not None and len(df) > 0:
-                    last_n = df.tail(5)
-                    candles = []
-                    for ts, row in last_n.iterrows():
-                        candles.append({
-                            "t": ts.isoformat() if hasattr(ts, 'isoformat') else str(ts),
-                            "o": round(float(row["open"]), 6),
-                            "h": round(float(row["high"]), 6),
-                            "l": round(float(row["low"]), 6),
-                            "c": round(float(row["close"]), 6),
-                        })
+                candles = []
+                # PRIORIDADE 1: Ler arquivo live do bot (streaming real-time 1s)
+                _live_file = os.path.join(_USER_DIR, "ws_live_candles.json")
+                _used_live = False
+                if os.path.exists(_live_file):
+                    _max_retries = 2
+                    for _retry in range(_max_retries):
+                        try:
+                            _lf_age = time.time() - os.path.getmtime(_live_file)
+                            if _lf_age < 30:  # Arquivo com menos de 30s = fresco
+                                with open(_live_file, "r") as _lf:
+                                    _raw = _lf.read()
+                                if _raw:
+                                    _live_data = json.loads(_raw)
+                                    _asset_candles = _live_data.get("assets", {}).get(ativo, [])
+                                    if _asset_candles:
+                                        for _c in _asset_candles:
+                                            _ts = _c.get("t", 0)
+                                            candles.append({
+                                                "t": int(_ts),
+                                                "o": _c.get("o", 0),
+                                                "h": _c.get("h", 0),
+                                                "l": _c.get("l", 0),
+                                                "c": _c.get("c", 0),
+                                            })
+                                        _used_live = True
+                                break  # sucesso, sair do retry
+                        except (json.JSONDecodeError, PermissionError):
+                            # Arquivo sendo escrito pelo bot — retry
+                            import time as _time_mod
+                            _time_mod.sleep(0.05)
+                        except Exception:
+                            break
+
+                # FALLBACK: cache antigo (DataFrame)
+                if not candles:
+                    with _lock:
+                        df = _cache["assets_data"].get(ativo)
+                    if df is not None and len(df) > 0:
+                        last_n = df.tail(5)
+                        for ts, row in last_n.iterrows():
+                            candles.append({
+                                "t": ts.isoformat() if hasattr(ts, 'isoformat') else str(ts),
+                                "o": round(float(row["open"]), 6),
+                                "h": round(float(row["high"]), 6),
+                                "l": round(float(row["low"]), 6),
+                                "c": round(float(row["close"]), 6),
+                            })
+
+                if candles:
                     self.wfile.write(json.dumps({"candles": candles, "ativo": ativo}).encode("utf-8"))
                 else:
                     self.wfile.write(b'{"candles":[],"ativo":""}')
@@ -1994,12 +2321,12 @@ def main():
     args = parser.parse_args()
     
     log.info(f"{'='*60}")
-    log.info(f"  🧠 WS Trader — IA H&S Learning Dashboard")
-    log.info(f"  � {N_CANDLES} velas | {EXP_CANDLES} min expiração | Top {MAX_ASSETS} ativos")
+    log.info(f"  🧠 WS Trader — IA H&S Dashboard (SOMENTE LEITURA)")
+    log.info(f"  📊 Dados: lidos do cache do bot (sem conexão ao broker)")
     log.info(f"  🌐 http://localhost:{args.port}")
     log.info(f"{'='*60}")
     
-    # Thread de dados (scan pesado a cada ~3min — backtest + treino IA)
+    # Thread de dados (lê cache do bot a cada ~10s — detecta padrões + treino IA)
     t = threading.Thread(target=_update_thread, daemon=True)
     t.start()
     
@@ -2007,17 +2334,16 @@ def main():
     t_sig = threading.Thread(target=_signal_scan_thread, daemon=True)
     t_sig.start()
     
-    # Thread de atualização rápida das velas (a cada 1s, prioriza ativo selecionado)
-    t2 = threading.Thread(target=_quick_candle_thread, daemon=True)
-    t2.start()
+    # SEM thread de atualização rápida de velas (não conecta ao broker)
     
-    # HTTP server com reuse_address para evitar travamento por TIME_WAIT
-    class ReusableHTTPServer(HTTPServer):
+    # HTTP server THREADING com reuse_address — live candles não trava!
+    class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
         allow_reuse_address = True
         allow_reuse_port = True
+        daemon_threads = True
     
-    server = ReusableHTTPServer(("0.0.0.0", args.port), HSHandler)
-    log.info(f"Dashboard iniciado na porta {args.port}")
+    server = ThreadedHTTPServer(("0.0.0.0", args.port), HSHandler)
+    log.info(f"Dashboard THREADED iniciado na porta {args.port}")
     
     try:
         server.serve_forever()

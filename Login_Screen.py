@@ -11,7 +11,20 @@ import urllib.parse
 import threading
 import asyncio
 from requests.exceptions import RequestException
-from iqoptionapi.stable_api import IQ_Option
+try:
+    from iqoptionapi.stable_api import IQ_Option
+except ImportError:
+    IQ_Option = None
+
+try:
+    from bullexapi.stable_api import IQ_Option as Bullex
+except ImportError:
+    Bullex = None
+
+try:
+    from casatraderapi.stable_api import IQ_Option as CasaTrader
+except ImportError:
+    CasaTrader = None
 import json
 
 # Configuração básica de logging
@@ -178,18 +191,59 @@ def _save_product_id(product_id: str):
     except Exception as e:
         logger.error(f"Erro ao salvar product_id no .env: {e}")
 
-# Função para verificar credenciais da IQ Option
+# Função para verificar credenciais do broker (detecta automaticamente)
 def check_iq_credentials(email, password, t):
+    """Verifica credenciais contra o broker correto (IQ/Bullex/CasaTrader).
+    Detecta pelo BROKER_TYPE env var ou pelo último broker usado (preferências).
+    """
     try:
-        iq = IQ_Option(email, password)
-        connect_result = iq.connect()
+        # Detectar broker correto
+        broker_type = os.getenv("BROKER_TYPE", "").lower().strip()
+        
+        # Se não há env var, tentar preferências do usuário
+        if not broker_type:
+            try:
+                prefs_path = os.path.join(os.path.expanduser("~"), ".wstrader", "preferences.json")
+                if os.path.exists(prefs_path):
+                    with open(prefs_path, "r", encoding="utf-8") as f:
+                        prefs = json.load(f)
+                        broker_type = prefs.get("last_broker", "").lower().strip()
+            except Exception:
+                pass
+        
+        # Selecionar API do broker
+        BrokerAPI = None
+        broker_name = "Broker"
+        if broker_type in ("bullex", "bullux"):
+            BrokerAPI = Bullex
+            broker_name = "Bullex"
+        elif broker_type in ("casatrader", "casa_trader"):
+            BrokerAPI = CasaTrader
+            broker_name = "CasaTrader"
+        else:
+            BrokerAPI = IQ_Option
+            broker_name = "IQ Option"
+        
+        if BrokerAPI is None:
+            logger.warning(f"API do broker {broker_name} não encontrada — pulando verificação de credenciais")
+            return True, ""  # Pular verificação se API não está instalada
+        
+        bx = BrokerAPI(email, password)
+        connect_result = bx.connect()
         if not connect_result[0]:
-            logger.error(f"Falha na conexão com a IQ Option: {connect_result[1]}")
+            logger.error(f"Falha na conexão com {broker_name}: {connect_result[1]}")
             return False, t["invalid_credentials"]
-        logger.info("Conexão com IQ Option bem-sucedida para verificação de credenciais")
+        logger.info(f"Conexão com {broker_name} bem-sucedida para verificação de credenciais")
+        
+        # Desconectar imediatamente para não manter session aberta
+        try:
+            bx.disconnect()
+        except Exception:
+            pass
+        
         return True, ""
     except Exception as e:
-        logger.error(f"Erro ao verificar credenciais da IQ Option: {str(e)}")
+        logger.error(f"Erro ao verificar credenciais: {str(e)}")
         return False, t["invalid_credentials"]
 
 # --- Traduções ---

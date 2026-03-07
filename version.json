@@ -1,5 +1,5 @@
 {
-  "version": "5.2",
-  "changelog": "v5.2 - Signal scan a cada 1min (independente do grafico) + IA training fallback disco + credenciais limpas",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v5.2/WsTrader_Setup_5.2.exe"
+  "version": "5.3",
+  "changelog": "v5.3 - Fix vela live tempo real + fix busy-wait CPU + DT prob min 65% + target projetado + guard 10% + scan :50",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v5.3/WsTrader_Setup_5.3.exe"
 }
