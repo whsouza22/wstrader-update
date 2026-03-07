@@ -225,7 +225,7 @@ logger = logging.getLogger(__name__)
 WINDOW_ICON_FILENAME = "ws_ai_trader_corrigido.ico"
 
 # Versão padrão do aplicativo
-CURRENT_VERSION = "5.2" # H&S + warm-up 5min + guard preço longe + horário 6-18h
+CURRENT_VERSION = "5.3" # H&S + warm-up 5min + guard preço longe + horário 6-18h
 
 # URL do JSON para verificação de atualizações
 VERSION_URL = "https://whsouza22.github.io/wstrader-update/version.json"
