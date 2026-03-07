@@ -1,0 +1,2710 @@
+{
+  "version": "2026-W09",
+  "meta": {
+    "total": 89422,
+    "wins": 79605,
+    "deep_train_version": "2026-W09",
+    "entry_model": "iR_close_confirmation",
+    "last_bt_ts": 1772806554.6808302,
+    "trained_with_csv": true,
+    "csv_assets_count": 31
+  },
+  "arms": {
+    "AUDCAD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 46,
+      "total": 51
+    },
+    "AUDCAD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 36,
+      "total": 43
+    },
+    "AUDCAD-OTC_INV_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "AUDCHF-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 31,
+      "total": 36
+    },
+    "AUDCHF-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 33,
+      "total": 40
+    },
+    "AUDJPY-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 33,
+      "total": 41
+    },
+    "AUDJPY-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 47,
+      "total": 52
+    },
+    "AUDNZD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 46,
+      "total": 49
+    },
+    "AUDNZD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 45,
+      "total": 51
+    },
+    "AUDUSD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "AUDUSD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "CADCHF-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 38,
+      "total": 48
+    },
+    "CADCHF-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 28,
+      "total": 31
+    },
+    "CADJPY-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "CADJPY-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "CHFJPY-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "CHFJPY-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURAUD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 35,
+      "total": 39
+    },
+    "EURAUD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 46,
+      "total": 49
+    },
+    "EURCAD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 50,
+      "total": 54
+    },
+    "EURCHF-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURCHF-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURGBP-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURGBP-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURGBP-OTC_INV_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURJPY-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 1,
+      "total": 1
+    },
+    "EURJPY-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 1,
+      "total": 1
+    },
+    "EURJPY-OTC_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURJPY-OTC_INV_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURNZD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 50,
+      "total": 53
+    },
+    "EURNZD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 58,
+      "total": 59
+    },
+    "EURUSD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURUSD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "GBPAUD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 30,
+      "total": 31
+    },
+    "GBPAUD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 50,
+      "total": 57
+    },
+    "GBPCAD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 32,
+      "total": 35
+    },
+    "GBPCAD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 54,
+      "total": 60
+    },
+    "GBPCHF-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 27,
+      "total": 30
+    },
+    "GBPCHF-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 49,
+      "total": 50
+    },
+    "GBPNZD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 45,
+      "total": 54
+    },
+    "GBPNZD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 49,
+      "total": 57
+    },
+    "GBPUSD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 36,
+      "total": 39
+    },
+    "GBPUSD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 50,
+      "total": 56
+    },
+    "NZDCAD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "NZDCAD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "NZDJPY-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 53,
+      "total": 57
+    },
+    "NZDJPY-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 42,
+      "total": 49
+    },
+    "USDBRL-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDBRL-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDBRL-OTC_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDBRL-OTC_INV_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDCAD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 40,
+      "total": 45
+    },
+    "USDCAD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 52,
+      "total": 56
+    },
+    "USDCHF-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 40,
+      "total": 41
+    },
+    "USDCHF-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 31,
+      "total": 38
+    },
+    "USDCHF-OTC_INV_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDHKD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 42,
+      "total": 47
+    },
+    "USDHKD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 46,
+      "total": 52
+    },
+    "USDMXN-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDMXN-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDNOK-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDNOK-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDPLN-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDPLN-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDSEK-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDSEK-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDSGD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDSGD-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDTRY-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDTRY-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 0,
+      "total": 0
+    },
+    "USDZAR-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 54,
+      "total": 59
+    },
+    "USDZAR-OTC_INV_HEAD_SHOULDERS_classic": {
+      "wins": 54,
+      "total": 60
+    },
+    "USDZAR-OTC_HEAD_SHOULDERS_realtime": {
+      "wins": 1,
+      "total": 1
+    },
+    "USDZAR-OTC_INV_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 1
+    },
+    "EURNZD-OTC_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "GBPCAD-OTC_INV_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURAUD-OTC_HEAD_SHOULDERS_realtime": {
+      "wins": 0,
+      "total": 0
+    },
+    "EURCAD-OTC_HEAD_SHOULDERS_classic": {
+      "wins": 33,
+      "total": 38
+    },
+    "USDCAD-OTC_HEAD_SHOULDERS_early": {
+      "wins": 0,
+      "total": 0
+    },
+    "GBPCAD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2074,
+      "total": 2316
+    },
+    "GBPCAD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2048,
+      "total": 2323
+    },
+    "AUDNZD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2275,
+      "total": 2536
+    },
+    "AUDNZD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2306,
+      "total": 2603
+    },
+    "USDCAD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2505,
+      "total": 2782
+    },
+    "USDCAD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2563,
+      "total": 2852
+    },
+    "USDCHF-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 1610,
+      "total": 1799
+    },
+    "USDCHF-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 1626,
+      "total": 1823
+    },
+    "CADCHF-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 1511,
+      "total": 1757
+    },
+    "CADCHF-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 1678,
+      "total": 1887
+    },
+    "EURAUD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 1847,
+      "total": 2094
+    },
+    "EURAUD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 1873,
+      "total": 2144
+    },
+    "EURJPY-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 17,
+      "total": 20
+    },
+    "EURJPY-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 11,
+      "total": 11
+    },
+    "EURNZD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2148,
+      "total": 2377
+    },
+    "EURNZD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2230,
+      "total": 2496
+    },
+    "GBPCHF-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 1970,
+      "total": 2229
+    },
+    "GBPCHF-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 1917,
+      "total": 2143
+    },
+    "GBPNZD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2352,
+      "total": 2638
+    },
+    "GBPNZD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2452,
+      "total": 2713
+    },
+    "GBPUSD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2174,
+      "total": 2454
+    },
+    "GBPUSD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2169,
+      "total": 2469
+    },
+    "NZDJPY-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2081,
+      "total": 2307
+    },
+    "NZDJPY-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2123,
+      "total": 2382
+    },
+    "USDHKD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2240,
+      "total": 2511
+    },
+    "USDHKD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2240,
+      "total": 2503
+    },
+    "AUDCHF-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 1588,
+      "total": 1792
+    },
+    "AUDCHF-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 1709,
+      "total": 1927
+    },
+    "AUDJPY-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2351,
+      "total": 2641
+    },
+    "AUDJPY-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2303,
+      "total": 2584
+    },
+    "GBPAUD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2033,
+      "total": 2271
+    },
+    "GBPAUD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 1922,
+      "total": 2145
+    },
+    "USDZAR-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 2702,
+      "total": 3015
+    },
+    "USDZAR-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 2642,
+      "total": 2992
+    },
+    "AUDCAD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 1783,
+      "total": 2036
+    },
+    "AUDCAD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 1805,
+      "total": 2049
+    },
+    "EURCAD-OTC_DOUBLE_TOP_double_touch": {
+      "wins": 1883,
+      "total": 2118
+    },
+    "EURCAD-OTC_DOUBLE_BOTTOM_double_touch": {
+      "wins": 1904,
+      "total": 2137
+    }
+  },
+  "geometry_history": [
+    {
+      "span": 24,
+      "symmetry": 0.2,
+      "depth_ratio": 4.7276,
+      "neck_align": 0.0,
+      "d_left": 20,
+      "d_right": 4,
+      "shoulder_ratio": 1.0,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 74,
+      "symmetry": 0.6087,
+      "depth_ratio": 8.5933,
+      "neck_align": 0.0,
+      "d_left": 28,
+      "d_right": 46,
+      "shoulder_ratio": 0.999951,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 79,
+      "symmetry": 0.0822,
+      "depth_ratio": 4.3619,
+      "neck_align": 0.0,
+      "d_left": 73,
+      "d_right": 6,
+      "shoulder_ratio": 0.999932,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 13,
+      "symmetry": 0.8571,
+      "depth_ratio": 3.7612,
+      "neck_align": 0.0,
+      "d_left": 7,
+      "d_right": 6,
+      "shoulder_ratio": 0.999963,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 58,
+      "symmetry": 0.45,
+      "depth_ratio": 7.3134,
+      "neck_align": 0.0,
+      "d_left": 18,
+      "d_right": 40,
+      "shoulder_ratio": 0.999963,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 21,
+      "symmetry": 0.75,
+      "depth_ratio": 3.5522,
+      "neck_align": 0.0,
+      "d_left": 12,
+      "d_right": 9,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 25,
+      "symmetry": 0.3158,
+      "depth_ratio": 4.2052,
+      "neck_align": 0.0,
+      "d_left": 19,
+      "d_right": 6,
+      "shoulder_ratio": 0.999975,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 51,
+      "symmetry": 0.275,
+      "depth_ratio": 6.1642,
+      "neck_align": 0.0,
+      "d_left": 11,
+      "d_right": 40,
+      "shoulder_ratio": 0.999957,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 42,
+      "symmetry": 0.1351,
+      "depth_ratio": 3.5261,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 37,
+      "shoulder_ratio": 0.999988,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 33,
+      "symmetry": 0.1,
+      "depth_ratio": 4.3358,
+      "neck_align": 0.0,
+      "d_left": 30,
+      "d_right": 3,
+      "shoulder_ratio": 0.999988,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 66,
+      "symmetry": 0.6098,
+      "depth_ratio": 8.9851,
+      "neck_align": 0.0,
+      "d_left": 25,
+      "d_right": 41,
+      "shoulder_ratio": 0.999969,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 49,
+      "symmetry": 0.2895,
+      "depth_ratio": 6.3209,
+      "neck_align": 0.0,
+      "d_left": 11,
+      "d_right": 38,
+      "shoulder_ratio": 0.999981,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 13,
+      "symmetry": 0.8571,
+      "depth_ratio": 3.2649,
+      "neck_align": 0.0,
+      "d_left": 6,
+      "d_right": 7,
+      "shoulder_ratio": 0.999919,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 19,
+      "symmetry": 0.5833,
+      "depth_ratio": 3.0821,
+      "neck_align": 0.0,
+      "d_left": 12,
+      "d_right": 7,
+      "shoulder_ratio": 0.999906,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 12,
+      "symmetry": 0.7143,
+      "depth_ratio": 3.0821,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 7,
+      "shoulder_ratio": 0.999969,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 8,
+      "symmetry": 0.6,
+      "depth_ratio": 2.2463,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 3,
+      "shoulder_ratio": 0.999937,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 10,
+      "symmetry": 0.6667,
+      "depth_ratio": 3.3955,
+      "neck_align": 0.0,
+      "d_left": 6,
+      "d_right": 4,
+      "shoulder_ratio": 0.999931,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 24,
+      "symmetry": 0.2632,
+      "depth_ratio": 2.7948,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 19,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 16,
+      "symmetry": 0.2308,
+      "depth_ratio": 2.8731,
+      "neck_align": 0.0,
+      "d_left": 13,
+      "d_right": 3,
+      "shoulder_ratio": 0.999962,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 35,
+      "symmetry": 0.2963,
+      "depth_ratio": 3.0299,
+      "neck_align": 0.0,
+      "d_left": 27,
+      "d_right": 8,
+      "shoulder_ratio": 0.9999,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 8,
+      "symmetry": 1.0,
+      "depth_ratio": 2.2201,
+      "neck_align": 0.0,
+      "d_left": 4,
+      "d_right": 4,
+      "shoulder_ratio": 0.999975,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 56,
+      "symmetry": 1.0,
+      "depth_ratio": 3.1604,
+      "neck_align": 0.0,
+      "d_left": 28,
+      "d_right": 28,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 48,
+      "symmetry": 0.7143,
+      "depth_ratio": 3.1604,
+      "neck_align": 0.0,
+      "d_left": 20,
+      "d_right": 28,
+      "shoulder_ratio": 0.999969,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 41,
+      "symmetry": 0.4643,
+      "depth_ratio": 3.6567,
+      "neck_align": 0.0,
+      "d_left": 13,
+      "d_right": 28,
+      "shoulder_ratio": 0.999881,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 77,
+      "symmetry": 0.3051,
+      "depth_ratio": 5.3022,
+      "neck_align": 0.0,
+      "d_left": 59,
+      "d_right": 18,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 40,
+      "symmetry": 0.8182,
+      "depth_ratio": 9.4813,
+      "neck_align": 0.0,
+      "d_left": 22,
+      "d_right": 18,
+      "shoulder_ratio": 0.999962,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 32,
+      "symmetry": 0.7778,
+      "depth_ratio": 9.3246,
+      "neck_align": 0.0,
+      "d_left": 14,
+      "d_right": 18,
+      "shoulder_ratio": 0.999887,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 55,
+      "symmetry": 0.7188,
+      "depth_ratio": 6.4776,
+      "neck_align": 0.0,
+      "d_left": 23,
+      "d_right": 32,
+      "shoulder_ratio": 1.0,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 13,
+      "symmetry": 0.625,
+      "depth_ratio": 4.8582,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 8,
+      "shoulder_ratio": 0.9999,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 36,
+      "symmetry": 0.1613,
+      "depth_ratio": 4.6231,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 31,
+      "shoulder_ratio": 0.999956,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 55,
+      "symmetry": 0.1,
+      "depth_ratio": 4.4403,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 50,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 23,
+      "symmetry": 0.15,
+      "depth_ratio": 2.1679,
+      "neck_align": 0.0,
+      "d_left": 3,
+      "d_right": 20,
+      "shoulder_ratio": 0.999944,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 42,
+      "symmetry": 0.3548,
+      "depth_ratio": 4.1791,
+      "neck_align": 0.0,
+      "d_left": 31,
+      "d_right": 11,
+      "shoulder_ratio": 0.999894,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 54,
+      "symmetry": 0.7419,
+      "depth_ratio": 4.597,
+      "neck_align": 0.0,
+      "d_left": 31,
+      "d_right": 23,
+      "shoulder_ratio": 0.9999,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 17,
+      "symmetry": 0.3077,
+      "depth_ratio": 2.3507,
+      "neck_align": 0.0,
+      "d_left": 13,
+      "d_right": 4,
+      "shoulder_ratio": 0.999894,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 48,
+      "symmetry": 0.92,
+      "depth_ratio": 4.597,
+      "neck_align": 0.0,
+      "d_left": 25,
+      "d_right": 23,
+      "shoulder_ratio": 0.99995,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 48,
+      "symmetry": 0.5,
+      "depth_ratio": 5.6679,
+      "neck_align": 0.0,
+      "d_left": 16,
+      "d_right": 32,
+      "shoulder_ratio": 0.9999,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 56,
+      "symmetry": 0.4,
+      "depth_ratio": 5.6679,
+      "neck_align": 0.0,
+      "d_left": 16,
+      "d_right": 40,
+      "shoulder_ratio": 0.999906,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 19,
+      "symmetry": 0.7273,
+      "depth_ratio": 3.944,
+      "neck_align": 0.0,
+      "d_left": 8,
+      "d_right": 11,
+      "shoulder_ratio": 0.99995,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 8,
+      "symmetry": 0.6,
+      "depth_ratio": 2.7948,
+      "neck_align": 0.0,
+      "d_left": 3,
+      "d_right": 5,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 28,
+      "symmetry": 0.1667,
+      "depth_ratio": 2.8993,
+      "neck_align": 0.0,
+      "d_left": 4,
+      "d_right": 24,
+      "shoulder_ratio": 0.999887,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 47,
+      "symmetry": 0.1463,
+      "depth_ratio": 3.7351,
+      "neck_align": 0.0,
+      "d_left": 41,
+      "d_right": 6,
+      "shoulder_ratio": 0.999937,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 58,
+      "symmetry": 0.0943,
+      "depth_ratio": 3.7873,
+      "neck_align": 0.0,
+      "d_left": 53,
+      "d_right": 5,
+      "shoulder_ratio": 0.999906,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 11,
+      "symmetry": 0.8333,
+      "depth_ratio": 4.153,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 6,
+      "shoulder_ratio": 0.9999,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 11,
+      "symmetry": 0.1,
+      "depth_ratio": 2.1157,
+      "neck_align": 0.0,
+      "d_left": 10,
+      "d_right": 1,
+      "shoulder_ratio": 0.999887,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 54,
+      "symmetry": 0.8621,
+      "depth_ratio": 3.9963,
+      "neck_align": 0.0,
+      "d_left": 29,
+      "d_right": 25,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 17,
+      "symmetry": 0.2143,
+      "depth_ratio": 3.7351,
+      "neck_align": 0.0,
+      "d_left": 14,
+      "d_right": 3,
+      "shoulder_ratio": 0.999881,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 36,
+      "symmetry": 0.5,
+      "depth_ratio": 5.459,
+      "neck_align": 0.0,
+      "d_left": 24,
+      "d_right": 12,
+      "shoulder_ratio": 0.999925,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 22,
+      "symmetry": 0.8333,
+      "depth_ratio": 5.1455,
+      "neck_align": 0.0,
+      "d_left": 10,
+      "d_right": 12,
+      "shoulder_ratio": 0.999944,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 56,
+      "symmetry": 0.0769,
+      "depth_ratio": 5.3284,
+      "neck_align": 0.0,
+      "d_left": 52,
+      "d_right": 4,
+      "shoulder_ratio": 0.999881,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 12,
+      "symmetry": 0.2,
+      "depth_ratio": 4.0485,
+      "neck_align": 0.0,
+      "d_left": 10,
+      "d_right": 2,
+      "shoulder_ratio": 0.999887,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 14,
+      "symmetry": 0.4,
+      "depth_ratio": 4.8321,
+      "neck_align": 0.0,
+      "d_left": 10,
+      "d_right": 4,
+      "shoulder_ratio": 0.999906,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 8,
+      "symmetry": 0.6,
+      "depth_ratio": 3.1604,
+      "neck_align": 0.0,
+      "d_left": 3,
+      "d_right": 5,
+      "shoulder_ratio": 0.999881,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 14,
+      "symmetry": 0.4,
+      "depth_ratio": 4.2052,
+      "neck_align": 0.0,
+      "d_left": 4,
+      "d_right": 10,
+      "shoulder_ratio": 0.999938,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 72,
+      "symmetry": 0.6364,
+      "depth_ratio": 8.306,
+      "neck_align": 0.0,
+      "d_left": 28,
+      "d_right": 44,
+      "shoulder_ratio": 0.999925,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 28,
+      "symmetry": 0.6471,
+      "depth_ratio": 5.7724,
+      "neck_align": 0.0,
+      "d_left": 17,
+      "d_right": 11,
+      "shoulder_ratio": 0.999963,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 74,
+      "symmetry": 0.2982,
+      "depth_ratio": 5.7985,
+      "neck_align": 0.0,
+      "d_left": 17,
+      "d_right": 57,
+      "shoulder_ratio": 0.999956,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 46,
+      "symmetry": 0.122,
+      "depth_ratio": 2.8993,
+      "neck_align": 0.0,
+      "d_left": 41,
+      "d_right": 5,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 70,
+      "symmetry": 0.5556,
+      "depth_ratio": 8.7761,
+      "neck_align": 0.0,
+      "d_left": 25,
+      "d_right": 45,
+      "shoulder_ratio": 0.99995,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 76,
+      "symmetry": 0.4902,
+      "depth_ratio": 8.5933,
+      "neck_align": 0.0,
+      "d_left": 25,
+      "d_right": 51,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 12,
+      "symmetry": 0.3333,
+      "depth_ratio": 3.5784,
+      "neck_align": 0.0,
+      "d_left": 9,
+      "d_right": 3,
+      "shoulder_ratio": 0.999975,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 10,
+      "symmetry": 0.4286,
+      "depth_ratio": 3.8918,
+      "neck_align": 0.0,
+      "d_left": 3,
+      "d_right": 7,
+      "shoulder_ratio": 0.999956,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 55,
+      "symmetry": 0.0577,
+      "depth_ratio": 2.8993,
+      "neck_align": 0.0,
+      "d_left": 3,
+      "d_right": 52,
+      "shoulder_ratio": 0.999925,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 8,
+      "symmetry": 0.6,
+      "depth_ratio": 3.3433,
+      "neck_align": 0.0,
+      "d_left": 3,
+      "d_right": 5,
+      "shoulder_ratio": 0.999938,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 18,
+      "symmetry": 0.0588,
+      "depth_ratio": 3.1866,
+      "neck_align": 0.0,
+      "d_left": 17,
+      "d_right": 1,
+      "shoulder_ratio": 0.999919,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 32,
+      "symmetry": 0.28,
+      "depth_ratio": 2.3769,
+      "neck_align": 0.0,
+      "d_left": 25,
+      "d_right": 7,
+      "shoulder_ratio": 0.999988,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 39,
+      "symmetry": 0.8571,
+      "depth_ratio": 7.0522,
+      "neck_align": 0.0,
+      "d_left": 21,
+      "d_right": 18,
+      "shoulder_ratio": 0.999981,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 61,
+      "symmetry": 0.4524,
+      "depth_ratio": 4.4664,
+      "neck_align": 0.0,
+      "d_left": 42,
+      "d_right": 19,
+      "shoulder_ratio": 0.999962,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 10,
+      "symmetry": 0.6667,
+      "depth_ratio": 1.9851,
+      "neck_align": 0.0,
+      "d_left": 6,
+      "d_right": 4,
+      "shoulder_ratio": 0.999969,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 9,
+      "symmetry": 0.8,
+      "depth_ratio": 2.6119,
+      "neck_align": 0.0,
+      "d_left": 4,
+      "d_right": 5,
+      "shoulder_ratio": 0.999988,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 18,
+      "symmetry": 0.2857,
+      "depth_ratio": 2.7948,
+      "neck_align": 0.0,
+      "d_left": 4,
+      "d_right": 14,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 30,
+      "symmetry": 0.2,
+      "depth_ratio": 3.1343,
+      "neck_align": 0.0,
+      "d_left": 25,
+      "d_right": 5,
+      "shoulder_ratio": 0.9999,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 12,
+      "symmetry": 0.7143,
+      "depth_ratio": 3.1604,
+      "neck_align": 0.0,
+      "d_left": 7,
+      "d_right": 5,
+      "shoulder_ratio": 0.999894,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 51,
+      "symmetry": 0.3077,
+      "depth_ratio": 6.3993,
+      "neck_align": 0.0,
+      "d_left": 39,
+      "d_right": 12,
+      "shoulder_ratio": 0.999925,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 31,
+      "symmetry": 0.24,
+      "depth_ratio": 4.3358,
+      "neck_align": 0.0,
+      "d_left": 25,
+      "d_right": 6,
+      "shoulder_ratio": 0.999912,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 14,
+      "symmetry": 0.75,
+      "depth_ratio": 3.9701,
+      "neck_align": 0.0,
+      "d_left": 8,
+      "d_right": 6,
+      "shoulder_ratio": 0.99988,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 23,
+      "symmetry": 0.5333,
+      "depth_ratio": 3.5261,
+      "neck_align": 0.0,
+      "d_left": 8,
+      "d_right": 15,
+      "shoulder_ratio": 0.999987,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 9,
+      "symmetry": 0.125,
+      "depth_ratio": 2.4552,
+      "neck_align": 0.0,
+      "d_left": 1,
+      "d_right": 8,
+      "shoulder_ratio": 0.999893,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 22,
+      "symmetry": 0.8333,
+      "depth_ratio": 3.5522,
+      "neck_align": 0.0,
+      "d_left": 12,
+      "d_right": 10,
+      "shoulder_ratio": 0.999906,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 66,
+      "symmetry": 0.7368,
+      "depth_ratio": 5.7463,
+      "neck_align": 0.0,
+      "d_left": 38,
+      "d_right": 28,
+      "shoulder_ratio": 0.999918,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 64,
+      "symmetry": 0.1429,
+      "depth_ratio": 4.6754,
+      "neck_align": 0.0,
+      "d_left": 56,
+      "d_right": 8,
+      "shoulder_ratio": 0.999981,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 57,
+      "symmetry": 0.3902,
+      "depth_ratio": 6.3993,
+      "neck_align": 0.0,
+      "d_left": 41,
+      "d_right": 16,
+      "shoulder_ratio": 0.999893,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 70,
+      "symmetry": 0.4,
+      "depth_ratio": 5.1455,
+      "neck_align": 0.0,
+      "d_left": 20,
+      "d_right": 50,
+      "shoulder_ratio": 0.99995,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 14,
+      "symmetry": 0.5556,
+      "depth_ratio": 5.5634,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 9,
+      "shoulder_ratio": 0.999887,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 20,
+      "symmetry": 0.3333,
+      "depth_ratio": 5.5634,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 15,
+      "shoulder_ratio": 0.999981,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 20,
+      "symmetry": 0.3333,
+      "depth_ratio": 2.1418,
+      "neck_align": 0.0,
+      "d_left": 15,
+      "d_right": 5,
+      "shoulder_ratio": 0.999918,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 69,
+      "symmetry": 0.6429,
+      "depth_ratio": 6.4254,
+      "neck_align": 0.0,
+      "d_left": 42,
+      "d_right": 27,
+      "shoulder_ratio": 0.999912,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 21,
+      "symmetry": 0.6154,
+      "depth_ratio": 3.7612,
+      "neck_align": 0.0,
+      "d_left": 13,
+      "d_right": 8,
+      "shoulder_ratio": 0.999912,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 32,
+      "symmetry": 0.6842,
+      "depth_ratio": 3.8918,
+      "neck_align": 0.0,
+      "d_left": 13,
+      "d_right": 19,
+      "shoulder_ratio": 0.999969,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 11,
+      "symmetry": 0.5714,
+      "depth_ratio": 3.2388,
+      "neck_align": 0.0,
+      "d_left": 4,
+      "d_right": 7,
+      "shoulder_ratio": 0.99988,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 11,
+      "symmetry": 0.375,
+      "depth_ratio": 2.6642,
+      "neck_align": 0.0,
+      "d_left": 3,
+      "d_right": 8,
+      "shoulder_ratio": 0.999937,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 54,
+      "symmetry": 0.5,
+      "depth_ratio": 3.6306,
+      "neck_align": 0.0,
+      "d_left": 18,
+      "d_right": 36,
+      "shoulder_ratio": 0.999975,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 43,
+      "symmetry": 0.1944,
+      "depth_ratio": 3.7873,
+      "neck_align": 0.0,
+      "d_left": 7,
+      "d_right": 36,
+      "shoulder_ratio": 0.999962,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 46,
+      "symmetry": 0.3143,
+      "depth_ratio": 9.2463,
+      "neck_align": 0.0,
+      "d_left": 35,
+      "d_right": 11,
+      "shoulder_ratio": 0.999925,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 54,
+      "symmetry": 0.5429,
+      "depth_ratio": 9.3507,
+      "neck_align": 0.0,
+      "d_left": 35,
+      "d_right": 19,
+      "shoulder_ratio": 0.999975,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 63,
+      "symmetry": 0.8,
+      "depth_ratio": 9.403,
+      "neck_align": 0.0,
+      "d_left": 35,
+      "d_right": 28,
+      "shoulder_ratio": 0.999962,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 8,
+      "symmetry": 1.0,
+      "depth_ratio": 3.0299,
+      "neck_align": 0.0,
+      "d_left": 4,
+      "d_right": 4,
+      "shoulder_ratio": 0.999899,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 17,
+      "symmetry": 0.3077,
+      "depth_ratio": 3.0821,
+      "neck_align": 0.0,
+      "d_left": 4,
+      "d_right": 13,
+      "shoulder_ratio": 0.999887,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 9,
+      "symmetry": 0.8,
+      "depth_ratio": 2.1679,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 4,
+      "shoulder_ratio": 0.999987,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 11,
+      "symmetry": 0.2222,
+      "depth_ratio": 2.5075,
+      "neck_align": 0.0,
+      "d_left": 2,
+      "d_right": 9,
+      "shoulder_ratio": 0.999924,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 65,
+      "symmetry": 0.3265,
+      "depth_ratio": 3.709,
+      "neck_align": 0.0,
+      "d_left": 49,
+      "d_right": 16,
+      "shoulder_ratio": 0.999981,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 18,
+      "symmetry": 0.8,
+      "depth_ratio": 4.4664,
+      "neck_align": 0.0,
+      "d_left": 10,
+      "d_right": 8,
+      "shoulder_ratio": 0.999981,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 17,
+      "symmetry": 0.3077,
+      "depth_ratio": 2.8993,
+      "neck_align": 0.0,
+      "d_left": 4,
+      "d_right": 13,
+      "shoulder_ratio": 0.999893,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 56,
+      "symmetry": 0.3023,
+      "depth_ratio": 5.8507,
+      "neck_align": 0.0,
+      "d_left": 43,
+      "d_right": 13,
+      "shoulder_ratio": 0.999981,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 39,
+      "symmetry": 0.56,
+      "depth_ratio": 5.1194,
+      "neck_align": 0.0,
+      "d_left": 14,
+      "d_right": 25,
+      "shoulder_ratio": 0.999937,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 33,
+      "symmetry": 0.32,
+      "depth_ratio": 4.8582,
+      "neck_align": 0.0,
+      "d_left": 8,
+      "d_right": 25,
+      "shoulder_ratio": 0.999956,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 61,
+      "symmetry": 0.1509,
+      "depth_ratio": 4.6754,
+      "neck_align": 0.0,
+      "d_left": 8,
+      "d_right": 53,
+      "shoulder_ratio": 0.999931,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 28,
+      "symmetry": 0.2174,
+      "depth_ratio": 4.2313,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 23,
+      "shoulder_ratio": 0.999887,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 42,
+      "symmetry": 0.0769,
+      "depth_ratio": 4.1007,
+      "neck_align": 0.0,
+      "d_left": 3,
+      "d_right": 39,
+      "shoulder_ratio": 0.999969,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 35,
+      "symmetry": 0.0938,
+      "depth_ratio": 3.3433,
+      "neck_align": 0.0,
+      "d_left": 32,
+      "d_right": 3,
+      "shoulder_ratio": 0.999962,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 54,
+      "symmetry": 0.2273,
+      "depth_ratio": 6.6604,
+      "neck_align": 0.0,
+      "d_left": 44,
+      "d_right": 10,
+      "shoulder_ratio": 0.999893,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 78,
+      "symmetry": 0.3,
+      "depth_ratio": 8.2799,
+      "neck_align": 0.0,
+      "d_left": 60,
+      "d_right": 18,
+      "shoulder_ratio": 0.999931,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 25,
+      "symmetry": 0.7857,
+      "depth_ratio": 4.7537,
+      "neck_align": 0.0,
+      "d_left": 11,
+      "d_right": 14,
+      "shoulder_ratio": 0.999962,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 52,
+      "symmetry": 0.2093,
+      "depth_ratio": 3.1866,
+      "neck_align": 0.0,
+      "d_left": 9,
+      "d_right": 43,
+      "shoulder_ratio": 0.999893,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 52,
+      "symmetry": 0.4054,
+      "depth_ratio": 6.8433,
+      "neck_align": 0.0,
+      "d_left": 15,
+      "d_right": 37,
+      "shoulder_ratio": 0.999893,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 35,
+      "symmetry": 0.25,
+      "depth_ratio": 6.3209,
+      "neck_align": 0.0,
+      "d_left": 28,
+      "d_right": 7,
+      "shoulder_ratio": 0.999987,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 47,
+      "symmetry": 0.6786,
+      "depth_ratio": 6.5299,
+      "neck_align": 0.0,
+      "d_left": 28,
+      "d_right": 19,
+      "shoulder_ratio": 0.99995,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 67,
+      "symmetry": 0.3137,
+      "depth_ratio": 4.8321,
+      "neck_align": 0.0,
+      "d_left": 16,
+      "d_right": 51,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 12,
+      "symmetry": 0.5,
+      "depth_ratio": 3.8657,
+      "neck_align": 0.0,
+      "d_left": 8,
+      "d_right": 4,
+      "shoulder_ratio": 0.999937,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 44,
+      "symmetry": 0.8333,
+      "depth_ratio": 5.7985,
+      "neck_align": 0.0,
+      "d_left": 20,
+      "d_right": 24,
+      "shoulder_ratio": 0.999924,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 38,
+      "symmetry": 0.5833,
+      "depth_ratio": 5.7985,
+      "neck_align": 0.0,
+      "d_left": 14,
+      "d_right": 24,
+      "shoulder_ratio": 0.999924,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 34,
+      "symmetry": 0.1724,
+      "depth_ratio": 2.847,
+      "neck_align": 0.0,
+      "d_left": 29,
+      "d_right": 5,
+      "shoulder_ratio": 0.999906,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 43,
+      "symmetry": 0.1622,
+      "depth_ratio": 3.9179,
+      "neck_align": 0.0,
+      "d_left": 6,
+      "d_right": 37,
+      "shoulder_ratio": 0.99988,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 73,
+      "symmetry": 0.4038,
+      "depth_ratio": 3.5,
+      "neck_align": 0.0,
+      "d_left": 52,
+      "d_right": 21,
+      "shoulder_ratio": 0.999924,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 17,
+      "symmetry": 0.8889,
+      "depth_ratio": 4.4403,
+      "neck_align": 0.0,
+      "d_left": 9,
+      "d_right": 8,
+      "shoulder_ratio": 0.999893,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 11,
+      "symmetry": 0.5714,
+      "depth_ratio": 3.709,
+      "neck_align": 0.0,
+      "d_left": 7,
+      "d_right": 4,
+      "shoulder_ratio": 0.999899,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 9,
+      "symmetry": 0.5,
+      "depth_ratio": 2.2724,
+      "neck_align": 0.0,
+      "d_left": 6,
+      "d_right": 3,
+      "shoulder_ratio": 0.999931,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 18,
+      "symmetry": 0.5,
+      "depth_ratio": 2.4291,
+      "neck_align": 0.0,
+      "d_left": 12,
+      "d_right": 6,
+      "shoulder_ratio": 0.999924,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 9,
+      "symmetry": 0.5,
+      "depth_ratio": 2.4291,
+      "neck_align": 0.0,
+      "d_left": 3,
+      "d_right": 6,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 20,
+      "symmetry": 0.5385,
+      "depth_ratio": 3.9963,
+      "neck_align": 0.0,
+      "d_left": 13,
+      "d_right": 7,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 33,
+      "symmetry": 0.7368,
+      "depth_ratio": 6.4515,
+      "neck_align": 0.0,
+      "d_left": 19,
+      "d_right": 14,
+      "shoulder_ratio": 0.999969,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 68,
+      "symmetry": 0.1525,
+      "depth_ratio": 2.847,
+      "neck_align": 0.0,
+      "d_left": 59,
+      "d_right": 9,
+      "shoulder_ratio": 0.999887,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 16,
+      "symmetry": 0.3333,
+      "depth_ratio": 3.6045,
+      "neck_align": 0.0,
+      "d_left": 12,
+      "d_right": 4,
+      "shoulder_ratio": 0.9999,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 63,
+      "symmetry": 0.8,
+      "depth_ratio": 4.4664,
+      "neck_align": 0.0,
+      "d_left": 28,
+      "d_right": 35,
+      "shoulder_ratio": 0.999975,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 34,
+      "symmetry": 0.8889,
+      "depth_ratio": 5.7463,
+      "neck_align": 0.0,
+      "d_left": 16,
+      "d_right": 18,
+      "shoulder_ratio": 1.0,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 11,
+      "symmetry": 0.8333,
+      "depth_ratio": 2.8209,
+      "neck_align": 0.0,
+      "d_left": 6,
+      "d_right": 5,
+      "shoulder_ratio": 0.999944,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 29,
+      "symmetry": 0.2083,
+      "depth_ratio": 2.8993,
+      "neck_align": 0.0,
+      "d_left": 5,
+      "d_right": 24,
+      "shoulder_ratio": 0.9999,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 40,
+      "symmetry": 0.7391,
+      "depth_ratio": 4.806,
+      "neck_align": 0.0,
+      "d_left": 23,
+      "d_right": 17,
+      "shoulder_ratio": 0.999987,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 58,
+      "symmetry": 0.3182,
+      "depth_ratio": 6.5037,
+      "neck_align": 0.0,
+      "d_left": 14,
+      "d_right": 44,
+      "shoulder_ratio": 0.999911,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 8,
+      "symmetry": 0.3333,
+      "depth_ratio": 3.0821,
+      "neck_align": 0.0,
+      "d_left": 2,
+      "d_right": 6,
+      "shoulder_ratio": 0.999886,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 38,
+      "symmetry": 0.1515,
+      "depth_ratio": 3.0037,
+      "neck_align": 0.0,
+      "d_left": 33,
+      "d_right": 5,
+      "shoulder_ratio": 0.999968,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 57,
+      "symmetry": 0.2128,
+      "depth_ratio": 3.8396,
+      "neck_align": 0.0,
+      "d_left": 47,
+      "d_right": 10,
+      "shoulder_ratio": 0.999943,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 19,
+      "symmetry": 0.9,
+      "depth_ratio": 3.8396,
+      "neck_align": 0.0,
+      "d_left": 9,
+      "d_right": 10,
+      "shoulder_ratio": 0.999911,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 80,
+      "symmetry": 0.8182,
+      "depth_ratio": 5.9552,
+      "neck_align": 0.0,
+      "d_left": 44,
+      "d_right": 36,
+      "shoulder_ratio": 0.999918,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 14,
+      "symmetry": 0.1667,
+      "depth_ratio": 2.5597,
+      "neck_align": 0.0,
+      "d_left": 2,
+      "d_right": 12,
+      "shoulder_ratio": 0.999886,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 15,
+      "symmetry": 0.1538,
+      "depth_ratio": 2.0896,
+      "neck_align": 0.0,
+      "d_left": 2,
+      "d_right": 13,
+      "shoulder_ratio": 0.999994,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 63,
+      "symmetry": 0.6154,
+      "depth_ratio": 6.0597,
+      "neck_align": 0.0,
+      "d_left": 39,
+      "d_right": 24,
+      "shoulder_ratio": 0.99988,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 57,
+      "symmetry": 0.7273,
+      "depth_ratio": 6.0597,
+      "neck_align": 0.0,
+      "d_left": 33,
+      "d_right": 24,
+      "shoulder_ratio": 0.999899,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 61,
+      "symmetry": 0.1961,
+      "depth_ratio": 4.9366,
+      "neck_align": 0.0,
+      "d_left": 51,
+      "d_right": 10,
+      "shoulder_ratio": 0.999899,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 51,
+      "symmetry": 0.6452,
+      "depth_ratio": 3.4478,
+      "neck_align": 0.0,
+      "d_left": 31,
+      "d_right": 20,
+      "shoulder_ratio": 0.999962,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 72,
+      "symmetry": 0.8462,
+      "depth_ratio": 10.2388,
+      "neck_align": 0.0,
+      "d_left": 39,
+      "d_right": 33,
+      "shoulder_ratio": 0.999975,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 13,
+      "symmetry": 0.8571,
+      "depth_ratio": 3.7873,
+      "neck_align": 0.0,
+      "d_left": 7,
+      "d_right": 6,
+      "shoulder_ratio": 0.999949,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 52,
+      "symmetry": 1.0,
+      "depth_ratio": 9.0896,
+      "neck_align": 0.0,
+      "d_left": 26,
+      "d_right": 26,
+      "shoulder_ratio": 0.999924,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 12,
+      "symmetry": 1.0,
+      "depth_ratio": 2.6381,
+      "neck_align": 0.0,
+      "d_left": 6,
+      "d_right": 6,
+      "shoulder_ratio": 0.999911,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 10,
+      "symmetry": 0.6667,
+      "depth_ratio": 2.6642,
+      "neck_align": 0.0,
+      "d_left": 6,
+      "d_right": 4,
+      "shoulder_ratio": 0.999949,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 21,
+      "symmetry": 0.5,
+      "depth_ratio": 4.1791,
+      "neck_align": 0.0,
+      "d_left": 14,
+      "d_right": 7,
+      "shoulder_ratio": 0.999886,
+      "neck_slope_norm": 0.0,
+      "result": 0,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 38,
+      "symmetry": 0.3103,
+      "depth_ratio": 6.6082,
+      "neck_align": 0.0,
+      "d_left": 29,
+      "d_right": 9,
+      "shoulder_ratio": 0.999962,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 56,
+      "symmetry": 0.931,
+      "depth_ratio": 6.4515,
+      "neck_align": 0.0,
+      "d_left": 29,
+      "d_right": 27,
+      "shoulder_ratio": 0.99993,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    },
+    {
+      "span": 18,
+      "symmetry": 0.5,
+      "depth_ratio": 4.7537,
+      "neck_align": 0.0,
+      "d_left": 12,
+      "d_right": 6,
+      "shoulder_ratio": 0.999892,
+      "neck_slope_norm": 0.0,
+      "result": 1,
+      "ativo": "EURCAD-OTC",
+      "type": "DOUBLE_BOTTOM",
+      "source": "backtest"
+    }
+  ]
+}
