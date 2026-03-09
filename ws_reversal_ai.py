@@ -1,22 +1,51 @@
 """
-WS Trader - IA ML Pura (Reversal-Only)
+WS Trader — Engine de 3 Redes Neurais para Double Top/Bottom
+═════════════════════════════════════════════════════════════
+Contém 3 modelos de ML independentes que votam Win/Loss de padrões DT:
 
-Dois modelos de Machine Learning independentes:
-  IA 1 (Geradora):   GradientBoosting - analisa 32 features - preve CALL ou PUT
-  IA 2 (Validadora): LightGBM         - confirma ou rejeita a IA 1
+  IA 1 (Geradora):     GradientBoosting  — analisa 15 features DT → prediz Win/Loss
+  IA 2 (Validadora):   LightGBM          — confirma ou rejeita a IA 1
+  IA 3 (Validadora 2): MLP 128→64→32     — captura padrões não-lineares
 
-ESTRATEGIA: REVERSAL-ONLY
-  - Entra SOMENTE quando o preco esta ESTICADO (overextended)
-  - Preco la em cima -> PUT (reversao pra baixo)
-  - Preco la embaixo -> CALL (reversao pra cima)
-  - A IA ML confirma se os padroes de vela indicam reversao
-  - Sem regras manuais de padrao de vela
-  - A IA aprende sozinha os padroes a partir dos dados
-  - 5 features de CONFIRMACAO (stretch × vela) permitem a IA
-    descobrir sozinha quais padroes de vela revertem o preco
-  - Entrada SOMENTE em extremos de preco
-  - Sinal emitido quando as duas IAs concordam com a reversao
-  - Retreino automatico a cada 20 novos dados
+COMO FUNCIONA:
+  1. O bot (WS_AUTO_AI_BULLEX.py) detecta um Double Top/Bottom
+  2. Chama extract_features() do ws_adaptive_brain.py → vetor de 15 floats
+  3. Chama predict_dt(features) deste arquivo → 3 NNs votam Win ou Loss
+  4. Se 2+ NNs votam Win com confiança mínima → GUARD IA 6 aprova a entrada
+
+FEATURES USADAS (15 do DT — DT_FEATURE_NAMES):
+  f0  wick_ratio         — tamanho do wick de rejeição
+  f1  close_position     — posição do close na vela (0=low, 1=high)
+  f2  candles_ago        — velas desde o toque (/10)
+  f3  depth_ratio        — profundidade do padrão / ATR
+  f4  symmetry           — simetria temporal
+  f5  span               — largura do padrão (/200)
+  f6  shoulder_ratio     — similaridade dos 2 toques
+  f7  progress_pct       — % do caminho RS→Neck já andado
+  f8  ema_score          — EMA8-EMA20 normalizado
+  f9  momentum           — força do momentum
+  f10 zone_score         — toques históricos no nível
+  f11 arm_wr             — WR histórico do ativo+tipo+modo
+  f12 approach_decay     — desaceleração do momentum na chegada
+  f13 rejection_quality  — qualidade da rejeição (41.7% importância — TOP 1)
+  f14 volatility_regime  — regime de volatilidade
+
+TREINAMENTO:
+  - Offline: python train_neural_network.py (usa CSVs de candles_5000/ e candles_deep/)
+  - Resultado: ~67K padrões, ~89.7% accuracy nas 3 IAs
+  - Modelo salvo em: ~/.wstrader/reversal_tf_unified.pkl (válido 12h)
+  - Online: _train_ia_from_history() no bot faz retreino se modelo expirado
+
+MÉTODOS PRINCIPAIS:
+  - feed_dt_features(features, result) — alimenta 15 features + Win(1)/Loss(0)
+  - predict_dt(features) — prediz Win/Loss, retorna {win, prob_win, confidence, votes}
+  - train_all() — treina os 3 modelos com dados acumulados
+  - feed_candles(df) — alimenta 32 features genéricas (backward compat, não usado pelo DT)
+  - predict_current(df) — prediz com 32 features genéricas (backward compat)
+
+BACKWARD COMPAT:
+  - FEATURE_NAMES (32 features genéricas) mantido para feed_candles/predict_current
+  - _retrain() auto-detecta: 15 features → DT mode, 32 features → genérico
 """
 
 import os, sys, time, pickle, logging, threading
@@ -37,22 +66,28 @@ CANDLE_COUNT        = 200      # Velas no gráfico
 # ── ML ──
 MIN_SAMPLES_ML      = 60       # Amostras mínimas para treinar
 RETRAIN_EVERY       = 20       # Retreino a cada N novos dados
-TRAINING_WINDOW     = 3000     # Máx. dados de treino
+TRAINING_WINDOW     = 2_000_000  # Máx. dados de treino
 VALIDATION_SPLIT    = 0.20
 MIN_VALIDATION_ACC  = 0.505    # Acurácia mín. para ativar (pure ML)
 
 # ── Confiança mínima ──
 AI1_CONF_MIN        = 52.0     # IA 1 precisa >= 52%
 AI2_CONF_MIN        = 51.0     # IA 2 precisa >= 51%
+AI3_CONF_MIN        = 51.0     # IA 3 (MLP) precisa >= 51%
+AI3_MIN_SAMPLES     = 500      # MLP precisa de pelo menos 500 amostras
 
 # ── Persistência ──
 _user_data_dir = os.path.join(os.path.expanduser("~"), ".wstrader")
 os.makedirs(_user_data_dir, exist_ok=True)
 MODEL_PERSIST_FILE    = os.path.join(_user_data_dir, "reversal_tf_{broker}.pkl")
-MODEL_PERSIST_MAX_AGE = 12 * 3600   # 12 h
+MODEL_PERSIST_MAX_AGE = 7 * 24 * 3600   # 7 dias
+GITHUB_MODEL_URL = os.getenv(
+    "WS_MODEL_URL",
+    "https://raw.githubusercontent.com/whsouza22/wstrader-update/main/reversal_tf_unified.pkl"
+)
 
 # ═══════════════════════════════════════════════════════
-#  FEATURES  — 32 features puras de mercado
+#  FEATURES  — 32 features puras de mercado (usadas por feed_candles)
 # ═══════════════════════════════════════════════════════
 FEATURE_NAMES = [
     # ── Vela Atual (5) ──
@@ -102,9 +137,30 @@ FEATURE_NAMES = [
     "stretch_vs_color",      # Vela reversa ao stretch? +1=reversa, -1=continuação, 0=neutro
 ]
 
+# ═══════════════════════════════════════════════════════
+#  DT FEATURES  — 15 features reais (extract_features do ws_adaptive_brain)
+# ═══════════════════════════════════════════════════════
+DT_FEATURE_NAMES = [
+    "wick_ratio",            # f0  Rejection wick size                   0–1
+    "close_position",        # f1  Close position in candle              0–1
+    "candles_ago",           # f2  Candles since touch (/10)             0–1
+    "depth_ratio",           # f3  Pattern depth / ATR (/25)             0–1
+    "symmetry",              # f4  Temporal symmetry                     0–1
+    "span",                  # f5  Pattern width (/200)                  0–1
+    "shoulder_ratio",        # f6  Touch similarity                    ~0.99–1
+    "progress_pct",          # f7  % of RS→Neck path traveled           0–1
+    "ema_score",             # f8  EMA8-EMA20/ATR dir-adjusted         -1 to +1
+    "momentum",              # f9  Momentum strength                   -1 to +1
+    "zone_score",            # f10 Historical level touches (/10)       0–1
+    "arm_wr",                # f11 Historical WR for asset+type+mode    0–1
+    "approach_decay",        # f12 Momentum deceleration at approach     0–1
+    "rejection_quality",     # f13 Rejection quality (wicks+confirm)     0–1
+    "volatility_regime",     # f14 Volatility regime (0=expl,1=calm)     0–1
+]
+
 
 # ═══════════════════════════════════════════════════════
-#  REVERSAL AI  —  IA ML Pura (2 modelos)
+#  REVERSAL AI  —  IA ML Pura (3 modelos)
 # ═══════════════════════════════════════════════════════
 class ReversalAI:
 
@@ -114,10 +170,13 @@ class ReversalAI:
         self._train_data = []          # [{"f": [30], "l": 0/1, "ts": float}]
         self._ai1 = None               # GradientBoosting (Geradora)
         self._ai2 = None               # LightGBM (Validadora)
+        self._ai3 = None               # MLP Neural Network (Validadora 2)
         self._ai1_ready = False
         self._ai2_ready = False
+        self._ai3_ready = False
         self._ai1_val = 0.0
         self._ai2_val = 0.0
+        self._ai3_val = 0.0
         self._new_samples = 0
         self._locked_signals = {}      # {asset: {key: sig}}
         self._processed_candles = {}   # {asset: set(keys)}
@@ -603,6 +662,15 @@ class ReversalAI:
         except Exception:
             return None
 
+    def _predict_ai3(self, fv_df):
+        """IA 3 (Validadora 2): MLP Neural Network → P(up)."""
+        if not self._ai3:
+            return None
+        try:
+            return float(self._ai3.predict_proba(fv_df)[0][1])
+        except Exception:
+            return None
+
     # ──────────────────────────────────────────────
     #  ANÁLISE PRINCIPAL
     # ──────────────────────────────────────────────
@@ -715,6 +783,18 @@ class ReversalAI:
                 if p2 is None:
                     continue
 
+                # IA 3 (MLP Neural Network — Validadora 2)
+                p3 = None
+                if self._ai3_ready:
+                    try:
+                        fv_scaled = pd.DataFrame(
+                            self._ai3_scaler.transform(fv),
+                            columns=FEATURE_NAMES
+                        )
+                        p3 = self._predict_ai3(fv_scaled)
+                    except Exception:
+                        p3 = None
+
                 # Direção + Confiança
                 ai1_call = p1 > 0.5
                 ai2_call = p2 > 0.5
@@ -723,14 +803,46 @@ class ReversalAI:
                 ai1_dir = "CALL" if ai1_call else "PUT"
                 ai2_dir = "CALL" if ai2_call else "PUT"
 
-                # As duas IAs devem concordar
-                if ai1_dir != ai2_dir:
+                # IA 3 (se disponível)
+                ai3_dir = None
+                ai3_conf = 0.0
+                if p3 is not None:
+                    ai3_call = p3 > 0.5
+                    ai3_conf = (p3 if ai3_call else 1 - p3) * 100
+                    ai3_dir = "CALL" if ai3_call else "PUT"
+
+                # Sistema de votação: maioria decide (2 de 3)
+                votes = {"CALL": 0, "PUT": 0}
+                votes[ai1_dir] += 1
+                votes[ai2_dir] += 1
+                if ai3_dir is not None:
+                    votes[ai3_dir] += 1
+
+                direction = "CALL" if votes["CALL"] > votes["PUT"] else "PUT"
+                n_agree = votes[direction]
+
+                # Sem IA 3: as 2 devem concordar (como antes)
+                # Com IA 3: pelo menos 2 de 3 devem concordar
+                if ai3_dir is None:
+                    if ai1_dir != ai2_dir:
+                        continue
+                else:
+                    if n_agree < 2:
+                        continue
+
+                # Confiança mínima (cada IA que votou na direção)
+                if ai1_dir == direction and ai1_conf < AI1_CONF_MIN:
                     continue
-                if ai1_conf < AI1_CONF_MIN or ai2_conf < AI2_CONF_MIN:
+                if ai2_dir == direction and ai2_conf < AI2_CONF_MIN:
+                    continue
+                if ai3_dir == direction and ai3_conf < AI3_CONF_MIN:
                     continue
 
-                direction = ai1_dir
-                confidence = ai1_conf * 0.6 + ai2_conf * 0.4
+                # Confiança ponderada
+                if ai3_dir is not None:
+                    confidence = ai1_conf * 0.40 + ai2_conf * 0.30 + ai3_conf * 0.30
+                else:
+                    confidence = ai1_conf * 0.6 + ai2_conf * 0.4
             except Exception:
                 continue
 
@@ -810,6 +922,9 @@ class ReversalAI:
                 "ai1_dir": ai1_dir,
                 "ai2_conf": round(ai2_conf, 1),
                 "ai2_dir": ai2_dir,
+                "ai3_conf": round(ai3_conf, 1) if ai3_dir else 0.0,
+                "ai3_dir": ai3_dir or "",
+                "n_agree": n_agree,
                 "result": result,
                 "entry_price": round(float(C[idx]), 6),
                 "ml_active": True,
@@ -933,11 +1048,29 @@ class ReversalAI:
                 from sklearn.ensemble import ExtraTreesClassifier
                 _lgbm_ok = False
 
-            nf = len(FEATURE_NAMES)
-            data = [s for s in self._train_data[-TRAINING_WINDOW:]
-                    if len(s["f"]) == nf]
-            if len(data) < MIN_SAMPLES_ML:
-                log.info(f"Aguardando dados ({len(data)}/{MIN_SAMPLES_ML})")
+            # Auto-detectar formato: DT (15 features) ou genérico (32)
+            nf_dt = len(DT_FEATURE_NAMES)
+            nf_gen = len(FEATURE_NAMES)
+            data_dt = [s for s in self._train_data[-TRAINING_WINDOW:]
+                       if len(s["f"]) == nf_dt]
+            data_gen = [s for s in self._train_data[-TRAINING_WINDOW:]
+                        if len(s["f"]) == nf_gen]
+
+            # Priorizar DT se houver dados suficientes
+            if len(data_dt) >= MIN_SAMPLES_ML:
+                data = data_dt
+                feature_names = DT_FEATURE_NAMES
+                nf = nf_dt
+                self._n_features_trained = nf
+                log.info(f"  Treino DT: {len(data)} amostras ({nf} features)")
+            elif len(data_gen) >= MIN_SAMPLES_ML:
+                data = data_gen
+                feature_names = FEATURE_NAMES
+                nf = nf_gen
+                self._n_features_trained = nf
+                log.info(f"  Treino genérico: {len(data)} amostras ({nf} features)")
+            else:
+                log.info(f"Aguardando dados (DT={len(data_dt)} gen={len(data_gen)}/{MIN_SAMPLES_ML})")
                 return
 
             X = np.array([s["f"] for s in data])
@@ -945,7 +1078,17 @@ class ReversalAI:
             if len(np.unique(y)) < 2:
                 return
 
-            X_df = pd.DataFrame(X, columns=FEATURE_NAMES)
+            # Subamostrar se dataset muito grande (GradientBoosting é O(n*log(n)))
+            MAX_TRAIN = 200_000
+            if len(X) > MAX_TRAIN:
+                rng = np.random.RandomState(42)
+                idx = rng.choice(len(X), MAX_TRAIN, replace=False)
+                idx.sort()  # manter ordem temporal
+                X = X[idx]
+                y = y[idx]
+                log.info(f"  Subamostrado: {len(data)} → {MAX_TRAIN} amostras")
+
+            X_df = pd.DataFrame(X, columns=feature_names)
             n = len(X)
 
             split = int(n * (1 - VALIDATION_SPLIT))
@@ -1007,8 +1150,70 @@ class ReversalAI:
                 self._ai2 = ai2
                 self._ai2_ready = True
 
-            if ai1_ok and ai2_ok:
-                log.info(f"  ✓ IA 1 + IA 2 ATIVAS | {n} amostras")
+            # ── IA 3: MLP Neural Network (Validadora 2) ──
+            ai3 = None
+            ai3_ok = False
+            if n >= AI3_MIN_SAMPLES:
+                try:
+                    from sklearn.neural_network import MLPClassifier
+                    from sklearn.preprocessing import StandardScaler
+
+                    # MLP precisa de dados normalizados
+                    scaler = StandardScaler()
+                    Xt_scaled = pd.DataFrame(
+                        scaler.fit_transform(Xt), columns=Xt.columns
+                    )
+
+                    ai3 = MLPClassifier(
+                        hidden_layer_sizes=(128, 64, 32),
+                        activation='relu',
+                        solver='adam',
+                        alpha=0.001,          # Regularização L2
+                        learning_rate='adaptive',
+                        learning_rate_init=0.001,
+                        max_iter=300,
+                        early_stopping=True,
+                        validation_fraction=0.15,
+                        n_iter_no_change=15,
+                        random_state=77,
+                        verbose=False,
+                    )
+                    ai3.fit(Xt_scaled, yt)
+                    self._ai3_scaler = scaler  # Guardar scaler para predição
+
+                    if Xv is not None:
+                        Xv_scaled = pd.DataFrame(
+                            scaler.transform(Xv), columns=Xv.columns
+                        )
+                        pred3 = (ai3.predict_proba(Xv_scaled)[:, 1] >= 0.5).astype(int)
+                        acc3 = float(np.mean(pred3 == yv))
+                        self._ai3_val = acc3
+                        log.info(f"  IA 3 (MLP): val={acc3:.1%} | layers=(128,64,32)")
+                        if acc3 < MIN_VALIDATION_ACC:
+                            log.info(f"  ⚠ IA 3 ({acc3:.1%}) < {MIN_VALIDATION_ACC:.0%} → desativada")
+                        else:
+                            ai3_ok = True
+                    else:
+                        ai3_ok = True
+                        self._ai3_val = 0.0
+
+                except Exception as e3:
+                    log.debug(f"  IA 3 (MLP) erro: {e3}")
+            else:
+                log.info(f"  IA 3 (MLP): aguardando dados ({n}/{AI3_MIN_SAMPLES})")
+
+            if ai3_ok and ai3 is not None:
+                self._ai3 = ai3
+                self._ai3_ready = True
+
+            # ── Resumo ──
+            ativas = []
+            if ai1_ok: ativas.append("IA 1")
+            if ai2_ok: ativas.append("IA 2")
+            if ai3_ok: ativas.append("IA 3")
+
+            if len(ativas) >= 2:
+                log.info(f"  ✓ {' + '.join(ativas)} ATIVAS | {n} amostras")
                 self._persist_model()
 
                 # Top features (IA 1)
@@ -1016,13 +1221,13 @@ class ReversalAI:
                     imp = ai1.feature_importances_
                     for i in np.argsort(imp)[-5:][::-1]:
                         if i < nf:
-                            log.info(f"    {FEATURE_NAMES[i]}: {imp[i]:.3f}")
+                            log.info(f"    {feature_names[i]}: {imp[i]:.3f}")
                 except Exception:
                     pass
-            elif ai1_ok or ai2_ok:
-                log.info(f"  ⚠ Apenas {'IA 1' if ai1_ok else 'IA 2'} ativa")
+            elif len(ativas) == 1:
+                log.info(f"  ⚠ Apenas {ativas[0]} ativa")
             else:
-                log.info(f"  ✗ Ambas IAs abaixo do mínimo — aguardando mais dados")
+                log.info(f"  ✗ Nenhuma IA ativa — aguardando mais dados")
 
         except Exception as e:
             log.error(f"Erro no treino: {e}")
@@ -1034,45 +1239,93 @@ class ReversalAI:
     def _persist_model(self):
         try:
             path = MODEL_PERSIST_FILE.replace("{broker}", self.broker)
+            save_data = {
+                "ai1": self._ai1,
+                "ai2": self._ai2,
+                "ai1_val": self._ai1_val,
+                "ai2_val": self._ai2_val,
+                "timestamp": time.time(),
+                "n_samples": len(self._train_data),
+                "n_features": getattr(self, '_n_features_trained', len(FEATURE_NAMES)),
+            }
+            # Salvar IA 3 + scaler se disponível
+            if self._ai3 is not None:
+                save_data["ai3"] = self._ai3
+                save_data["ai3_val"] = self._ai3_val
+                if hasattr(self, '_ai3_scaler'):
+                    save_data["ai3_scaler"] = self._ai3_scaler
             with open(path, "wb") as f:
-                pickle.dump({
-                    "ai1": self._ai1,
-                    "ai2": self._ai2,
-                    "ai1_val": self._ai1_val,
-                    "ai2_val": self._ai2_val,
-                    "timestamp": time.time(),
-                    "n_samples": len(self._train_data),
-                    "n_features": len(FEATURE_NAMES),
-                }, f)
+                pickle.dump(save_data, f)
             log.info(f"  Modelo salvo em {path}")
         except Exception as e:
             log.debug(f"Erro ao salvar: {e}")
 
+    def _download_model_from_github(self, path: str) -> bool:
+        """Baixa modelo NN pré-treinado do GitHub se não existir localmente."""
+        try:
+            import urllib.request
+            import urllib.error
+            log.info("🌐 Baixando modelo NN do GitHub...")
+            req = urllib.request.Request(GITHUB_MODEL_URL, headers={
+                "User-Agent": "WS-Trader-IA/1.0",
+            })
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                raw = resp.read()
+            with open(path, "wb") as f:
+                f.write(raw)
+            size_kb = len(raw) / 1024
+            log.info(f"✅ Modelo NN baixado do GitHub ({size_kb:.0f} KB)")
+            return True
+        except Exception as e:
+            log.warning(f"⚠️ Falha ao baixar modelo do GitHub: {e}")
+            return False
+
     def _try_load_persisted_model(self):
         try:
             path = MODEL_PERSIST_FILE.replace("{broker}", self.broker)
+            if not os.path.exists(path):
+                # Tentar baixar do GitHub
+                self._download_model_from_github(path)
             if not os.path.exists(path):
                 return
             with open(path, "rb") as f:
                 data = pickle.load(f)
             age = time.time() - data.get("timestamp", 0)
             if age > MODEL_PERSIST_MAX_AGE:
-                return
-            if data.get("n_features", 0) != len(FEATURE_NAMES):
+                # Modelo expirado — tentar baixar versão mais nova do GitHub
+                if self._download_model_from_github(path):
+                    with open(path, "rb") as f:
+                        data = pickle.load(f)
+                    age = time.time() - data.get("timestamp", 0)
+                    if age > MODEL_PERSIST_MAX_AGE:
+                        log.info("Modelo do GitHub também expirado — será retreinado")
+                        return
+                else:
+                    return
+            _saved_nf = data.get("n_features", 0)
+            if _saved_nf not in (len(DT_FEATURE_NAMES), len(FEATURE_NAMES)):
                 log.info("Modelo incompatível — será retreinado")
                 os.remove(path)
                 return
+            self._n_features_trained = _saved_nf
             self._ai1 = data.get("ai1")
             self._ai2 = data.get("ai2")
+            self._ai3 = data.get("ai3")
             self._ai1_val = data.get("ai1_val", 0)
             self._ai2_val = data.get("ai2_val", 0)
+            self._ai3_val = data.get("ai3_val", 0)
+            if data.get("ai3_scaler"):
+                self._ai3_scaler = data["ai3_scaler"]
             n = data.get("n_samples", 0)
             if self._ai1:
                 self._ai1_ready = True
             if self._ai2:
                 self._ai2_ready = True
+            if self._ai3:
+                self._ai3_ready = True
+            ia3_str = f", IA3={self._ai3_val:.1%}" if self._ai3_ready else ""
             log.info(f"✓ Modelo carregado ({n} amostras, "
-                     f"IA1={self._ai1_val:.1%}, IA2={self._ai2_val:.1%})")
+                     f"IA1={self._ai1_val:.1%}, IA2={self._ai2_val:.1%}{ia3_str})")
         except Exception:
             pass
 
@@ -1083,6 +1336,266 @@ class ReversalAI:
             self._retrain()
             return True
         return False
+
+    # ──────────────────────────────────────────────
+    #  PREDIÇÃO DIRETA (usada pelo bot DT)
+    # ──────────────────────────────────────────────
+
+    def predict_current(self, df) -> dict | None:
+        """Predição ML para a ÚLTIMA vela do DataFrame.
+
+        Retorna dict com dir, confidence, p1, p2, p3 ou None se ML inativo.
+        NÃO aplica filtros de stretch/wick — apenas ML puro com votação 2/3.
+        """
+        n = len(df)
+        if n < MIN_CANDLES + 5:
+            return None
+        if not (self._ai1_ready and self._ai2_ready):
+            return None
+
+        O = df["open"].values
+        H = df["high"].values
+        L = df["low"].values
+        C = df["close"].values
+        atr = self._atr(H, L, C)
+        if atr < 1e-10:
+            return None
+
+        idx = n - 1
+        rsi_info = self._rsi_analysis(C, idx)
+        feats = self._extract_features(df, idx, atr, {}, rsi_info)
+        if feats is None:
+            return None
+
+        try:
+            fv = pd.DataFrame([feats], columns=FEATURE_NAMES)
+
+            p1 = self._predict_ai1(fv)
+            if p1 is None:
+                return None
+
+            p2 = self._predict_ai2(fv)
+            if p2 is None:
+                return None
+
+            p3 = None
+            if self._ai3_ready:
+                try:
+                    fv_scaled = pd.DataFrame(
+                        self._ai3_scaler.transform(fv),
+                        columns=FEATURE_NAMES
+                    )
+                    p3 = self._predict_ai3(fv_scaled)
+                except Exception:
+                    p3 = None
+
+            # Direção + Confiança
+            ai1_call = p1 > 0.5
+            ai2_call = p2 > 0.5
+            ai1_conf = (p1 if ai1_call else 1 - p1) * 100
+            ai2_conf = (p2 if ai2_call else 1 - p2) * 100
+            ai1_dir = "CALL" if ai1_call else "PUT"
+            ai2_dir = "CALL" if ai2_call else "PUT"
+
+            ai3_dir = None
+            ai3_conf = 0.0
+            if p3 is not None:
+                ai3_call = p3 > 0.5
+                ai3_conf = (p3 if ai3_call else 1 - p3) * 100
+                ai3_dir = "CALL" if ai3_call else "PUT"
+
+            # Votação: maioria decide (2 de 3)
+            votes = {"CALL": 0, "PUT": 0}
+            votes[ai1_dir] += 1
+            votes[ai2_dir] += 1
+            if ai3_dir is not None:
+                votes[ai3_dir] += 1
+
+            direction = "CALL" if votes["CALL"] > votes["PUT"] else "PUT"
+            n_agree = votes[direction]
+
+            # Sem IA 3: as 2 devem concordar
+            if ai3_dir is None:
+                if ai1_dir != ai2_dir:
+                    return {"dir": None, "confidence": 0, "p1": p1, "p2": p2,
+                            "p3": p3, "votes": 0, "reason": "IA1 e IA2 discordam"}
+            else:
+                if n_agree < 2:
+                    return {"dir": None, "confidence": 0, "p1": p1, "p2": p2,
+                            "p3": p3, "votes": n_agree, "reason": "Votação < 2/3"}
+
+            # Confiança ponderada
+            if ai3_dir is not None:
+                confidence = ai1_conf * 0.40 + ai2_conf * 0.30 + ai3_conf * 0.30
+            else:
+                confidence = ai1_conf * 0.6 + ai2_conf * 0.4
+
+            return {
+                "dir": direction,
+                "confidence": round(confidence, 1),
+                "p1": round(p1, 4),
+                "p2": round(p2, 4),
+                "p3": round(p3, 4) if p3 is not None else None,
+                "votes": n_agree,
+                "reason": None,
+            }
+        except Exception:
+            return None
+
+    # ──────────────────────────────────────────────
+    #  DT-SPECIFIC: Treino + Predição (15 features reais)
+    #  Features vêm pré-extraídas via extract_features()
+    #  do ws_adaptive_brain — mesma extração do retrain_with_fix.py
+    # ──────────────────────────────────────────────
+
+    def feed_dt_features(self, features, result: int):
+        """Alimenta features DT pré-extraídas (15-float) com resultado Win=1/Loss=0.
+
+        As features devem vir de ws_adaptive_brain.extract_features().
+        SEM retreinar. Retorna 1 se adicionou, 0 se falhou.
+        """
+        if features is None:
+            return 0
+        feats = list(features) if not isinstance(features, list) else features
+        if len(feats) != len(DT_FEATURE_NAMES):
+            return 0
+        self._record(feats, result)
+        return 1
+
+    def predict_dt(self, features) -> dict | None:
+        """Prediz Win/Loss para features DT pré-extraídas (15-float).
+
+        As features devem vir de ws_adaptive_brain.extract_features().
+        Retorna dict com prob_win, confidence, p1, p2, p3, votes ou None.
+        """
+        if not (self._ai1_ready and self._ai2_ready):
+            return None
+
+        if features is None:
+            return None
+        feats = list(features) if not isinstance(features, list) else features
+        if len(feats) != len(DT_FEATURE_NAMES):
+            return None
+
+        try:
+            fv = pd.DataFrame([feats], columns=DT_FEATURE_NAMES)
+
+            p1 = self._predict_ai1(fv)
+            if p1 is None:
+                return None
+
+            p2 = self._predict_ai2(fv)
+            if p2 is None:
+                return None
+
+            p3 = None
+            if self._ai3_ready:
+                try:
+                    fv_scaled = pd.DataFrame(
+                        self._ai3_scaler.transform(fv),
+                        columns=DT_FEATURE_NAMES
+                    )
+                    p3 = self._predict_ai3(fv_scaled)
+                except Exception:
+                    p3 = None
+
+            # Votação: 2 de 3 devem dizer WIN (p > 0.5)
+            ai1_win = p1 > 0.5
+            ai2_win = p2 > 0.5
+            ai1_conf = (p1 if ai1_win else 1 - p1) * 100
+            ai2_conf = (p2 if ai2_win else 1 - p2) * 100
+
+            votes_win = int(ai1_win) + int(ai2_win)
+            ai3_conf = 0.0
+            if p3 is not None:
+                ai3_win = p3 > 0.5
+                ai3_conf = (p3 if ai3_win else 1 - p3) * 100
+                votes_win += int(ai3_win)
+
+            total_voters = 3 if p3 is not None else 2
+
+            # Probabilidade de WIN ponderada
+            if p3 is not None:
+                prob_win = p1 * 0.40 + p2 * 0.30 + p3 * 0.30
+                confidence = ai1_conf * 0.40 + ai2_conf * 0.30 + ai3_conf * 0.30
+            else:
+                prob_win = p1 * 0.6 + p2 * 0.4
+                confidence = ai1_conf * 0.6 + ai2_conf * 0.4
+
+            # WIN se maioria vota WIN
+            is_win = votes_win > (total_voters / 2)
+
+            return {
+                "win": is_win,
+                "prob_win": round(float(prob_win), 4),
+                "confidence": round(float(confidence), 1),
+                "p1": round(float(p1), 4),
+                "p2": round(float(p2), 4),
+                "p3": round(float(p3), 4) if p3 is not None else None,
+                "votes_win": votes_win,
+                "total_voters": total_voters,
+            }
+        except Exception:
+            return None
+
+    def feed_candles(self, df, asset: str = ""):
+        """Alimenta dados de treino a partir de velas (SEM retreinar).
+
+        Apenas coleta amostras. O treino é feito por train_all().
+        """
+        n = len(df)
+        if n < MIN_CANDLES + 5:
+            return 0
+
+        O = df["open"].values
+        H = df["high"].values
+        L = df["low"].values
+        C = df["close"].values
+        atr = self._atr(H, L, C)
+        if atr < 1e-10:
+            return 0
+
+        added = 0
+        for idx in range(MIN_CANDLES, n):
+            if idx + FUTURE_CANDLES >= n:
+                break
+            rsi_info = self._rsi_analysis(C, idx)
+            feats = self._extract_features(df, idx, atr, {}, rsi_info)
+            if feats is None:
+                continue
+            fc = C[idx + FUTURE_CANDLES]
+            if fc != C[idx]:
+                label = 1 if fc > C[idx] else 0
+                self._record(feats, label)
+                added += 1
+
+        return added
+
+    def train_all(self):
+        """Treina as 3 redes neurais com todos os dados coletados e persiste.
+
+        Chamar UMA vez após feed_candles de todos os ativos.
+        """
+        n = len(self._train_data)
+        if n < MIN_SAMPLES_ML:
+            log.info(f"  ⚠️ NN train_all: poucos dados ({n}/{MIN_SAMPLES_ML})")
+            return False
+
+        log.info(f"  🧠 NN: Treinando 3 modelos com {n} amostras...")
+        self._retrain()
+
+        ativas = []
+        if self._ai1_ready: ativas.append(f"IA1={self._ai1_val:.1%}")
+        if self._ai2_ready: ativas.append(f"IA2={self._ai2_val:.1%}")
+        if self._ai3_ready: ativas.append(f"IA3={self._ai3_val:.1%}")
+
+        if ativas:
+            self._persist_model()
+            log.info(f"  ✅ NN: {' | '.join(ativas)} — modelo salvo em disco")
+            return True
+        else:
+            log.info(f"  ⚠️ NN: Nenhum modelo atingiu acurácia mínima")
+            return False
 
     # ──────────────────────────────────────────────
     #  COMPATIBILIDADE (Bullex bot)
