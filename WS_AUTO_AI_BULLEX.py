@@ -1150,6 +1150,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 depth = touch_level - v_price
                 if depth < min_depth:
                     continue
+                _n_piv_at_lvl = sum(1 for _, p in pivot_highs if abs(p - touch_level) <= tol)
                 patterns.append({
                     "type": "DOUBLE_TOP", "direction": "PUT", "mode": "double_touch",
                     "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
@@ -1165,6 +1166,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     "entry_idx": int(idx2),
                     "entry_price": round(float(C_arr[int(idx2)]), 6),
                     "candles_ago": n - 1 - idx2,
+                    "n_pivots_at_level": _n_piv_at_lvl,
                 })
         else:
             if n - 1 - idx1 < min_spacing:
@@ -1196,6 +1198,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     continue
                 d_left = v_idx - idx1
                 d_right = j - v_idx
+                _n_piv_at_lvl = sum(1 for _, p in pivot_highs if abs(p - touch_level) <= tol)
                 patterns.append({
                     "type": "DOUBLE_TOP", "direction": "PUT", "mode": "double_touch",
                     "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
@@ -1211,6 +1214,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     "entry_idx": int(j),
                     "entry_price": round(c_j, 6),
                     "candles_ago": n - 1 - j,
+                    "n_pivots_at_level": _n_piv_at_lvl,
                 })
 
     # ═══ DOUBLE BOTTOM (CALL) ═══
@@ -1233,6 +1237,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 depth = p_price - touch_level
                 if depth < min_depth:
                     continue
+                _n_piv_at_lvl = sum(1 for _, p in pivot_lows if abs(p - touch_level) <= tol)
                 patterns.append({
                     "type": "DOUBLE_BOTTOM", "direction": "CALL", "mode": "double_touch",
                     "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
@@ -1248,6 +1253,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     "entry_idx": int(idx2),
                     "entry_price": round(float(C_arr[int(idx2)]), 6),
                     "candles_ago": n - 1 - idx2,
+                    "n_pivots_at_level": _n_piv_at_lvl,
                 })
         else:
             if n - 1 - idx1 < min_spacing:
@@ -1279,6 +1285,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     continue
                 d_left = p_idx - idx1
                 d_right = j - p_idx
+                _n_piv_at_lvl = sum(1 for _, p in pivot_lows if abs(p - touch_level) <= tol)
                 patterns.append({
                     "type": "DOUBLE_BOTTOM", "direction": "CALL", "mode": "double_touch",
                     "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
@@ -1294,6 +1301,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     "entry_idx": int(j),
                     "entry_price": round(c_j, 6),
                     "candles_ago": n - 1 - j,
+                    "n_pivots_at_level": _n_piv_at_lvl,
                 })
 
     return patterns
@@ -1895,11 +1903,23 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict, early_on
             pat_type = pat["type"]
             mode = pat.get("mode", "classic")
 
-            # ═══ MEMÓRIA DT: Bloquear 3º toque no mesmo nível ═══
+            # ═══ BLOQUEIO 3º+ TOQUE: contar pivots confirmados no nível ═══
+            # Live: n_pivots_at_level conta pivots CONFIRMADOS (sem a vela atual).
+            # Se >= 2 pivots no nível, a vela atual é o 3º+ toque → nível desgastado.
+            _n_piv = pat.get("n_pivots_at_level", 1)
+            if _n_piv >= 2:
+                log.info(paint(
+                    f"  🚫 3º+ TOQUE BLOQUEADO: {ativo} {direction} "
+                    f"— {_n_piv} pivots confirmados no nível (desgastado)",
+                    C.R
+                ))
+                continue
+
+            # ═══ MEMÓRIA DT: Bloquear nível já operado ═══
             _rs_price_check = pat.get("right_shoulder", {}).get("price", 0)
             if _is_dt_level_already_traded(ativo, _rs_price_check, direction, atr):
                 log.info(paint(
-                    f"  🚫 3º TOQUE BLOQUEADO: {ativo} {direction} RS={_rs_price_check:.6f} "
+                    f"  🚫 NÍVEL JÁ OPERADO: {ativo} {direction} RS={_rs_price_check:.6f} "
                     f"— nível já operado (memória DT)",
                     C.R
                 ))
