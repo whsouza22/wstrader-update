@@ -391,36 +391,30 @@ def extract_features(pat: dict, H, L, C_arr, O, n: int, atr: float,
     _n_piv_raw = pat.get("n_pivots_at_level", 2)
     n_pivots_norm = min(_n_piv_raw, 6) / 6.0
 
-    # ── f24: body_conviction — convicção direcional das últimas 5 velas ──
-    # Média de (|body| / range) das últimas 5 velas antes do RS.
-    # Dojis (~0) = mercado indeciso/dormindo. Marubozu (~1) = mercado com força.
-    # Se todas as velas são doji, o mercado não vai mover em 2 min.
-    body_conviction = 0.5
+    # ── f24: body_conviction — convicção do corpo das últimas 5 velas ──
+    # Média do |corpo| / range das últimas 5 velas antes do RS.
+    # 0 = doji/indeciso, 1 = velas com corpo forte/decidido.
     _bc_w = min(5, rs_idx)
+    body_conviction = 0.5
     if _bc_w >= 2:
         _bc_sum = 0.0
-        _bc_count = 0
         for _bci in range(rs_idx - _bc_w, rs_idx):
             _bc_range = float(H[_bci]) - float(L[_bci])
-            if _bc_range > 1e-10:
-                _bc_body = abs(float(C_arr[_bci]) - float(O[_bci]))
-                _bc_sum += _bc_body / _bc_range
-                _bc_count += 1
-        if _bc_count > 0:
-            body_conviction = _bc_sum / _bc_count  # 0=dojis, 1=marubozu
+            _bc_body = abs(float(C_arr[_bci]) - float(O[_bci]))
+            _bc_sum += (_bc_body / _bc_range) if _bc_range > 1e-10 else 0.0
+        body_conviction = _bc_sum / _bc_w
 
-    # ── f25: micro_range_ratio — atividade de mercado nas últimas 3 velas ──
-    # Média do range das últimas 3 velas / ATR. Quando <0.3 = mercado morto.
-    # Complementa f14 (5 velas) com janela mais curta para pegar mercado
-    # que "morreu" nos últimos minutos, mesmo se antes estava ativo.
-    micro_range_ratio = 0.5
+    # ── f25: micro_range_ratio — atividade recente vs ATR ──
+    # Média do range das últimas 3 velas / ATR.
+    # 0 = mercado morto/dormindo, 1+ = mercado ativo/vivo.
     _mr_w = min(3, rs_idx)
+    micro_range_ratio = 0.5
     if _mr_w >= 1 and atr > 1e-10:
         _mr_sum = 0.0
         for _mri in range(rs_idx - _mr_w, rs_idx):
             _mr_sum += float(H[_mri]) - float(L[_mri])
         _mr_avg = _mr_sum / _mr_w
-        micro_range_ratio = np.clip(_mr_avg / atr, 0.0, 2.0) / 2.0
+        micro_range_ratio = np.clip(_mr_avg / atr, 0, 3.0) / 3.0
 
     features = np.array([
         wick_ratio,                # f0  — wick de rejeição no RS
@@ -447,8 +441,8 @@ def extract_features(pat: dict, H, L, C_arr, O, n: int, atr: float,
         candle_range_ratio,        # f21 — tamanho da vela RS / ATR
         acceleration,              # f22 — aceleração do momentum
         n_pivots_norm,             # f23 — pivots no nível (2=DT normal, 3+=desgastado)
-        body_conviction,           # f24 — convicção corpo/range últimas 5 velas (0=doji, 1=forte)
-        micro_range_ratio,         # f25 — range últimas 3 velas / ATR (0=morto, 1=ativo)
+        body_conviction,           # f24 — convicção do corpo (0=doji, 1=forte)
+        micro_range_ratio,         # f25 — atividade recente vs ATR (0=morto, 1=ativo)
     ], dtype=np.float64)
 
     return features
