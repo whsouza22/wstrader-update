@@ -1904,10 +1904,10 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict, early_on
             mode = pat.get("mode", "classic")
 
             # ═══ BLOQUEIO 3º+ TOQUE: contar pivots confirmados no nível ═══
-            # Live: n_pivots_at_level conta pivots CONFIRMADOS (sem a vela atual).
-            # Se >= 2 pivots no nível, a vela atual é o 3º+ toque → nível desgastado.
+            # n_pivots_at_level conta TODOS os pivots no nível (inclui LS + RS do DT).
+            # DT normal = 2 pivots (left + right shoulder). 3+ = nível desgastado.
             _n_piv = pat.get("n_pivots_at_level", 1)
-            if _n_piv >= 2:
+            if _n_piv >= 3:
                 log.info(paint(
                     f"  🚫 3º+ TOQUE BLOQUEADO: {ativo} {direction} "
                     f"— {_n_piv} pivots confirmados no nível (desgastado)",
