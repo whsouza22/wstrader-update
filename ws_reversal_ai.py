@@ -146,7 +146,7 @@ FEATURE_NAMES = [
 ]
 
 # ═══════════════════════════════════════════════════════
-#  DT FEATURES  — 23 features reais (extract_features do ws_adaptive_brain)
+#  DT FEATURES  — 26 features reais (extract_features do ws_adaptive_brain)
 # ═══════════════════════════════════════════════════════
 DT_FEATURE_NAMES = [
     "wick_ratio",            # f0  Rejection wick size                   0–1
@@ -173,6 +173,8 @@ DT_FEATURE_NAMES = [
     "candle_range_ratio",    # f21 Tamanho da vela RS / ATR             0–1
     "acceleration",          # f22 Aceleração do momentum              -1 to +1
     "n_pivots_at_level",     # f23 Pivots no nível (2=DT, 3+=desgast)   0–1
+    "body_conviction",       # f24 Convicção corpo/range 5 velas        0–1
+    "micro_range_ratio",     # f25 Range últimas 3 velas / ATR          0–1
 ]
 
 
