@@ -3,9 +3,9 @@ WS Trader — Engine de 3 Redes Neurais para Double Top/Bottom
 ═════════════════════════════════════════════════════════════
 Contém 3 modelos de ML independentes que votam Win/Loss de padrões DT:
 
-  IA 1 (Geradora):     GradientBoosting  — analisa 19 features DT → prediz Win/Loss
+  IA 1 (Geradora):     GradientBoosting  — analisa 23 features DT → prediz Win/Loss
   IA 2 (Validadora):   LightGBM          — confirma ou rejeita a IA 1
-  IA 3 (Validadora 2): MLP 32→16         — captura padrões não-lineares
+  IA 3 (Validadora 2): MLP 64→32         — captura padrões não-lineares
 
 COMO FUNCIONA:
   1. O bot (WS_AUTO_AI_BULLEX.py) detecta um Double Top/Bottom
@@ -13,14 +13,14 @@ COMO FUNCIONA:
   3. Chama predict_dt(features) deste arquivo → 3 NNs votam Win ou Loss
   4. Se 2+ NNs votam Win com confiança mínima → GUARD IA 6 aprova a entrada
 
-FEATURES USADAS (19 do DT — DT_FEATURE_NAMES):
+FEATURES USADAS (23 do DT — DT_FEATURE_NAMES):
   f0  wick_ratio             — tamanho do wick de rejeição
   f1  close_position         — posição do close na vela (0=low, 1=high)
-  f2  candles_ago            — velas desde o toque (/10)
+  f2  macro_against_pct      — % velas contra trade (15 velas)
   f3  depth_ratio            — profundidade do padrão / ATR
   f4  symmetry               — simetria temporal
   f5  span                   — largura do padrão (/200)
-  f6  shoulder_ratio         — similaridade dos 2 toques
+  f6  macro_body_avg         — corpo médio 10 velas / ATR
   f7  progress_pct           — % do caminho RS→Neck já andado
   f8  ema_score              — EMA8-EMA20 normalizado
   f9  momentum               — momentum 5 velas (melhorado)
@@ -33,6 +33,10 @@ FEATURES USADAS (19 do DT — DT_FEATURE_NAMES):
   f16 price_vs_ema50         — distância preço à EMA50
   f17 consecutive_against    — velas consecutivas contra o trade
   f18 body_dominance         — pressão direcional líquida
+  f19 macro_drift_against    — drift contra trade (15 velas)
+  f20 rsi_dir_adjusted       — RSI(14) ajustado pela direção
+  f21 candle_range_ratio     — tamanho da vela RS / ATR
+  f22 acceleration           — aceleração/desaceleração do momentum
 
 TREINAMENTO:
   - Offline: python train_neural_network.py (usa CSVs de candles_5000/ e candles_deep/)
@@ -142,16 +146,16 @@ FEATURE_NAMES = [
 ]
 
 # ═══════════════════════════════════════════════════════
-#  DT FEATURES  — 19 features reais (extract_features do ws_adaptive_brain)
+#  DT FEATURES  — 23 features reais (extract_features do ws_adaptive_brain)
 # ═══════════════════════════════════════════════════════
 DT_FEATURE_NAMES = [
     "wick_ratio",            # f0  Rejection wick size                   0–1
     "close_position",        # f1  Close position in candle              0–1
-    "candles_ago",           # f2  Candles since touch (/10)             0–1
+    "macro_against_pct",     # f2  % candles contra trade (15 velas)     0–1
     "depth_ratio",           # f3  Pattern depth / ATR (/25)             0–1
     "symmetry",              # f4  Temporal symmetry                     0–1
     "span",                  # f5  Pattern width (/200)                  0–1
-    "shoulder_ratio",        # f6  Touch similarity                    ~0.99–1
+    "macro_body_avg",        # f6  Corpo médio 10 velas / ATR             0–1
     "progress_pct",          # f7  % of RS→Neck path traveled           0–1
     "ema_score",             # f8  EMA8-EMA20/ATR dir-adjusted         -1 to +1
     "momentum",              # f9  Momentum 5 candles dir-adjusted     -1 to +1
@@ -164,6 +168,10 @@ DT_FEATURE_NAMES = [
     "price_vs_ema50",        # f16 Price distance from EMA50 dir-adj   -1 to +1
     "consecutive_against",   # f17 Consecutive candles against trade     0–1
     "body_dominance",        # f18 Net body pressure in trade dir      -1 to +1
+    "macro_drift_against",   # f19 Drift contra trade 15 velas / ATR  -1 to +1
+    "rsi_dir_adjusted",      # f20 RSI(14) ajustado pela direção       0–1
+    "candle_range_ratio",    # f21 Tamanho da vela RS / ATR             0–1
+    "acceleration",          # f22 Aceleração do momentum              -1 to +1
 ]
 
 
@@ -1119,14 +1127,14 @@ class ReversalAI:
             if n_pos > 0 and n_neg > 0 and n_pos > 2 * n_neg:
                 class_ratio = n_pos / n_neg
                 class_w = np.ones(len(yt))
-                class_w[yt == 0] = np.sqrt(class_ratio)  # LOSSes pesam mais
+                class_w[yt == 0] = min(class_ratio, 6.0)  # LOSSes pesam até 6x mais
                 w = w * class_w
-                log.info(f"  Class balance: {n_pos}W/{n_neg}L → LOSSes ×{np.sqrt(class_ratio):.1f}")
+                log.info(f"  Class balance: {n_pos}W/{n_neg}L → LOSSes ×{min(class_ratio, 6.0):.1f}")
 
             # ── IA 1: GradientBoosting (Geradora) — 1ª passada ──
             ai1 = GradientBoostingClassifier(
-                n_estimators=120, max_depth=4, learning_rate=0.08,
-                subsample=0.8, min_samples_leaf=10, random_state=42)
+                n_estimators=200, max_depth=5, learning_rate=0.06,
+                subsample=0.8, min_samples_leaf=15, random_state=42)
             ai1.fit(Xt, yt, sample_weight=w)
 
             # ── HARD-EXAMPLE MINING: upweight padrões que IA1 erra ──
@@ -1149,8 +1157,8 @@ class ReversalAI:
             # ── IA 2: LightGBM / ExtraTrees (Validadora) — com hard weights ──
             if _lgbm_ok:
                 ai2 = LGBMClassifier(
-                    n_estimators=120, max_depth=4, learning_rate=0.08,
-                    subsample=0.8, min_child_samples=15,
+                    n_estimators=200, max_depth=5, learning_rate=0.06,
+                    subsample=0.8, min_child_samples=20,
                     random_state=99, verbose=-1)
                 ai2.fit(Xt, yt, sample_weight=w_hard)
             else:
@@ -1229,16 +1237,16 @@ class ReversalAI:
                     )
 
                     ai3 = MLPClassifier(
-                        hidden_layer_sizes=(32, 16),
+                        hidden_layer_sizes=(64, 32),
                         activation='relu',
                         solver='adam',
-                        alpha=0.1,            # Regularização L2 forte (evita overfitting)
+                        alpha=0.05,           # Regularização L2 moderada
                         learning_rate='adaptive',
                         learning_rate_init=0.001,
-                        max_iter=300,
+                        max_iter=400,
                         early_stopping=True,
                         validation_fraction=0.15,
-                        n_iter_no_change=15,
+                        n_iter_no_change=20,
                         random_state=77,
                         verbose=False,
                     )
@@ -1529,7 +1537,7 @@ class ReversalAI:
         return 1
 
     def predict_dt(self, features) -> dict | None:
-        """Prediz Win/Loss para features DT pré-extraídas (19-float).
+        """Prediz Win/Loss para features DT pré-extraídas (23-float).
 
         As features devem vir de ws_adaptive_brain.extract_features().
         Retorna dict com prob_win, confidence, p1, p2, p3, votes ou None.
@@ -1587,6 +1595,13 @@ class ReversalAI:
             else:
                 prob_win = p1 * 0.6 + p2 * 0.4
                 confidence = ai1_conf * 0.6 + ai2_conf * 0.4
+
+            # ── TEMPERATURE SCALING ──
+            # Reduz overconfidence: puxa probabilidades extremas para mais perto do centro.
+            # T=1.3 → prob=0.97 vira ~0.94, prob=0.85 vira ~0.82
+            _T = 1.3
+            _log_odds = np.log(max(prob_win, 1e-6) / max(1 - prob_win, 1e-6))
+            prob_win = float(1.0 / (1.0 + np.exp(-_log_odds / _T)))
 
             # ── CONSENSO INTELIGENTE ──
             # Quando modelos discordam muito (alta variância), a predição é INCERTA.
