@@ -343,7 +343,8 @@ def tutorial_screen(page: ft.Page):
         style=ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=10),
             side=ft.BorderSide(1.5, "#4B5563"),
-            padding=ft.Padding(16, 10, 16, 10)
+            padding=ft.Padding(16, 10, 16, 10),
+            mouse_cursor=ft.MouseCursor.CLICK,
         )
     )
     
@@ -359,7 +360,8 @@ def tutorial_screen(page: ft.Page):
         width=140,
         style=ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=10),
-            padding=ft.Padding(18, 10, 18, 10)
+            padding=ft.Padding(18, 10, 18, 10),
+            mouse_cursor=ft.MouseCursor.CLICK,
         )
     )
     
@@ -376,7 +378,8 @@ def tutorial_screen(page: ft.Page):
         width=180,
         style=ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=12),
-            padding=ft.Padding(20, 12, 20, 12)
+            padding=ft.Padding(20, 12, 20, 12),
+            mouse_cursor=ft.MouseCursor.CLICK,
         )
     )
     
@@ -386,7 +389,8 @@ def tutorial_screen(page: ft.Page):
         style=ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=8),
             side=ft.BorderSide(1.5, "#4B5563"),
-            padding=ft.Padding(18, 10, 18, 10)
+            padding=ft.Padding(18, 10, 18, 10),
+            mouse_cursor=ft.MouseCursor.CLICK,
         )
     )
     

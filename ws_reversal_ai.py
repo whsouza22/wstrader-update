@@ -80,10 +80,10 @@ AI3_MIN_SAMPLES     = 500      # MLP precisa de pelo menos 500 amostras
 _user_data_dir = os.path.join(os.path.expanduser("~"), ".wstrader")
 os.makedirs(_user_data_dir, exist_ok=True)
 MODEL_PERSIST_FILE    = os.path.join(_user_data_dir, "reversal_tf_{broker}.pkl")
-MODEL_PERSIST_MAX_AGE = 7 * 24 * 3600   # 7 dias
+MODEL_PERSIST_MAX_AGE = 365 * 24 * 3600   # 365 dias — modelo treinado NUNCA expira
 GITHUB_MODEL_URL = os.getenv(
     "WS_MODEL_URL",
-    "https://raw.githubusercontent.com/whsouza22/wstrader-update/main/reversal_tf_unified.pkl"
+    "https://raw.githubusercontent.com/whsouza22/wstrader-update/main/reversal_tf_{broker}.pkl"
 )
 
 # ═══════════════════════════════════════════════════════
@@ -138,7 +138,7 @@ FEATURE_NAMES = [
 ]
 
 # ═══════════════════════════════════════════════════════
-#  DT FEATURES  — 15 features reais (extract_features do ws_adaptive_brain)
+#  DT FEATURES  — 17 features reais (extract_features do ws_adaptive_brain)
 # ═══════════════════════════════════════════════════════
 DT_FEATURE_NAMES = [
     "wick_ratio",            # f0  Rejection wick size                   0–1
@@ -156,6 +156,8 @@ DT_FEATURE_NAMES = [
     "approach_decay",        # f12 Momentum deceleration at approach     0–1
     "rejection_quality",     # f13 Rejection quality (wicks+confirm)     0–1
     "volatility_regime",     # f14 Volatility regime (0=expl,1=calm)     0–1
+    "trend_strength",        # f15 EMA10 vs EMA50 trend dir-adjusted   -1 to +1
+    "price_vs_ema50",        # f16 Price distance from EMA50 dir-adj   -1 to +1
 ]
 
 
@@ -178,6 +180,7 @@ class ReversalAI:
         self._ai2_val = 0.0
         self._ai3_val = 0.0
         self._new_samples = 0
+        self._loaded_n_samples = 0     # amostras do modelo carregado do disco
         self._locked_signals = {}      # {asset: {key: sig}}
         self._processed_candles = {}   # {asset: set(keys)}
         self._lock = threading.Lock()
@@ -949,12 +952,14 @@ class ReversalAI:
             signals.append(sig)
             last_sig_idx = idx
 
-        # ── Auto-retrain ──
-        if (collect_data
-                and self._new_samples >= RETRAIN_EVERY
-                and len(self._train_data) >= MIN_SAMPLES_ML):
-            self._retrain()
-            self._new_samples = 0
+        # ── Auto-retrain DESATIVADO ──
+        # Modelo treinado offline (train_neural_network.py) é PROTEGIDO.
+        # Não sobreescrever com auto-retrain online de poucos dados.
+        # if (collect_data
+        #         and self._new_samples >= RETRAIN_EVERY
+        #         and len(self._train_data) >= MIN_SAMPLES_ML):
+        #     self._retrain()
+        #     self._new_samples = 0
 
         # ── Limpeza ──
         if len(locked) > 500:
@@ -1265,8 +1270,9 @@ class ReversalAI:
         try:
             import urllib.request
             import urllib.error
-            log.info("🌐 Baixando modelo NN do GitHub...")
-            req = urllib.request.Request(GITHUB_MODEL_URL, headers={
+            _url = GITHUB_MODEL_URL.replace("{broker}", self.broker)
+            log.info(f"🌐 Baixando modelo NN do GitHub para {self.broker}...")
+            req = urllib.request.Request(_url, headers={
                 "User-Agent": "WS-Trader-IA/1.0",
             })
             with urllib.request.urlopen(req, timeout=60) as resp:
@@ -1317,6 +1323,7 @@ class ReversalAI:
             if data.get("ai3_scaler"):
                 self._ai3_scaler = data["ai3_scaler"]
             n = data.get("n_samples", 0)
+            self._loaded_n_samples = n
             if self._ai1:
                 self._ai1_ready = True
             if self._ai2:
@@ -1571,11 +1578,28 @@ class ReversalAI:
 
         return added
 
-    def train_all(self):
+    def train_all(self, force=False):
         """Treina as 3 redes neurais com todos os dados coletados e persiste.
 
         Chamar UMA vez após feed_candles de todos os ativos.
+        PROTEÇÃO: Se já tem modelo treinado offline (>1000 amostras), NÃO sobreescreve.
+        Use force=True para retreino via train_neural_network.py.
         """
+        # ── PROTEÇÃO: modelo treinado offline é sagrado ──
+        if not force and self._ai1_ready and self._ai2_ready:
+            _persist_path = MODEL_PERSIST_FILE.replace("{broker}", self.broker)
+            if os.path.exists(_persist_path):
+                try:
+                    with open(_persist_path, "rb") as _pf:
+                        _pdata = pickle.load(_pf)
+                    _p_samples = _pdata.get("n_samples", 0)
+                    if _p_samples >= 1000:
+                        log.info(f"  🛡️ NN: Modelo offline PROTEGIDO ({_p_samples} amostras, "
+                                 f"IA1={self._ai1_val:.1%} IA2={self._ai2_val:.1%}) — NÃO sobreescreve")
+                        return True
+                except Exception:
+                    pass
+
         n = len(self._train_data)
         if n < MIN_SAMPLES_ML:
             log.info(f"  ⚠️ NN train_all: poucos dados ({n}/{MIN_SAMPLES_ML})")
@@ -1622,34 +1646,38 @@ class ReversalAI:
 
     def get_stats(self) -> dict:
         n = len(self._train_data)
-        if not n:
+        # Se modelo foi carregado do disco (.pkl), usar n_samples salvo
+        n_display = n if n > 0 else self._loaded_n_samples
+        if not n_display and not self._ai1_ready:
             return {"ml": False, "samples": 0, "total": 0, "wr": 0, "ai1_ready": False, "ai2_ready": False}
-        wins = sum(1 for s in self._train_data if s["l"] == 1)
+        wins = sum(1 for s in self._train_data if s["l"] == 1) if n > 0 else 0
         return {
             "ml": self._ai1_ready and self._ai2_ready,
-            "samples": n,
-            "total": n,
+            "samples": n_display,
+            "total": n_display,
             "wins": wins,
-            "losses": n - wins,
-            "wr": round(wins / n * 100, 1),
+            "losses": n_display - wins if n > 0 else 0,
+            "wr": round(wins / n * 100, 1) if n > 0 else 0,
             "ai1_val": round(self._ai1_val * 100, 1),
             "ai2_val": round(self._ai2_val * 100, 1),
+            "ai3_val": round(self._ai3_val * 100, 1),
             "ai1_ready": self._ai1_ready,
             "ai2_ready": self._ai2_ready,
+            "ai3_ready": self._ai3_ready,
         }
 
 
 # ═══════════════════════════════════════════════════════
-#  SINGLETON
+#  PER-ASSET INSTANCES
 # ═══════════════════════════════════════════════════════
-_instance = None
+_instances: dict = {}  # {broker_or_asset: ReversalAI}
 _instance_lock = threading.Lock()
 
 
 def get_reversal_ai(broker: str = "iq") -> ReversalAI:
-    global _instance
-    if _instance is None:
+    """Retorna instância ReversalAI para o broker/ativo especificado."""
+    if broker not in _instances:
         with _instance_lock:
-            if _instance is None:
-                _instance = ReversalAI(broker)
-    return _instance
+            if broker not in _instances:
+                _instances[broker] = ReversalAI(broker)
+    return _instances[broker]

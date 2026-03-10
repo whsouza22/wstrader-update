@@ -243,8 +243,8 @@ class Casa_Trader:
 
     # _________________________self.api.get_api_option_init_all() wss______________________
     def get_all_init(self):
-
-        while True:
+        _max_retries = 3
+        for _attempt in range(_max_retries):
             self.api.api_option_init_all_result = None
             while True:
                 try:
@@ -264,11 +264,14 @@ class Casa_Trader:
                         break
                 except:
                     pass
+                time.sleep(0.1)
             try:
                 if self.api.api_option_init_all_result["isSuccessful"] == True:
                     return self.api.api_option_init_all_result
             except:
                 pass
+        logging.error('**error** get_all_init failed after %d retries', _max_retries)
+        return self.api.api_option_init_all_result
 
     def get_all_init_v2(self):
         self.api.api_option_init_all_result_v2 = None

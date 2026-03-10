@@ -29,6 +29,51 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# ===================== DASHBOARD H&S IA — AUTO-START =====================
+_dashboard_thread = None
+_dashboard_started = False
+
+def _ensure_dashboard_server():
+    """Inicia o servidor do dashboard H&S IA em daemon thread se não estiver rodando.
+    Chamado automaticamente ao iniciar a IA — garante que o gráfico
+    fique sempre ativo enquanto o bot/app estiver rodando."""
+    global _dashboard_thread, _dashboard_started
+    if _dashboard_started:
+        return
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        s.connect(("127.0.0.1", 8899))
+        s.close()
+        _dashboard_started = True
+        logger.info("Dashboard H&S já rodando na porta 8899")
+        return
+    except Exception:
+        pass
+
+    def _run_dashboard():
+        try:
+            import importlib, argparse, sys
+            # Importar dashboard_hs_ia
+            dash_mod = importlib.import_module("dashboard_hs_ia")
+            # Monkey-patch argparse para não ler sys.argv
+            _orig_parse = argparse.ArgumentParser.parse_args
+            def _fake_parse(self, args=None, namespace=None):
+                return _orig_parse(self, args=[], namespace=namespace)
+            argparse.ArgumentParser.parse_args = _fake_parse
+            try:
+                dash_mod.main()
+            finally:
+                argparse.ArgumentParser.parse_args = _orig_parse
+        except Exception as ex:
+            logger.error(f"Erro ao rodar dashboard em thread: {ex}")
+
+    _dashboard_thread = threading.Thread(target=_run_dashboard, daemon=True, name="dashboard-hs-ia")
+    _dashboard_thread.start()
+    _dashboard_started = True
+    logger.info("Dashboard H&S iniciado automaticamente na porta 8899")
+
 # Arquivo de preferências do usuário
 USER_PREFS_FILE = os.path.join(os.path.expanduser("~"), ".wstrader", "preferences.json")
 
@@ -511,6 +556,12 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
 
             # ✅ INICIA AUTO-REFRESH ASSÍNCRONO
             start_auto_refresh()
+
+            # ✅ INICIA DASHBOARD H&S IA automaticamente
+            try:
+                _ensure_dashboard_server()
+            except Exception as _dex:
+                logger.error(f"Erro ao iniciar dashboard: {_dex}")
 
             # ✅ Iniciar thread do bot
             bot_should_stop = False

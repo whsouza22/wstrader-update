@@ -36,6 +36,7 @@ try:
                     return _orig_fn(*a, **kw)
                 except PermissionError:
                     ctx = _ssl_pre.SSLContext(_ssl_pre.PROTOCOL_TLS_CLIENT)
+                    
                     ctx.check_hostname = True
                     ctx.verify_mode = _ssl_pre.CERT_REQUIRED
                     try:
@@ -225,7 +226,7 @@ logger = logging.getLogger(__name__)
 WINDOW_ICON_FILENAME = "ws_ai_trader_corrigido.ico"
 
 # Versão padrão do aplicativo
-CURRENT_VERSION = "5.3" # H&S + warm-up 5min + guard preço longe + horário 6-18h
+CURRENT_VERSION = "5.5" # NN 17 features (trend context) + modelos retreinados
 
 # URL do JSON para verificação de atualizações
 VERSION_URL = "https://whsouza22.github.io/wstrader-update/version.json"
@@ -251,7 +252,9 @@ async def check_for_update(page: ft.Page, lang: str = "PT", status_column: ft.Co
             "invalid_json": "JSON de atualização inválido ou inacessível. Status HTTP: {status}, Conteúdo: {content}",
             "version_label": "Versão {version}",
             "no_windows_update": "⚠️ Atualização automática apenas para Windows.",
-            "close_app": "Fechar Aplicativo" # Mantido para compatibilidade, mas não usado diretamente
+            "downloading": "⬇️ Baixando v{version}... Não feche o app.",
+            "installing": "📦 Instalando v{version}... O app vai reiniciar.",
+            "close_app": "Fechar Aplicativo"
         },
         "EN": {
             "connecting": "Connecting to server...",
@@ -266,6 +269,8 @@ async def check_for_update(page: ft.Page, lang: str = "PT", status_column: ft.Co
             "invalid_json": "Invalid or inaccessible update JSON. HTTP Status: {status}, Content: {content}",
             "version_label": "Version {version}",
             "no_windows_update": "⚠️ Automatic update only for Windows.",
+            "downloading": "⬇️ Downloading v{version}... Don't close the app.",
+            "installing": "📦 Installing v{version}... The app will restart.",
             "close_app": "Close Application"
         }
     }
@@ -297,12 +302,14 @@ async def check_for_update(page: ft.Page, lang: str = "PT", status_column: ft.Co
 
     async def perform_update_action(latest_version, changelog, download_link, update_button_ref):
         """
-        Atualização via PowerShell em background:
-        1. Baixa o instalador silenciosamente (rápido, sem travar UI)
-        2. Fecha o app
-        3. Instala e reinicia
+        Atualização em 2 fases:
+        1. Baixa o instalador EM PYTHON (com progresso na tela)
+        2. Lança PowerShell desacoplado para instalar + reiniciar
+        3. Só fecha o app DEPOIS do download completo
         """
         import tempfile
+        import urllib.request
+        import threading
 
         logger.info(f"Iniciando atualizacao para versao: {latest_version}")
 
@@ -312,57 +319,138 @@ async def check_for_update(page: ft.Page, lang: str = "PT", status_column: ft.Co
         install_dir = os.environ.get('PROGRAMFILES', 'C:\\Program Files') + '\\WsTrader'
         app_exe = os.path.join(install_dir, 'WsTrader.exe')
 
-        # Script PowerShell que faz TUDO: baixa, instala, reinicia
+        # ── FASE 1: Baixar instalador em Python (com progresso) ──
+        await update_splash_ui(
+            t.get("downloading", "Baixando atualização v{version}...").format(version=latest_version),
+            show_progress_bar=True, progress_value=0.0
+        )
+
+        # Variáveis compartilhadas com a thread de download
+        dl_state = {"downloaded": 0, "total": 0, "done": False, "error": None, "file_size": 0}
+
+        def _download_thread():
+            try:
+                req = urllib.request.Request(download_link, headers={"User-Agent": "WsTrader-Updater/1.0"})
+                resp = urllib.request.urlopen(req, timeout=300)
+                dl_state["total"] = int(resp.headers.get('Content-Length', 0))
+                block_size = 131072  # 128KB blocks
+                with open(installer_path, 'wb') as f:
+                    while True:
+                        chunk = resp.read(block_size)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        dl_state["downloaded"] += len(chunk)
+                dl_state["file_size"] = dl_state["downloaded"]
+            except Exception as e:
+                dl_state["error"] = str(e)
+            finally:
+                dl_state["done"] = True
+
+        # Iniciar download em thread separada
+        download_thread = threading.Thread(target=_download_thread, daemon=True)
+        download_thread.start()
+
+        # Loop de progresso na UI enquanto a thread baixa
+        while not dl_state["done"]:
+            total = dl_state["total"]
+            downloaded = dl_state["downloaded"]
+            if total > 0:
+                pct = downloaded / total
+                mb_done = downloaded / (1024 * 1024)
+                mb_total = total / (1024 * 1024)
+                msg = f"Baixando v{latest_version}... {mb_done:.0f}/{mb_total:.0f} MB ({pct*100:.0f}%)"
+                await update_splash_ui(msg, show_progress_bar=True, progress_value=pct)
+            else:
+                mb_done = dl_state["downloaded"] / (1024 * 1024)
+                await update_splash_ui(
+                    f"Baixando v{latest_version}... {mb_done:.0f} MB",
+                    show_progress_bar=True, progress_value=None
+                )
+            await asyncio.sleep(0.5)
+
+        # Verificar resultado
+        download_ok = False
+        if dl_state["error"]:
+            logger.error(f"Erro no download: {dl_state['error']}")
+        elif os.path.exists(installer_path) and dl_state["file_size"] > 1000:
+            download_ok = True
+            logger.info(f"Download completo: {dl_state['file_size']} bytes -> {installer_path}")
+        else:
+            logger.error(f"Download muito pequeno: {dl_state['file_size']} bytes")
+
+        if not download_ok:
+            await update_splash_ui(
+                "❌ Erro ao baixar atualização. Tente novamente mais tarde.",
+                show_progress_bar=False
+            )
+            await asyncio.sleep(5.0)
+            return
+
+        # ── FASE 2: Download OK → lançar PowerShell para instalar + reiniciar ──
+        await update_splash_ui(
+            t.get("installing", "Instalando v{version}... O app vai reiniciar.").format(version=latest_version),
+            show_progress_bar=True, progress_value=None
+        )
+
+        my_pid = os.getpid()
         ps_script = os.path.join(temp_dir, "wstrader_update.ps1")
         ps_content = f'''
 $ErrorActionPreference = "SilentlyContinue"
-# Baixar instalador
-try {{
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri "{download_link}" -OutFile "{installer_path}" -UseBasicParsing
-}} catch {{
-    # Fallback para WebClient (mais rápido)
-    (New-Object Net.WebClient).DownloadFile("{download_link}", "{installer_path}")
+
+# 1. Esperar o app fechar (aguarda PID morrer, max 30s)
+$timeout = 30
+$elapsed = 0
+while ($elapsed -lt $timeout) {{
+    try {{
+        $proc = Get-Process -Id {my_pid} -ErrorAction Stop
+        Start-Sleep -Seconds 1
+        $elapsed++
+    }} catch {{
+        break
+    }}
 }}
-# Matar app
+
+# 2. Garantir que WsTrader.exe fechou
+taskkill /F /IM WsTrader.exe 2>$null
 Start-Sleep -Seconds 2
-taskkill /F /IM WsTrader.exe /T 2>$null
-taskkill /F /IM python.exe /T 2>$null
-Start-Sleep -Seconds 2
-# Instalar silenciosamente
+
+# 3. Instalar silenciosamente
 & "{installer_path}" /S
-Start-Sleep -Seconds 8
-# Reiniciar se existe
+Start-Sleep -Seconds 10
+
+# 4. Reiniciar se existe
 if (Test-Path "{app_exe}") {{ Start-Process "{app_exe}" }}
-# Limpar
+
+# 5. Limpar
+Remove-Item "{installer_path}" -Force 2>$null
 Remove-Item "{ps_script}" -Force 2>$null
 '''
         with open(ps_script, 'w', encoding='utf-8') as f:
             f.write(ps_content)
 
-        # Lançar PowerShell em background (não espera, não bloqueia)
+        # Lançar PowerShell TOTALMENTE DESACOPLADO
+        DETACHED = 0x00000008 | 0x00000200 | 0x01000000
         subprocess.Popen(
             ['powershell', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps_script],
-            creationflags=0x08000000  # CREATE_NO_WINDOW
+            creationflags=DETACHED,
+            close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
-        logger.info("Script de atualizacao lancado, fechando app...")
+        logger.info("Download completo, script de instalacao lancado, fechando app...")
 
-        # FECHAR IGUAL AO BOTÃO X: destroy() fecha a janela Flutter + Python
+        await asyncio.sleep(2.0)
+
         try:
-            await page.window.destroy()
+            await page.window.close()
         except Exception:
             pass
 
-        # Garantia: se destroy() não matou tudo, força
         await asyncio.sleep(1.0)
-        try:
-            import ctypes
-            ctypes.windll.kernel32.TerminateProcess(
-                ctypes.windll.kernel32.GetCurrentProcess(), 0
-            )
-        except Exception:
-            os._exit(0)
+        os._exit(0)
 
     async def handle_retry_click(e):
         e.control.disabled = True
@@ -518,6 +606,7 @@ Remove-Item "{ps_script}" -Force 2>$null
                 height=38,
                 style=ft.ButtonStyle(
                     padding=ft.Padding(16, 8, 16, 8),
+                    mouse_cursor=ft.MouseCursor.CLICK,
                 ),
             )
         else:
@@ -538,6 +627,7 @@ Remove-Item "{ps_script}" -Force 2>$null
                 height=38,
                 style=ft.ButtonStyle(
                     padding=ft.Padding(16, 8, 16, 8),
+                    mouse_cursor=ft.MouseCursor.CLICK,
                 ),
             )
         else:
@@ -557,6 +647,7 @@ Remove-Item "{ps_script}" -Force 2>$null
                 height=38,
                 style=ft.ButtonStyle(
                     padding=ft.Padding(16, 8, 16, 8),
+                    mouse_cursor=ft.MouseCursor.CLICK,
                 ),
             )
         else:
@@ -576,6 +667,7 @@ Remove-Item "{ps_script}" -Force 2>$null
                 height=38,
                 style=ft.ButtonStyle(
                     padding=ft.Padding(16, 8, 16, 8),
+                    mouse_cursor=ft.MouseCursor.CLICK,
                 ),
             )
         else:
@@ -968,7 +1060,8 @@ async def main(page: ft.Page):
         width=180,
         style=ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=8),
-        )
+            mouse_cursor=ft.MouseCursor.CLICK,
+        ),
     )
 
     def update_language(e):

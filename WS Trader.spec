@@ -42,9 +42,7 @@ a = Analysis(
         (os.path.join(protected_dir, 'config_keys.py'), '.'),
         (os.path.join(protected_dir, 'WS_AUTO_AI_BULLEX.py'), '.'),
         (os.path.join(protected_dir, 'ws_auto_ai_engine.py'), '.'),
-        (os.path.join(protected_dir, 'simple_sr_strategy.py'), '.'),
-        (os.path.join(protected_dir, 'ws_confluence_brain.py'), '.'),
-        (os.path.join(protected_dir, 'final_entry_guard.py'), '.'),
+
         (os.path.join(protected_dir, 'ws_data_manager.py'), '.'),
         (os.path.join(protected_dir, 'operations_manager.py'), '.'),
         (os.path.join(protected_dir, 'chat_screen_new.py'), '.'),
@@ -52,15 +50,12 @@ a = Analysis(
         (os.path.join(protected_dir, 'Login_Screen.py'), '.'),
         (os.path.join(protected_dir, 'tutorial_screen.py'), '.'),
         (os.path.join(protected_dir, 'license_manager.py'), '.'),
-        (os.path.join(protected_dir, 'license_activation_screen.py'), '.'),
         (os.path.join(protected_dir, 'backend_server.py'), '.'),
-        (os.path.join(protected_dir, 'backend_license_endpoint.py'), '.'),
-        (os.path.join(protected_dir, 'ia_autonomous_brain.py'), '.'),
-        (os.path.join(protected_dir, 'ws_candle_color_ai.py'), '.'),
+
         (os.path.join(protected_dir, 'ws_reversal_ai.py'), '.'),
-        (os.path.join(protected_dir, 'ws_structure_map.py'), '.'),
-        (os.path.join(protected_dir, 'ws_structure_patterns.py'), '.'),
+
         (os.path.join(protected_dir, 'dashboard_hs_ia.py'), '.'),
+        (os.path.join(protected_dir, 'ws_adaptive_brain.py'), '.'),
         (flet_desktop_app, os.path.join('flet_desktop', 'app')),
         (flet_controls, os.path.join('flet', 'controls')),
     ] + stripe_datas + certifi_datas,
@@ -89,15 +84,13 @@ a = Analysis(
         'casatraderapi.global_value', 'casatraderapi.version_control',
         # === Motor IA / Estratégia ===
         'WS_AUTO_AI_BULLEX', 'ws_auto_ai_engine',
-        'simple_sr_strategy', 'ws_confluence_brain', 'final_entry_guard',
+
         'ws_data_manager', 'config_keys',
         'operations_manager',
-        'ia_autonomous_brain', 'ws_candle_color_ai',
-        'ws_reversal_ai', 'ws_structure_map', 'ws_structure_patterns',
-        'dashboard_hs_ia',
+        'ws_reversal_ai',
+        'dashboard_hs_ia', 'ws_adaptive_brain',
         # === Backend / Licença ===
-        'backend_server', 'backend_license_endpoint', 'license_manager',
-        'license_activation_screen',
+        'backend_server', 'license_manager',
         # === UI / Telas ===
         'chat_screen_new', 'Login_Screen', 'trading_bot', 'tutorial_screen',
         # === Submodules extras broker APIs ===

@@ -17,8 +17,9 @@ except ImportError:
     logger.warning("⚠️ config_keys não encontrado — Stripe desabilitado")
 
 # ── IDs de produto Stripe ──
-PRO_PRODUCT_ID  = "prod_S4t8FQuUptWQ6R"
-DEMO_PRODUCT_ID = "prod_U3CRqZJMVigJAK"
+PRO_PRODUCT_ID     = "prod_S4t8FQuUptWQ6R"
+DEMO_PRODUCT_ID    = "prod_U3CRqZJMVigJAK"
+PREMIUM_PRODUCT_ID = "prod_U4ZxrEEApDg2Hb"
 
 
 def check_stripe_subscription(email: str) -> tuple:
@@ -63,7 +64,9 @@ def check_stripe_subscription(email: str) -> tuple:
             pass
 
         # 5) Determinar plan_type
-        if product_id == PRO_PRODUCT_ID:
+        if product_id == PREMIUM_PRODUCT_ID:
+            plan_type = "PREMIUM"
+        elif product_id == PRO_PRODUCT_ID:
             plan_type = "PRO"
         elif product_id == DEMO_PRODUCT_ID:
             plan_type = "DEMO"

@@ -1099,6 +1099,11 @@ def chat_screen(page: ft.Page, email: str, password: str):
                     old_date = data["date"]
                     old_brokers = data["brokers"]
                     data = {"version": 2, "days": {old_date: {"brokers": old_brokers}}}
+                # Garantir que "days" sempre existe (arquivo pode ser {} vazio)
+                if "days" not in data:
+                    data["days"] = {}
+                if "version" not in data:
+                    data["version"] = 2
                 return data
         except Exception:
             pass
@@ -1480,7 +1485,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
                 actions=[
                     ft.TextButton(
                         "Fechar",
-                        style=ft.ButtonStyle(color="#6B7280"),
+                        style=ft.ButtonStyle(color="#6B7280", mouse_cursor=ft.MouseCursor.CLICK),
                         on_click=_close_goal_dialog,
                     ),
                 ],
@@ -1841,7 +1846,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
         tooltip="Mostrar/ocultar painel",
         on_click=toggle_sidebar,
         icon_size=18,
-        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8)),
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=8), mouse_cursor=ft.MouseCursor.CLICK),
     )
 
     toggle_broker_cards_ref = {"fn": lambda e: None}
@@ -1865,6 +1870,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
         tooltip="Corretoras",
         on_click=lambda e: toggle_broker_cards_ref["fn"](e),
         disabled=False,
+        style=ft.ButtonStyle(mouse_cursor=ft.MouseCursor.CLICK),
     )
     report_icon_button = ft.IconButton(
         icon=ft.Icons.BAR_CHART_ROUNDED,
@@ -1873,6 +1879,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
         tooltip="Relatório",
         on_click=lambda e: toggle_report_ref["fn"](e),
         disabled=False,
+        style=ft.ButtonStyle(mouse_cursor=ft.MouseCursor.CLICK),
     )
     toggle_report_ref = {"fn": lambda e: None}
     logout_button = ft.IconButton(
@@ -1882,6 +1889,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
         tooltip=t["home_tooltip"],
         on_click=go_home,
         disabled=False,
+        style=ft.ButtonStyle(mouse_cursor=ft.MouseCursor.CLICK),
     )
     store_button_ref["button"] = store_button
     logout_button_ref["button"] = logout_button
@@ -1890,53 +1898,13 @@ def chat_screen(page: ft.Page, email: str, password: str):
     _hs_dashboard_ref = {"dlg": None}
 
     def _start_dashboard_server():
-        """Inicia o servidor do dashboard H&S em background se não estiver rodando."""
-        import socket
-        def _port_open(port):
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(0.5)
-                s.connect(("127.0.0.1", port))
-                s.close()
-                return True
-            except Exception:
-                return False
-        if not _port_open(8899):
-            try:
-                if getattr(sys, 'frozen', False):
-                    # Modo EXE: rodar dashboard em thread (sys.executable é o EXE, não Python)
-                    def _run_dashboard_inprocess():
-                        try:
-                            from dashboard_hs_ia import main as dash_main
-                            import argparse
-                            # Monkey-patch argparse para não ler sys.argv do EXE
-                            _orig_parse = argparse.ArgumentParser.parse_args
-                            def _fake_parse(self, args=None, namespace=None):
-                                return _orig_parse(self, args=[], namespace=namespace)
-                            argparse.ArgumentParser.parse_args = _fake_parse
-                            try:
-                                dash_main()
-                            finally:
-                                argparse.ArgumentParser.parse_args = _orig_parse
-                        except Exception as ex:
-                            logger.error(f"Erro dashboard in-process: {ex}")
-                    import threading as _th
-                    _dt = _th.Thread(target=_run_dashboard_inprocess, daemon=True)
-                    _dt.start()
-                    time.sleep(3)
-                else:
-                    # Modo dev: rodar como subprocesso normal
-                    dash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_hs_ia.py")
-                    if os.path.exists(dash_path):
-                        subprocess.Popen(
-                            [sys.executable, dash_path],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                        )
-                        time.sleep(2)
-            except Exception as ex:
-                logger.error(f"Erro ao iniciar dashboard: {ex}")
+        """Inicia o servidor do dashboard H&S em background se não estiver rodando.
+        Usa a função unificada de trading_bot."""
+        try:
+            from trading_bot import _ensure_dashboard_server
+            _ensure_dashboard_server()
+        except Exception as ex:
+            logger.error(f"Erro ao iniciar dashboard: {ex}")
 
     def open_hs_dashboard(e):
         """Abre o Dashboard H&S IA em janela própria (sem barra de endereço)."""
@@ -1976,6 +1944,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
             icon_size=18,
             tooltip="Dashboard H&S IA (Premium)",
             on_click=open_hs_dashboard,
+            style=ft.ButtonStyle(mouse_cursor=ft.MouseCursor.CLICK),
         )
 
     topbar = ft.Container(
@@ -2179,6 +2148,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
         tooltip="Copiar entradas",
         on_click=copy_status_log,
         icon_size=16,
+        style=ft.ButtonStyle(mouse_cursor=ft.MouseCursor.CLICK),
     )
 
     status_header = ft.Row(
@@ -3109,11 +3079,11 @@ def chat_screen(page: ft.Page, email: str, password: str):
                         # NÃO mostrar [SINAL-HARD] - esses são apenas detecções, podem ser bloqueados
                         # NÃO mostrar entrada nem resultado para o usuário (apenas processa internamente)
                         
-                        if "ORDEM ENVIADA" in clean or ("ORDEM" in clean and ("CALL" in clean or "PUT" in clean) and "stake" in clean.lower()):
-                            # Formato: [ATIVO] ORDEM ENVIADA PUT exp=5m (turbo) | stake=99.53
-                            # ou: [ATIVO] ✅ ORDEM CALL (turbo) stake=108.38
+                        if "ORDEM ENVIADA" in clean or ("ORDEM" in clean and ("CALL" in clean or "PUT" in clean) and "stake" in clean.lower()) or ("Entrada" in clean and ("CALL" in clean or "PUT" in clean) and "stake=" in clean):
+                            # Formato antigo: [ATIVO] ORDEM ENVIADA PUT exp=5m (turbo) | stake=99.53
+                            # Formato novo: >>> IA: Entrada EURNZD-OTC CALL @2.021905 stake=90.08 prob=0.83
                             ativo_match = re.search(r'(\S+-OTC)', clean)
-                            direcao_match = re.search(r'(?:ENVIADA\s+|ORDEM\s+)(CALL|PUT)', clean)
+                            direcao_match = re.search(r'(?:ENVIADA\s+|ORDEM\s+|Entrada\s+\S+\s+)(CALL|PUT)', clean)
                             stake_match = re.search(r'stake=([0-9.]+)', clean)
                             if ativo_match and direcao_match:
                                 ativo = ativo_match.group(1)
@@ -3872,7 +3842,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
         tooltip=t["send"],
         on_click=lambda e: None,  # setado abaixo
         icon_size=18,
-        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)),
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10), mouse_cursor=ft.MouseCursor.CLICK),
     )
     send_btn.data = {"base": COLORS["brand"], "hover": COLORS["brand2"]}
 
@@ -4102,7 +4072,10 @@ def chat_screen(page: ft.Page, email: str, password: str):
         if store_ref is not None:
             store_ref["button"] = btn
 
-        return btn
+        return ft.GestureDetector(
+            mouse_cursor=ft.MouseCursor.CLICK if not disabled else None,
+            content=btn,
+        )
 
     def btn_connect_iq(e):
         if broker_connected["iq_option"]:
@@ -4473,7 +4446,10 @@ def chat_screen(page: ft.Page, email: str, password: str):
         account_toggle_refs[broker_key]["demo"] = demo_btn
         account_toggle_refs[broker_key]["real"] = real_btn
         
-        return ft.Row([demo_btn, real_btn], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        return ft.Row([
+            ft.GestureDetector(mouse_cursor=ft.MouseCursor.CLICK, content=demo_btn),
+            ft.GestureDetector(mouse_cursor=ft.MouseCursor.CLICK, content=real_btn),
+        ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     def make_goal_spinner(broker_key: str):
         """Spinner numérico para meta"""
@@ -4522,7 +4498,10 @@ def chat_screen(page: ft.Page, email: str, password: str):
             ft.Container(
                 content=ft.Row([
                     pct_text,
-                    ft.Column([up_btn, down_btn], spacing=0),
+                    ft.Column([
+                        ft.GestureDetector(mouse_cursor=ft.MouseCursor.CLICK, content=up_btn),
+                        ft.GestureDetector(mouse_cursor=ft.MouseCursor.CLICK, content=down_btn),
+                    ], spacing=0),
                 ], spacing=2),
                 bgcolor=COLORS["panel"],
                 border=ft.border.all(1, COLORS["border"]),
@@ -4562,6 +4541,8 @@ def chat_screen(page: ft.Page, email: str, password: str):
         elif broker_key == "casatrader":
             btn_ct_ref["button"] = connect_btn
 
+        connect_wrapper = ft.GestureDetector(mouse_cursor=ft.MouseCursor.CLICK, content=connect_btn)
+
         return ft.Container(
             content=ft.Column(
                 [
@@ -4572,7 +4553,7 @@ def chat_screen(page: ft.Page, email: str, password: str):
                                 ft.Image(src=logo_path, width=18, height=18),
                                 ft.Text(name, size=12, weight=ft.FontWeight.W_600, color=COLORS["text"]),
                             ], spacing=6),
-                            connect_btn,
+                            connect_wrapper,
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
@@ -4691,36 +4672,41 @@ def chat_screen(page: ft.Page, email: str, password: str):
     _brain_suffix_map = {"iq_option": "iq", "bullex": "bullex", "casatrader": "casatrader"}
 
     def _read_brain_training_stats(broker_key=None):
-        """Lê stats da IA H&S (Cabeça e Ombros) — usa meta.total (mesmo valor que o bot exibe).
+        """Lê stats da IA NN per-ativo (modelos treinados offline).
+        Soma samples de todos os ws_ai_stats_{ATIVO}.json.
         Retorna (total_samples, wins, 0, 0, model_updates)."""
         try:
-            import json as _json
-            # IA H&S usa ws_ai_stats_hs.json
-            hs_file = os.path.join(os.path.expanduser("~"), ".wstrader", "ws_ai_stats_hs.json")
+            import json as _json, glob as _glob
+            _user_dir = os.path.join(os.path.expanduser("~"), ".wstrader")
             total, wins = 0, 0
-            if os.path.exists(hs_file):
-                with open(hs_file, "r") as _f:
-                    data = _json.load(_f)
-                # Usar meta.total — acumulado global (mesmo que o bot mostra)
-                meta = data.get("meta", {})
-                total = meta.get("total", 0)
-                wins = meta.get("wins", 0)
-                # Fallback: se meta.wins não existe ainda, calcular de geometry_history (backtest)
-                if wins == 0 and total > 0:
-                    geo = data.get("geometry_history", [])
-                    bt_geo = [g for g in geo if g.get("source") != "live"]
-                    if bt_geo:
-                        wins = sum(1 for g in bt_geo if g.get("result") == 1)
-                    else:
-                        # Último fallback: somar dos arms
+            # Somar amostras de TODOS os modelos NN per-ativo
+            for _sf in _glob.glob(os.path.join(_user_dir, "ws_ai_stats_*-OTC.json")):
+                try:
+                    with open(_sf, "r") as _f:
+                        _sd = _json.load(_f)
+                    if _sd.get("ml"):
+                        total += _sd.get("samples", 0)
+                        wins += _sd.get("wins", 0)
+                except Exception:
+                    continue
+            # Fallback: se nenhum modelo NN, usar ws_ai_stats_hs.json
+            if total == 0:
+                hs_file = os.path.join(_user_dir, "ws_ai_stats_hs.json")
+                if os.path.exists(hs_file):
+                    with open(hs_file, "r") as _f:
+                        data = _json.load(_f)
+                    meta = data.get("meta", {})
+                    total = meta.get("total", 0)
+                    wins = meta.get("wins", 0)
+                    if wins == 0 and total > 0:
                         arms = data.get("arms", {})
                         wins = sum(ad.get("wins", 0) for ad in arms.values())
-            # IA H&S está sempre ativa — model_updates reflete experiência
-            model_updates = max(total * 50, 1000)  # Sempre mostra como ativa
+            # IA está sempre ativa
+            model_updates = max(total * 50, 1000)
             return total, wins, 0, 0, model_updates
         except Exception:
             pass
-        return 0, 0, 0, 0, 1000  # Retorna 1000 para sempre mostrar IA ativa
+        return 0, 0, 0, 0, 1000
 
     def _read_ai_training_stats(suffix):
         """Lê dados do ReversalAI (memória unificada).
@@ -4903,8 +4889,8 @@ def chat_screen(page: ft.Page, email: str, password: str):
     report_filter_row = ft.Row(
         controls=[
             ft.Text("Filtro:", size=11, color="#9CA3AF"),
-            report_btn_demo,
-            report_btn_real,
+            ft.GestureDetector(mouse_cursor=ft.MouseCursor.CLICK, content=report_btn_demo),
+            ft.GestureDetector(mouse_cursor=ft.MouseCursor.CLICK, content=report_btn_real),
         ],
         spacing=8,
         alignment=ft.MainAxisAlignment.START,
@@ -5572,8 +5558,8 @@ def chat_screen(page: ft.Page, email: str, password: str):
         except Exception as e:
             logger.debug(f"[RESTORE] Erro ao restaurar entries no log: {e}")
 
-    # NÃO restaurar entradas passadas no status_log — usuário não quer ver operações antigas ao abrir
-    # _restore_entries_to_status_log()
+    # Restaurar entradas passadas do dia no status_log (sobrevive a reinícios)
+    _restore_entries_to_status_log()
 
     # Welcome
     refresh_sidebar()

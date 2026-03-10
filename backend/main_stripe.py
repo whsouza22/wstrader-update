@@ -83,7 +83,10 @@ def check_subscription(data: SubscriptionCheckRequest):
 
             PRO_PRODUCT_ID = "prod_S4t8FQuUptWQ6R"
             DEMO_PRODUCT_ID = "prod_U3CRqZJMVigJAK"
-            if product_id == PRO_PRODUCT_ID:
+            PREMIUM_PRODUCT_ID = "prod_U4ZxrEEApDg2Hb"
+            if product_id == PREMIUM_PRODUCT_ID:
+                plan_type = "PREMIUM"
+            elif product_id == PRO_PRODUCT_ID:
                 plan_type = "PRO"
             elif product_id == DEMO_PRODUCT_ID:
                 plan_type = "DEMO"

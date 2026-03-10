@@ -792,7 +792,7 @@ class BullexAPI(object):  # pylint: disable=too-many-instance-attributes
         self.websocket_thread = threading.Thread(target=self.websocket.run_forever, kwargs={
             'sslopt': {"check_hostname": False, "cert_reqs": ssl.CERT_NONE, "ca_certs": "cacert.pem"},
             'ping_interval': 60,
-            'ping_timeout': 10,
+            'ping_timeout': 30,
         })  # ping_interval keeps connection alive
         self.websocket_thread.daemon = True
         self.websocket_thread.start()

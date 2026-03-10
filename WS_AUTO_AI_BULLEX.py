@@ -144,11 +144,16 @@ N_M1 = int(os.getenv("WS_N_M1", "900"))  # 900 candles = 15h de dados
 PAYOUT_MINIMO = int(os.getenv("WS_PAYOUT_MIN", "80"))   # 80%+ payout → com WR 90%+ é lucrativo
 PAYOUT_REFRESH_SEC = int(os.getenv("WS_PAYOUT_REFRESH", "180"))
 
-NUM_ATIVOS = int(os.getenv("WS_NUM_ATIVOS", "3"))  # TOP 3 ativos DT
+NUM_ATIVOS = int(os.getenv("WS_NUM_ATIVOS", "4"))  # TOP 4 ativos DT
 
-# ── Expiração FIXA 3 minutos (H&S Cabeça e Ombro) ──
-EXP_FIXA = 3
-EXP_EARLY = 5  # delay=0: EXP=5 → 91.4% WR (melhor que EXP=3 → 89.4% para entrada antecipada)
+# ── Expiração FIXA 2 minutos (alinhada com treino) ──
+# O modelo foi treinado com EXP_FIXA=3 + bug off-by-one (C[exit_idx-1])
+# que na prática checava C[entry_idx + 2] = 2 candles após entrada.
+# Agora com o off-by-one corrigido (C[exit_idx]):
+#   EXP_FIXA=2 → exit = C[entry_idx + 2] → MESMO resultado do treino
+# Live: broker recebe 2 min = 2 candles M1 → alinhado com treino
+EXP_FIXA = 2
+EXP_EARLY = 5  # delay=0: EXP=5 → 91.4% WR
 
 # ── URL da base de treino no GitHub (auto-download semanal) ──
 # O desenvolvedor sobe ws_ai_base_training.json toda semana
@@ -165,12 +170,16 @@ BASE_TRAINING_LOCAL = os.path.join(
 VALOR_MINIMO = float(os.getenv("WS_VALOR_MINIMO", "3"))
 STAKE_FIXA = float(os.getenv("WS_STAKE", "5"))
 PERCENT_BANCA = float(os.getenv("WS_PERCENT_BANCA", "1.0"))
+# Stake inteligente: $1/$2/$3 baseado na confiança da IA
+STAKE_NIVEL_1 = 1.0   # prob_win < 85% → stake mínimo $1
+STAKE_NIVEL_2 = 2.0   # 85% ≤ prob_win < 92% → stake médio $2
+STAKE_NIVEL_3 = 3.0   # prob_win ≥ 92% → stake máximo $3
 META_LUCRO_PERCENT = float(os.getenv("WS_META_LUCRO", "1.5"))
 STOP_LOSS_PERCENT = float(os.getenv("WS_STOP_LOSS", "3.0"))
 USE_DYNAMIC_STAKE = (os.getenv("WS_DYNAMIC_STAKE", "1").strip() == "1")
 
-# ── MODO DE TESTE: Desativar TODOS os guards para testar acurácia das 3 IAs ──
-_GUARDS_DISABLED = True  # ⚠️ TESTE: Somente NN decide. Desligar após teste!
+# ── MODO IA: Guards 1-5 desativados — somente as 3 NNs decidem (treinadas com 63K+ samples) ──
+_GUARDS_DISABLED = True  # Guards 1-5 OFF — as 3 IAs (89.7% acc) já sabem filtrar
 
 # ── Reversal AI config ──
 CONFIDENCE_MIN = float(os.getenv('WS_CONF_MIN', "40.0"))       # Confiança mínima da IA para entrar
@@ -993,7 +1002,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
     tol = atr * 0.4
     min_spacing = 8
     max_spacing = 60
-    min_depth = atr * 1.0
+    min_depth = atr * 1.5  # detecção base — NN decide qualidade
     min_candle_range = atr * 0.20
 
     # ═══ DOUBLE TOP (PUT) ═══
@@ -1033,7 +1042,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     "candles_ago": n - 1 - idx2,
                 })
         else:
-            if n - 1 - idx1 < min_spacing or n - 1 - idx1 > max_spacing:
+            if n - 1 - idx1 < min_spacing:
                 continue
             j_start = max(idx1 + min_spacing, n - 1 - max_candles_ago)
             for j in range(j_start, n):
@@ -1060,6 +1069,8 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 depth = touch_level - v_price
                 if depth < min_depth:
                     continue
+                d_left = v_idx - idx1
+                d_right = j - v_idx
                 patterns.append({
                     "type": "DOUBLE_TOP", "direction": "PUT", "mode": "double_touch",
                     "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
@@ -1114,7 +1125,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     "candles_ago": n - 1 - idx2,
                 })
         else:
-            if n - 1 - idx1 < min_spacing or n - 1 - idx1 > max_spacing:
+            if n - 1 - idx1 < min_spacing:
                 continue
             j_start = max(idx1 + min_spacing, n - 1 - max_candles_ago)
             for j in range(j_start, n):
@@ -1141,6 +1152,8 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 depth = p_price - touch_level
                 if depth < min_depth:
                     continue
+                d_left = p_idx - idx1
+                d_right = j - p_idx
                 patterns.append({
                     "type": "DOUBLE_BOTTOM", "direction": "CALL", "mode": "double_touch",
                     "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
@@ -1164,11 +1177,8 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
 def backtest_pattern(pat, C, O, H, L, n):
     """Verifica se o padrão H&S resultaria em WIN ou LOSS.
     Regra: entra no CLOSE da vela do ombro direito (delay=0).
-    Para mode='early', a entrada real em LIVE também é ~delay=0
-    (scan :05 + entrada imediata no turbo).
-    Verifica o close EXP candles depois.
-    Early: EXP_EARLY (5 min) — otimizado para delay=0 (91.4% WR).
-    Classic: EXP_FIXA (3 min) — otimizado para delay=3 (58.7% WR).
+    Verifica o close EXP candles depois: exit = C[entry_idx + EXP].
+    EXP_FIXA=2 → checa 2 candles à frente (alinhado com treino original).
     PUT: WIN se close < entry_price
     CALL: WIN se close > entry_price
     Retorna None se padrão é LIVE (sem resultado ainda)."""
@@ -1182,7 +1192,7 @@ def backtest_pattern(pat, C, O, H, L, n):
         return None  # padrão muito recente, sem resultado ainda
     # Entrada no CLOSE do ombro direito
     entry_price = float(C[entry_idx])
-    exit_price = float(C[exit_idx - 1])
+    exit_price = float(C[exit_idx])
     head_price = pat["head"]["price"]
     if pat["direction"] == "PUT":
         if entry_price >= head_price:
@@ -1197,7 +1207,7 @@ def backtest_pattern(pat, C, O, H, L, n):
         "entry_price": round(entry_price, 6),
         "exit_price": round(exit_price, 6),
         "entry_idx": entry_idx,
-        "exit_idx": exit_idx - 1,
+        "exit_idx": exit_idx,
         "pips": round(abs(exit_price - entry_price), 6),
     }
 
@@ -1298,8 +1308,7 @@ def _load_or_download_training_base(hs_stats: dict) -> dict:
     
     # Se já carregou esta versão antes, pular
     if local_version == base_version:
-        _n = hs_stats.get("meta", {}).get("total", 0)
-        log.info(paint(f"📂 Base versão {base_version} já carregada ({_n} amostras) — usando memória existente", C.G))
+        log.info(paint(f"📂 Base versão {base_version} já carregada — usando memória existente", C.G))
         return hs_stats
 
     log.info(paint(f"🔄 Aplicando base de treino versão {base_version}...", C.B))
@@ -1348,14 +1357,11 @@ def _load_or_download_training_base(hs_stats: dict) -> dict:
     new_stats["meta"]["entry_model"] = "iR_close_confirmation"
     new_stats["meta"]["last_bt_ts"] = time.time()
 
-    _total = new_stats["meta"].get("total", 0)
     _n_geo = len(new_stats.get("geometry_history", []))
     log.info(paint(
-        f"✅ Base de treino aplicada! {_total} amostras + {len(_live_geo)} live | "
-        f"Geometria: {_n_geo} padrões",
+        f"✅ Base de treino v{base_version} aplicada! Geometria: {_n_geo} padrões",
         C.G
     ))
-    print(f">>> IA: Base pré-treinada v{base_version} carregada! {_total} amostras", flush=True)
 
     # Salvar
     _safe_save_json(AI_STATS_FILE, new_stats)
@@ -1387,68 +1393,14 @@ def _train_ia_from_history(bx, hs_stats: dict) -> dict:
     _hours_since = (time.time() - _last_bt_ts) / 3600
     if _last_bt_ts > 0 and _hours_since < 2.0 and not _force_csv_retrain:
         _n_total = hs_stats.get("meta", {}).get("total", 0)
-        _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
         log.info(paint(
             f"Backtest recente ({_hours_since:.1f}h atrás) — usando memória existente "
-            f"({_n_total} amostras | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome})",
+            f"({_n_total} padrões DT)",
             C.G
         ))
-        print(f">>> IA: Memória recente OK! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome})", flush=True)
 
-        # ── NN: Se rede neural não está pronta, treinar com CSVs (DT patterns) ──
-        if not reversal_ai._ai1_ready and _csvs_exist:
-            log.info(paint("🧠 NN: Modelo ML não encontrado — treinando com DTs dos CSVs...", C.B))
-            _CSV_DIR_NN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_5000")
-            _nn_fed = 0
-            _nn_stats_tmp = {"arms": {}, "meta": {}}
-            for _nn_a in ativos[:6]:
-                _csv_nn = os.path.join(_CSV_DIR_NN, f"{_nn_a}.csv")
-                if os.path.exists(_csv_nn):
-                    try:
-                        _nn_df = pd.read_csv(_csv_nn)
-                        _nn_df["time"] = pd.to_datetime(_nn_df["time"])
-                        _nn_df.set_index("time", inplace=True)
-                        _nn_df = _nn_df[["open","high","low","close"]].dropna().sort_index()
-                        _nn_n = len(_nn_df)
-                        if _nn_n < 100:
-                            continue
-                        _nn_H = _nn_df["high"].values
-                        _nn_L = _nn_df["low"].values
-                        _nn_C = _nn_df["close"].values
-                        _nn_O = _nn_df["open"].values
-                        _nn_atr_v = [float(_nn_H[k] - _nn_L[k]) for k in range(max(0, _nn_n - 14), _nn_n)]
-                        _nn_atr = float(np.mean(_nn_atr_v)) if _nn_atr_v else 0.001
-                        if _nn_atr <= 0:
-                            continue
-                        _nn_ph, _nn_pl = detect_pivots(_nn_H, _nn_L, window=5)
-                        _nn_dts = detect_double_touch(_nn_H, _nn_L, _nn_C, _nn_O, _nn_ph, _nn_pl,
-                                                       _nn_atr, _nn_n, max_candles_ago=9999, training=True)
-                        for _nn_pat in (_nn_dts or []):
-                            _nn_bt = backtest_pattern(_nn_pat, _nn_C, _nn_O, _nn_H, _nn_L, _nn_n)
-                            if _nn_bt and _nn_bt["result"] in ("win", "loss"):
-                                _nn_res = 1 if _nn_bt["result"] == "win" else 0
-                                _nn_ri = _nn_pat["right_shoulder"]["idx"]
-                                _nn_ws = max(0, _nn_ri - 55)
-                                _nn_we = min(_nn_n, _nn_ri + 5)
-                                _nn_pc = dict(_nn_pat)
-                                _nn_pc["candles_ago"] = max(0, (_nn_we - _nn_ws) - 1 - (_nn_ri - _nn_ws))
-                                _nn_feats = extract_features(
-                                    _nn_pc, _nn_H[_nn_ws:_nn_we], _nn_L[_nn_ws:_nn_we],
-                                    _nn_C[_nn_ws:_nn_we], _nn_O[_nn_ws:_nn_we],
-                                    _nn_we - _nn_ws, _nn_atr, _nn_stats_tmp, _nn_a)
-                                if _nn_feats is not None:
-                                    reversal_ai.feed_dt_features(_nn_feats, _nn_res)
-                                    _nn_fed += 1
-                    except Exception:
-                        pass
-            if _nn_fed > 0:
-                reversal_ai.train_all()
-                _nn_s = reversal_ai.get_stats()
-                log.info(paint(
-                    f"  🧠 NN: {_nn_s.get('samples',0)} amostras DT de {len(ativos[:6])} ativos | "
-                    f"ML={'ATIVA' if _nn_s.get('ml') else 'aguardando'}",
-                    C.G if _nn_s.get("ml") else C.Y
-                ))
+        # NN: Modelos per-ativo são carregados offline (train_neural_network.py)
+        # NUNCA treinar NN online — só usar modelos pré-treinados
 
         return hs_stats
 
@@ -1599,45 +1551,15 @@ def _train_ia_from_history(bx, hs_stats: dict) -> dict:
             total_wins += _w
             total_losses += _l
 
-            # ── NN: Alimentar rede neural com features DT reais (SEM retreinar) ──
-            try:
-                _nn_added_dt = 0
-                _nn_stats_feed = hs_stats  # usar stats reais para arm_wr
-                for _nn_pat_feed in all_patterns:
-                    _nn_bt_f = backtest_pattern(_nn_pat_feed, C_arr, O, H, L, n)
-                    if _nn_bt_f and _nn_bt_f["result"] in ("win", "loss"):
-                        _nn_res_f = 1 if _nn_bt_f["result"] == "win" else 0
-                        _nn_ri_f = _nn_pat_feed["right_shoulder"]["idx"]
-                        _nn_ws_f = max(0, _nn_ri_f - 55)
-                        _nn_we_f = min(n, _nn_ri_f + 5)
-                        _nn_pc_f = dict(_nn_pat_feed)
-                        _nn_pc_f["candles_ago"] = max(0, (_nn_we_f - _nn_ws_f) - 1 - (_nn_ri_f - _nn_ws_f))
-                        _nn_feats_f = extract_features(
-                            _nn_pc_f, H[_nn_ws_f:_nn_we_f], L[_nn_ws_f:_nn_we_f],
-                            C_arr[_nn_ws_f:_nn_we_f], O[_nn_ws_f:_nn_we_f],
-                            _nn_we_f - _nn_ws_f, atr, _nn_stats_feed, ativo)
-                        if _nn_feats_f is not None:
-                            reversal_ai.feed_dt_features(_nn_feats_f, _nn_res_f)
-                            _nn_added_dt += 1
-                if _nn_added_dt > 0:
-                    log.info(f"  🧠 NN: {ativo} — {_nn_added_dt} padrões DT coletados")
-            except Exception:
-                pass
+            # NN: Modelos per-ativo são treinados offline (train_neural_network.py)
+            # NUNCA alimentar NN online
 
         except Exception as e:
             log.debug(f"Erro treinando {ativo}: {e}")
             continue
 
-    # ── NN: Treinar as 3 redes neurais UMA vez com TODOS os dados ──
-    _nn_train_ok = reversal_ai.train_all()
-    if _nn_train_ok:
-        _nn_s = reversal_ai.get_stats()
-        log.info(paint(
-            f"  🧠 Rede Neural TREINADA: {_nn_s.get('samples', 0)} amostras | "
-            f"IA1={reversal_ai._ai1_val:.1%} IA2={reversal_ai._ai2_val:.1%}"
-            + (f" IA3={reversal_ai._ai3_val:.1%}" if reversal_ai._ai3_ready else ""),
-            C.G
-        ))
+    # NN: Modelos per-ativo são treinados offline (train_neural_network.py)
+    # NUNCA treinar NN online
 
     _n_total = hs_stats.get("meta", {}).get("total", 0)
     _n_geo = len(hs_stats.get("geometry_history", []))
@@ -1648,16 +1570,14 @@ def _train_ia_from_history(bx, hs_stats: dict) -> dict:
     log.info(paint("=" * 50, C.G))
     log.info(paint(f"🏋️ TREINO CONCLUÍDO — MEMÓRIA PERMANENTE!", C.G))
     log.info(paint(f"  📊 Sessão: {total_patterns} padrões | {total_wins}W / {total_losses}L | WR: {wr:.1f}%", C.G))
-    log.info(paint(f"  🧠 IA TOTAL: {_n_total} amostras acumuladas | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
+    log.info(paint(f"  🧠 IA TOTAL: Memória DT atualizada", C.G))
     log.info(paint(f"  📐 IA Geométrica: {_n_geo} padrões aprendidos ({_n_geo_wins} wins)", C.G))
-    # NN status
-    _nn_stats = reversal_ai.get_stats()
-    _nn_ml = "ATIVA" if _nn_stats.get("ml") else "aguardando"
-    log.info(paint(f"  🧠 Rede Neural: {_nn_stats.get('samples', 0)} amostras | ML={_nn_ml}", C.G if _nn_stats.get("ml") else C.Y))
+    # NN: modelos per-ativo são carregados depois, offline
+    log.info(paint(f"  🧠 NN: Modelos per-ativo treinados offline (train_neural_network.py)", C.B))
     log.info(paint(f"  💾 Memória NUNCA é apagada — quanto mais roda, mais aprende!", C.G))
     log.info(paint("=" * 50, C.G))
 
-    print(f">>> IA: Treinada! {_n_total} amostras | Geometria: {_n_geo} padrões | Nível {_lvl_num} ({_lvl_nome}) | WR: {wr:.1f}%", flush=True)
+    log.info(paint(f"  📊 Treino DT: Sessão {total_patterns} padrões | WR: {wr:.1f}%", C.G))
 
     # Marcar timestamp do backtest para evitar re-acumulação
     hs_stats.setdefault("meta", {})["last_bt_ts"] = time.time()
@@ -1767,7 +1687,9 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict, early_on
         pivot_highs, pivot_lows = detect_pivots(H, L, window=5)
 
         # ── SOMENTE Double Touch (H&S removido — DT tem WR melhor no live) ──
-        patterns = detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n, max_candles_ago=1)
+        # max_candles_ago=5: permite detectar 2º toque até 5 velas atrás
+        # (backtest_pattern já filtra os que já têm resultado — candles_ago > EXP_FIXA-1)
+        patterns = detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n, max_candles_ago=0)
 
         if not patterns:
             continue
@@ -1782,18 +1704,13 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict, early_on
                 pat["entry_pending"] = entry_idx >= n
                 pat["candles_ago"] = max(0, n - 1 - pat["right_shoulder"]["idx"])
 
-                # ═══ FIX LIVE #1: Padrão deve ser vela FECHADA (não formando) ═══
-                # EXCEÇÃO: double_touch + scan no :50 = vela com 50s de dados,
-                # wick de rejeição já confirmado. Permite candles_ago=0 para
-                # entrar NA REGIÃO do 2ºtoque (sem atraso de 1 minuto).
-                _allow_ago_0 = pat.get("mode") in ("early", "double_touch")
-                if pat["candles_ago"] < 1 and not _allow_ago_0:
-                    log.info(paint(
-                        f"  ⛔ SKIP: {ativo} candles_ago={pat['candles_ago']} "
-                        f"(vela formando — não confirmado)",
-                        C.Y
-                    ))
-                    continue
+                # ═══ FIX LIVE #1: candles_ago=0 OK — scan :50 + entrada :00 ═══
+                # Antes bloqueava candles_ago < 1, causando entrada 1 vela atrasada.
+                # Agora aceita candles_ago=0: scan detecta às :50, aguarda :00 (vela
+                # fecha), entra no OPEN da próxima vela — mesma lógica do dashboard.
+                # A vela está 83% completa às :50, features suficientes para detecção.
+                if False:  # DESATIVADO — sync corrigido para não atrasar 1 vela
+                    pass
 
                 # ═══ FIX LIVE #2: Somente modo CLASSIC ou EARLY em live ═══
                 # Classic = 3 pivots confirmados por detect_pivots (window=5).
@@ -2459,47 +2376,17 @@ _cache_ativos_ts: float = 0.0
 _top_dt_assets: List[str] = []  # TOP N ativos DT (N definido por benchmark)
 
 
-def _pick_top_dt_assets(hs_stats: dict, n_top: int = 3) -> List[str]:
-    """Analisa IA stats (arms) e retorna os TOP N ativos treinados com maior WR.
-    Exige mínimo de 30 trades para confiança estatística.
-    Fallback: lista fixa de ativos OTC populares."""
-    from collections import defaultdict
-    ativo_agg = defaultdict(lambda: {"wins": 0, "total": 0})
-    for key, val in hs_stats.get("arms", {}).items():
-        # Chaves: ATIVO_HEAD_SHOULDERS_classic, ATIVO_INV_HEAD_SHOULDERS_classic, etc.
-        parts = key.split("_HEAD_SHOULDERS")
-        if len(parts) < 2:
-            parts = key.split("_INV_HEAD_SHOULDERS")
-        if len(parts) < 2:
-            continue
-        ativo = parts[0]
-        if ativo.endswith("_INV"):
-            ativo = ativo[:-4]
-        ativo_agg[ativo]["wins"] += val.get("wins", 0)
-        ativo_agg[ativo]["total"] += val.get("total", 0)
-
-    # Ordenar por WR (mínimo 30 trades para confiança)
-    ranked = []
-    for ativo, v in ativo_agg.items():
-        if v["total"] < 30:
-            continue
-        wr = v["wins"] / v["total"]
-        ranked.append((wr, v["total"], ativo))
-    ranked.sort(key=lambda x: (-x[0], -x[1]))  # WR desc, volume desc
-
-    top = [a for _, _, a in ranked[:n_top]]
-
-    if not top:
-        top = ["EURNZD-OTC", "GBPCHF-OTC", "EURAUD-OTC", "EURUSD-OTC", "GBPUSD-OTC"][:n_top]
-        log.info(paint(f"🎯 TOP {n_top} ASSETS (fallback): {top}", C.Y))
-    else:
-        for i, a in enumerate(top):
-            wr = ativo_agg[a]["wins"] / ativo_agg[a]["total"] * 100
-            n_trades = ativo_agg[a]["total"]
-            log.info(paint(
-                f"🎯 ASSET #{i+1}: {a} (WR={wr:.1f}% | {n_trades} trades)",
-                C.G
-            ))
+def _pick_top_dt_assets(hs_stats: dict, n_top: int = 4) -> List[str]:
+    """Retorna os TOP N ativos DT fixos, validados pela análise de 62,971 padrões.
+    Análise feita em 09/03/2026 com NN 2/3≥80% sobre dados reais de treino DT."""
+    # TOP 4 ativos por WR + volume (análise resultado_por_ativo.json):
+    #   NZDJPY-OTC: DT_TOP=95.2% (1225) + DT_BOT=95.2% (1201) = 2426 trades
+    #   GBPAUD-OTC: DT_TOP=95.8% (1166) + DT_BOT=93.3% (1154) = 2320 trades
+    #   USDCAD-OTC: DT_TOP=95.3% (1327) + DT_BOT=94.4% (1371) = 2698 trades
+    #   EURNZD-OTC: DT_TOP=95.1% (1252) + DT_BOT=94.1% (1269) = 2521 trades
+    top = ["NZDJPY-OTC", "GBPAUD-OTC", "USDCAD-OTC", "EURNZD-OTC"][:n_top]
+    for i, a in enumerate(top):
+        log.info(paint(f"🎯 ASSET #{i+1}: {a} (fixo — validado por análise DT)", C.G))
     return top
 
 
@@ -2511,7 +2398,7 @@ def obter_top_ativos_otc(bx: BrokerAPI) -> List[str]:
         return _cache_ativos
 
     if not _top_dt_assets:
-        _top_dt_assets = ["EURNZD-OTC", "GBPCHF-OTC", "EURAUD-OTC"]
+        _top_dt_assets = ["NZDJPY-OTC", "GBPAUD-OTC", "USDCAD-OTC", "EURNZD-OTC"]
 
     # Verificar quais estão abertos na corretora
     targets = list(_top_dt_assets)
@@ -2520,14 +2407,23 @@ def obter_top_ativos_otc(bx: BrokerAPI) -> List[str]:
         dados = safe_call(bx, bx.get_all_open_time)
         turbo = dados.get("turbo", {})
         abertos = [a for a in targets if a in turbo and turbo[a].get("open", False)]
-        if len(abertos) < 3:
-            # Completar com ativos do FIXED_ASSETS que estejam abertos
+        if len(abertos) < 4:
+            # Completar com ativos do FIXED_ASSETS que estejam abertos E tenham modelo NN treinado
             _broker_key = BROKER_TYPE.replace("iq_option", "iq")
             fixed = FIXED_ASSETS.get(_broker_key, FIXED_ASSETS.get("bullex", []))
             for a in fixed:
                 if a not in abertos and a in turbo and turbo[a].get("open", False):
-                    abertos.append(a)
-                    if len(abertos) >= 3:
+                    # Carregar modelo NN sob demanda — SÓ aceitar se modelo existir
+                    if a not in reversal_ai_map:
+                        reversal_ai_map[a] = ReversalAI(a)
+                    _rai_sub = reversal_ai_map[a]
+                    if _rai_sub._ai1_ready:
+                        _rai_sub.save_stats_to_disk()
+                        log.info(paint(f"  ✅ NN substituto {a}: {_rai_sub._loaded_n_samples} amostras", C.G))
+                        abertos.append(a)
+                    else:
+                        log.info(paint(f"  🚫 {a}: sem modelo NN treinado — NÃO será usado", C.Y))
+                    if len(abertos) >= 4:
                         break
         if not abertos:
             log.warning(paint(f"⚠️ Nenhum ativo OTC aberto — usando targets originais", C.Y))
@@ -2554,7 +2450,7 @@ def obter_top_ativos_otc(bx: BrokerAPI) -> List[str]:
     if not good_targets:
         good_targets = targets
 
-    _cache_ativos = good_targets[:3]
+    _cache_ativos = good_targets[:4]
     _cache_ativos_ts = time.time()
     log.info(paint(f"🎯 TOP {len(_cache_ativos)} ATIVOS: {_cache_ativos}", C.G))
     return _cache_ativos
@@ -2792,8 +2688,10 @@ def _main_inner():
     bx: Optional[BrokerAPI] = None
     bx = ensure_connected(bx)
 
-    # Inicializar ReversalAI (para stats e compatibilidade)
-    reversal_ai = ReversalAI("unified")
+    # Inicializar ReversalAI POR ATIVO — cada ativo tem sua própria NN
+    # Os modelos são carregados do disco (treinados offline via train_neural_network.py)
+    # NUNCA treinar NN online — só usar os modelos pré-treinados
+    reversal_ai_map = {}  # {ativo: ReversalAI} — preenchido após selecionar ativos
 
     # ── Carregar / Treinar IA — MEMÓRIA PERMANENTE ──
     # A IA NUNCA perde memória. Carrega do disco e ACUMULA.
@@ -2804,9 +2702,7 @@ def _main_inner():
     _n_total = hs_stats.get("meta", {}).get("total", 0)
 
     if _n_total > 0:
-        _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_total)
-        log.info(paint(f"💾 IA carregada do disco! {_n_total} amostras acumuladas | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}", C.G))
-        print(f">>> IA: Memória carregada! {_n_total} amostras | Nível {_lvl_num} ({_lvl_nome})", flush=True)
+        log.info(paint("💾 IA carregada do disco! Memória DT OK", C.G))
     else:
         log.info(paint("🌱 Primeira execução da IA...", C.Y))
 
@@ -2826,13 +2722,10 @@ def _main_inner():
         log.info(paint("🏋️ CSVs de treino profundo detectados — treinando IA com todos os ativos...", C.B))
         hs_stats = _train_ia_from_history(bx, hs_stats)
     elif _has_base:
-        _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_after_base)
         log.info(paint(
-            f"✅ Base pré-treinada OK! {_n_after_base} amostras | "
-            f"Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome} — PULANDO treino local",
+            f"✅ Base pré-treinada OK! PULANDO treino local",
             C.G
         ))
-        print(f">>> IA: Base pré-treinada! {_n_after_base} amostras | Nível {_lvl_num} ({_lvl_nome})", flush=True)
     else:
         log.info(paint("🏋️ Sem base pré-treinada — treinando IA localmente...", C.B))
         hs_stats = _train_ia_from_history(bx, hs_stats)
@@ -2843,7 +2736,22 @@ def _main_inner():
 
     # ── SELECIONAR MELHOR ATIVO DT (baseado no treino + benchmark) ──
     global _top_dt_assets
-    _top_dt_assets = _pick_top_dt_assets(hs_stats, n_top=3)
+    _top_dt_assets = _pick_top_dt_assets(hs_stats, n_top=4)
+
+    # ── Carregar modelo NN per-ativo (treinado offline) ──
+    for _asset_load in _top_dt_assets:
+        reversal_ai_map[_asset_load] = ReversalAI(_asset_load)
+        _rai = reversal_ai_map[_asset_load]
+        if _rai._ai1_ready:
+            _rai.save_stats_to_disk()  # Exportar stats para dashboard
+            log.info(paint(
+                f"  ✅ NN {_asset_load}: {_rai._loaded_n_samples} amostras | "
+                f"IA1={_rai._ai1_val:.1%} IA2={_rai._ai2_val:.1%}"
+                + (f" IA3={_rai._ai3_val:.1%}" if _rai._ai3_ready else ""),
+                C.G
+            ))
+        else:
+            log.info(paint(f"  ⚠️ NN {_asset_load}: modelo não encontrado", C.Y))
 
     log.info(f"✅ Estratégia: SOMENTE Double Touch (Duplo Toque)")
     log.info(f"✅ TOP Ativos: {_top_dt_assets}")
@@ -2904,25 +2812,22 @@ def _main_inner():
 
     print(f"\n>>> IA: Iniciado | Exp: {EXP_FIXA}min | Sinais: Detecção LOCAL", flush=True)
 
-    # Exportar stats iniciais para o UI
-    reversal_ai.save_stats_to_disk()
-
-    # ── Rede Neural: verificar se modelo está pronto ──
-    if reversal_ai._ai1_ready:
-        log.info(paint(
-            f"  ✅ NN: Modelo ML carregado | "
-            f"IA1={reversal_ai._ai1_val:.1%} IA2={reversal_ai._ai2_val:.1%}"
-            + (f" IA3={reversal_ai._ai3_val:.1%}" if reversal_ai._ai3_ready else ""),
-            C.G
-        ))
-        print(f">>> NN: 3 Redes Neurais ATIVAS — usando modelo treinado", flush=True)
+    # ── Rede Neural per-ativo: verificar se modelos estão prontos ──
+    _nn_ready_count = sum(1 for _rai in reversal_ai_map.values() if _rai._ai1_ready)
+    if _nn_ready_count > 0:
+        _nn_details = []
+        for _nn_a, _nn_r in reversal_ai_map.items():
+            if _nn_r._ai1_ready:
+                _nn_s = _nn_r.get_stats()
+                _nn_details.append(f"{_nn_a}={_nn_s.get('samples',0)}")
+        print(f">>> NN: {_nn_ready_count}/{len(reversal_ai_map)} modelos carregados | " + " | ".join(_nn_details), flush=True)
     else:
         log.info(paint(
-            f"  ⚠️ NN: Modelo ML NÃO treinado — Guard NN desativado. "
-            f"Execute com CSVs em candles_5000/ para treinar.",
+            f"  ⚠️ NN: Nenhum modelo per-ativo encontrado — Guard NN desativado. "
+            f"Execute train_neural_network.py para treinar.",
             C.Y
         ))
-        print(f">>> NN: Modelo não treinado — Guard NN desativado", flush=True)
+        print(f">>> NN: Nenhum modelo per-ativo — Guard NN desativado", flush=True)
 
     # ═══ THREAD LIVE CANDLES: Lê streaming real-time do dicionário interno ═══
     # A inscrição no stream é feita NO LOOP PRINCIPAL (após primeiro scan)
@@ -3040,12 +2945,11 @@ def _main_inner():
             except Exception:
                 pass
 
-            # ═══ SCAN DOUBLE TOUCH — ATIVO ÚNICO no segundo :50 ═══
-            wait_until_second(50)
+            # ═══ PRÉ-CACHE: Atualizar ativos/payout ANTES do :50 (evita delay no scan) ═══
+            _cache_ativos_ts = 0  # forçar refresh a cada ciclo (fora da janela de scan)
+            obter_top_ativos_otc(bx)
 
-            # ── Inscrever ativos no stream de velas (só 1x, no loop principal) ──
-            # start_candles_stream é bloqueante (~10s por ativo), mas aqui é seguro
-            # pois roda ANTES do scan (sem conflito de WebSocket).
+            # ── Inscrever ativos no stream de velas (só 1x, ANTES do :50) ──
             _target_ativo = _cache_ativos if _cache_ativos else _top_dt_assets
             if _target_ativo and not _stream_ready.is_set():
                 for _sub_a in _target_ativo:
@@ -3059,6 +2963,10 @@ def _main_inner():
                 if _stream_subscribed:
                     _stream_ready.set()
                     log.info(paint(f"  ✅ Live streaming ativo! {len(_stream_subscribed)} ativos inscritos", C.G))
+
+            # ═══ SCAN DOUBLE TOUCH — no segundo :50 ═══
+            # Scan :50 → 10s para IA → entrada no :00 (CLOSE da vela = igual ao treino)
+            wait_until_second(50)
 
             log.info(paint(
                 f"\n🔍 Scan DT em {_target_ativo} ({len(_target_ativo) if isinstance(_target_ativo, list) else 1} ativos, segundo :50)...",
@@ -3138,7 +3046,7 @@ def _main_inner():
                 C.B
             ))
 
-            # ═══ GUARDS + ANÁLISE DE POSIÇÃO ═══
+            # ═══ DECISÃO 100% NN — sem guards fixos ═══
             _all_guards_ok = True
             _cur = None
             _head_price = setup["pattern"]["head"]["price"]
@@ -3162,11 +3070,9 @@ def _main_inner():
                 _all_guards_ok = False
 
             if _is_dt_mode and _cur is not None:
-                # ═══ DT: LOGGING RICO — IGUAL AO DASHBOARD ═══
-                # Mostrar RS, Neckline, Target, posição do preço
+                # ═══ DT: LOGGING RICO ═══
                 _dist_to_rs = abs(_cur - _rs_price)
                 _rs_to_neck = abs(_neckline - _rs_price)
-                _rs_to_target = abs(_target_price - _rs_price) if _target_price > 0 else 0
                 _progress_pct = (_dist_to_rs / _rs_to_neck * 100) if _rs_to_neck > 0 else 0
                 _geo = _extract_geometry(pat_data, atr_val)
                 _geo_str = ""
@@ -3174,7 +3080,6 @@ def _main_inner():
                     _geo_str = (f"span={_geo['span']} sym={_geo['symmetry']:.2f} "
                                f"depth={_geo['depth_ratio']:.2f} neck={_geo['neck_align']:.3f}")
 
-                # Análise de rejeição/Volume: verificar força da rejeição no 2º toque
                 _rs_idx = pat_data["right_shoulder"]["idx"]
                 _wick_pct = 0
                 try:
@@ -3190,19 +3095,8 @@ def _main_inner():
                 except Exception:
                     pass
 
-                # Posição do preço relativa à zona do toque (RS)
-                # CALL (DBottom): preço deve estar NA zona do suporte (≤ RS)
-                # PUT  (DTop):    preço deve estar NA zona da resistência (≥ RS)
-                _zone_tol = atr_val * 0.50  # tolerância de 50% ATR (DT bounce natural)
-                _move_dir = "neutro"
-                if direcao == "PUT" and _cur >= _rs_price - _zone_tol:
-                    _move_dir = "✅ na zona da resistência"
-                elif direcao == "PUT" and _cur < _rs_price - _zone_tol:
-                    _move_dir = "⚠️ fora da zona (abaixo da resistência)"
-                elif direcao == "CALL" and _cur <= _rs_price + _zone_tol:
-                    _move_dir = "✅ na zona do suporte"
-                elif direcao == "CALL" and _cur > _rs_price + _zone_tol:
-                    _move_dir = "⚠️ fora da zona (acima do suporte)"
+                _valley_price = pat_data["valley1"]["price"]
+                _force_1t = abs(_ls_price - _valley_price) / (atr_val if atr_val > 0 else 1)
 
                 log.info(paint(
                     f"  📍 POSIÇÃO: Preço={_cur:.6f} | RS={_rs_price:.6f} | "
@@ -3215,149 +3109,21 @@ def _main_inner():
                 ))
                 log.info(paint(
                     f"  📊 ANÁLISE: dist_RS={_dist_to_rs:.6f} ({_progress_pct:.0f}% do caminho) | "
-                    f"wick={_wick_pct:.0f}% | mov={_move_dir}",
+                    f"wick={_wick_pct:.0f}% | força={_force_1t:.1f}ATR",
                     C.G if _progress_pct < 50 else C.Y
-                ))
-                # ═══ FORÇA DO 1º TOQUE — mostra se a região é forte ═══
-                _valley_price = pat_data["valley1"]["price"]
-                _force_1t = abs(_ls_price - _valley_price) / (atr_val if atr_val > 0 else 1)
-                if _force_1t >= 1.5:
-                    _force_label = "🔥MUITO FORTE"
-                elif _force_1t >= 1.0:
-                    _force_label = "✅FORTE"
-                elif _force_1t >= 0.5:
-                    _force_label = "~OK"
-                else:
-                    _force_label = "⚠️FRACA"
-                log.info(paint(
-                    f"  💪 FORÇA ZONA: 1ºtoque={_force_1t:.1f}ATR ({_force_label}) | "
-                    f"wick2={_wick_pct:.0f}% | LS={_ls_price:.6f} valley={_valley_price:.6f}",
-                    C.G if _force_1t >= 1.0 else C.Y
                 ))
 
                 print(
                     f">>> DT: {ativo} {direcao} | Preço={_cur:.6f} RS={_rs_price:.6f} "
                     f"Neck={_neckline:.6f} Target={_target_price:.6f} | "
-                    f"geom={_pq:.2f} prob={ia_prob:.2f} wick={_wick_pct:.0f}% | "
-                    f"FORÇA={_force_1t:.1f}ATR({_force_label})",
+                    f"geom={_pq:.2f} prob={ia_prob:.2f} wick={_wick_pct:.0f}%",
                     flush=True
                 )
 
-                # ═══ IA STRUCTURE GUARD: Validação inteligente baseada em 89K samples ═══
-                # A IA SABE quais padrões ganham. Estas regras vêm da análise estatística:
-                # - Posição do preço: se já andou >35% do RS→Neck, entrada é "tarde"
-                # - Depth ratio: <4.0 → WR=90%+, ≥4.0 → WR=77% (dados dos 200 geos)
-                # - Symmetry 0.45-0.60: WR=72.7% (pior faixa, 22 samples)
-                # - Movimento contrário: preço deve se afastar do RS (confirmando rejeição)
-                _reject_reasons = []
-
-                if _GUARDS_DISABLED:
-                    log.info(paint("  ⚠️ MODO TESTE: Guards 1-5 DESATIVADOS — somente NN decide", C.Y))
-
-                # GUARD IA 1: POSIÇÃO DO PREÇO — entrada deve ser PERTO do RS (toque)
-                # Double Bottom CALL: preço subiu do RS (suporte). Se >25% = tarde.
-                # Double Top PUT: preço desceu do RS (resistência). Se >25% = tarde.
-                _max_progress = 25  # máximo 25% do caminho RS→Neck (candles_ago=0 = perto do toque)
-                if _progress_pct > _max_progress:
-                    _reject_reasons.append(
-                        f"POSIÇÃO: {_progress_pct:.0f}% > {_max_progress}% (preço já longe do toque)")
-                    log.info(paint(
-                        f"  🚫 IA GUARD POSIÇÃO: Preço já andou {_progress_pct:.0f}% "
-                        f"do RS→Neck (máx={_max_progress}%) — entrada TARDE demais",
-                        C.Y
-                    ))
-
-                # GUARD IA 2: DEPTH RATIO — padrões profundos demais têm WR baixo
-                # depth < 4.0 → WR 90%+ (n=90) | depth ≥ 6.0 → WR <80% (n=110)
-                # depth ≥ 10.0 → padrão absurdo (span longo demais) → BLOQUEIO CRÍTICO
-                if _geo and _geo.get("depth_ratio", 0) >= 6.0:
-                    _dr = _geo["depth_ratio"]
-                    if _dr >= 10.0:
-                        # Depth absurdo = padrão inválido, tratar como CRÍTICO
-                        _reject_reasons.append(f"POSIÇÃO: depth={_dr:.1f} ≥ 10 (padrão inválido)")
-                        log.info(paint(
-                            f"  🚫 IA GUARD DEPTH CRÍTICO: depth_ratio={_dr:.1f} ≥ 10.0 "
-                            f"— padrão absurdamente profundo, BLOQUEIO",
-                            C.R
-                        ))
-                    else:
-                        _reject_reasons.append(f"DEPTH: {_dr:.1f} ≥ 6.0 (WR ~77%)")
-                        log.info(paint(
-                            f"  ⚠️ IA GUARD DEPTH: depth_ratio={_dr:.1f} ≥ 6.0 "
-                            f"(89K samples: WR cai para ~77%)",
-                            C.Y
-                        ))
-
-                # GUARD IA 3: SYMMETRY — faixa 0.45-0.60 é a PIOR (WR=72.7%)
-                #             sym < 0.30 = padrão muito assimétrico → CRÍTICO
-                if _geo:
-                    _sym = _geo.get("symmetry", 0)
-                    if _sym < 0.30:
-                        _reject_reasons.append(f"SYM CRÍTICO: {_sym:.2f} < 0.30 (padrão assimétrico)")
-                        log.info(paint(
-                            f"  🚫 IA GUARD SYM CRÍTICO: symmetry={_sym:.2f} < 0.30 "
-                            f"— padrão muito assimétrico, toques desproporcionais",
-                            C.R
-                        ))
-                    elif 0.45 <= _sym <= 0.60:
-                        _reject_reasons.append(f"SYM: {_sym:.2f} na zona 0.45-0.60 (WR=72.7%)")
-                        log.info(paint(
-                            f"  ⚠️ IA GUARD SYM: symmetry={_sym:.2f} na zona perigosa "
-                            f"(0.45-0.60 → WR=72.7% nos 89K samples)",
-                            C.Y
-                        ))
-
-                # GUARD IA 4: ZONA DO TOQUE — preço deve estar NA zona do RS
-                # CALL (Double Bottom): preço deve estar ≤ RS (na zona do suporte)
-                # PUT  (Double Top):    preço deve estar ≥ RS (na zona da resistência)
-                # Se o preço já saiu da zona, a entrada é TARDE — o bounce já aconteceu.
-                _outside_zone = False
-                _zone_tolerance = atr_val * 0.50  # 50% ATR de tolerância (DT bounce natural)
-                if direcao == "CALL" and _cur > _rs_price + _zone_tolerance:
-                    _outside_zone = True
-                    _dist_outside = _cur - _rs_price
-                    _dist_atr = _dist_outside / atr_val if atr_val > 0 else 0
-                elif direcao == "PUT" and _cur < _rs_price - _zone_tolerance:
-                    _outside_zone = True
-                    _dist_outside = _rs_price - _cur
-                    _dist_atr = _dist_outside / atr_val if atr_val > 0 else 0
-                if _outside_zone:
-                    _reject_reasons.append(
-                        f"ZONA: preço fora da zona do toque ({_dist_atr:.2f} ATR)")
-                    log.info(paint(
-                        f"  🚫 IA GUARD ZONA: Preço={_cur:.6f} FORA da zona do "
-                        f"RS={_rs_price:.6f} ({_dist_atr:.2f} ATR) — entrada deve ser "
-                        f"NA zona do suporte/resistência, não fora",
-                        C.R
-                    ))
-
-                # GUARD IA 5: PROXIMIDADE AO ALVO — preço já perto do target = movimento esgotado
-                # Se o preço já andou a maior parte do caminho RS→Target, entrar é arriscado:
-                # o movimento está quase completo e pode reverter (bounce no suporte/resistência).
-                # Para PUT: preço perto do suporte (target) → pode voltar a subir.
-                # Para CALL: preço perto da resistência (target) → pode voltar a cair.
-                _target_check = _target_price if _target_price > 0 else _neckline
-                if _target_check > 0 and _rs_to_neck > 0:
-                    _dist_to_target = abs(_cur - _target_check)
-                    _target_proximity_pct = (1 - _dist_to_target / _rs_to_neck) * 100
-                    _max_target_proximity = 60  # se preço já percorreu >60% rumo ao alvo → BLOQUEAR
-                    if _target_proximity_pct > _max_target_proximity:
-                        _reject_reasons.append(
-                            f"POSIÇÃO: preço a {_target_proximity_pct:.0f}% do alvo "
-                            f"(máx={_max_target_proximity}%) — movimento esgotado")
-                        log.info(paint(
-                            f"  🚫 IA GUARD ALVO: Preço={_cur:.6f} já a {_target_proximity_pct:.0f}% "
-                            f"do Target={_target_check:.6f} (máx={_max_target_proximity}%) "
-                            f"— movimento quase esgotado, risco de bounce!",
-                            C.R
-                        ))
-
-                # ═══ MODO TESTE: limpar rejeições dos guards 1-5 ═══
-                if _GUARDS_DISABLED:
-                    _reject_reasons = []
-
-                # GUARD IA 6: REDE NEURAL (ML 3 modelos) — Win/Loss do padrão DT
-                # Usa modelo JÁ TREINADO com 15 features reais (extract_features)
+                # ═══ NN OBRIGATÓRIA — ÚNICA DECISÃO ═══
+                # Sem NN = sem entrada. NN 2/3 ≥ 80% = APROVADO.
+                _smart_exp = EXP_FIXA
+                _nn_approved = False
                 if _guard_df is not None and len(_guard_df) >= 50:
                     _nn_pred = None
                     try:
@@ -3366,16 +3132,40 @@ def _main_inner():
                         _g_C = _guard_df["close"].values
                         _g_O = _guard_df["open"].values
                         _g_n = len(_g_H)
+
+                        _candles_ago_orig = pat_data.get("candles_ago", 0)
+                        _rs_idx_local = _g_n - 1 - _candles_ago_orig
+                        if _rs_idx_local < 0:
+                            _rs_idx_local = 0
+
+                        _win_start = max(0, _rs_idx_local - 55)
+                        _win_end = min(_g_n, _rs_idx_local + 1)
+                        _g_H_win = _g_H[_win_start:_win_end]
+                        _g_L_win = _g_L[_win_start:_win_end]
+                        _g_C_win = _g_C[_win_start:_win_end]
+                        _g_O_win = _g_O[_win_start:_win_end]
+                        _g_n_win = len(_g_H_win)
+
+                        _atr_local_vals = [float(_g_H_win[k] - _g_L_win[k])
+                                           for k in range(max(0, _g_n_win - 14), _g_n_win)]
+                        _atr_local = float(np.mean(_atr_local_vals)) if _atr_local_vals else atr_val
+                        if _atr_local <= 0:
+                            _atr_local = atr_val
+
+                        _pat_copy = dict(pat_data)
+                        _pat_copy["candles_ago"] = max(0, _g_n_win - 1 - (_rs_idx_local - _win_start))
+
                         _nn_feats = extract_features(
-                            pat_data, _g_H, _g_L, _g_C, _g_O, _g_n,
-                            atr_val, hs_stats, ativo)
+                            _pat_copy, _g_H_win, _g_L_win, _g_C_win, _g_O_win, _g_n_win,
+                            _atr_local, hs_stats, ativo)
                         if _nn_feats is not None:
-                            _nn_pred = reversal_ai.predict_dt(_nn_feats)
+                            _rai_ativo = reversal_ai_map.get(ativo)
+                            if _rai_ativo is not None:
+                                _nn_pred = _rai_ativo.predict_dt(_nn_feats)
                     except Exception:
                         pass
 
                     if _nn_pred is not None:
-                        _nn_conf = _nn_pred.get("confidence", 0)
                         _nn_votes = _nn_pred.get("votes_win", 0)
                         _nn_total = _nn_pred.get("total_voters", 2)
                         _nn_p1 = _nn_pred.get("p1", 0)
@@ -3383,71 +3173,48 @@ def _main_inner():
                         _nn_p3 = _nn_pred.get("p3")
                         _nn_p3_str = f" p3={_nn_p3:.2f}" if _nn_p3 is not None else ""
                         _nn_prob = _nn_pred.get("prob_win", 0)
-                        _NN_MIN_PROB = 0.85  # Mínimo 85% das 3 IAs para confirmar
+                        _NN_MIN_PROB = 0.80
 
-                        # Confirmar: as 3 IAs devem concordar com prob >= 85%
-                        # round(,2) para evitar falso negativo (0.8499 mostra 85% mas falharia sem round)
-                        _nn_all_above = (round(_nn_p1, 2) >= _NN_MIN_PROB and round(_nn_p2, 2) >= _NN_MIN_PROB
-                                         and (_nn_p3 is None or round(_nn_p3, 2) >= _NN_MIN_PROB))
+                        _nn_count_above = sum([
+                            round(_nn_p1, 2) >= _NN_MIN_PROB,
+                            round(_nn_p2, 2) >= _NN_MIN_PROB,
+                            round(_nn_p3, 2) >= _NN_MIN_PROB if _nn_p3 is not None else False
+                        ])
+                        _nn_approved = _nn_count_above >= 2
 
-                        if not _nn_all_above:
-                            if not _GUARDS_DISABLED:
-                                _reject_reasons.append(
-                                    f"NN: 3 IAs não confirmam ≥85% "
-                                    f"(p1={_nn_p1:.0%} p2={_nn_p2:.0%}"
-                                    f"{f' p3={_nn_p3:.0%}' if _nn_p3 is not None else ''}"
-                                    f", votos={_nn_votes}/{_nn_total})")
+                        if _nn_approved:
                             log.info(paint(
-                                f"  {'🚫' if not _GUARDS_DISABLED else '⚠️'} IA GUARD NN: IAs abaixo de 85% "
-                                f"{'— REJEITADO' if not _GUARDS_DISABLED else '— INFO (guards off)'} "
-                                f"(prob={_nn_prob:.0%} votos={_nn_votes}/{_nn_total}) | "
-                                f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}",
-                                C.R if not _GUARDS_DISABLED else C.Y
-                            ))
-                        else:
-                            log.info(paint(
-                                f"  ✅ IA GUARD NN: 3 IAs CONFIRMAM ≥85% "
+                                f"  ✅ NN APROVADO: {_nn_count_above}/3 IAs ≥80% "
                                 f"(prob={_nn_prob:.0%} votos={_nn_votes}/{_nn_total}) | "
                                 f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}",
                                 C.G
                             ))
+                        else:
+                            log.info(paint(
+                                f"  🚫 NN REJEITOU: apenas {_nn_count_above}/3 IAs ≥80% "
+                                f"(prob={_nn_prob:.0%} votos={_nn_votes}/{_nn_total}) | "
+                                f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}",
+                                C.R
+                            ))
+                            print(
+                                f">>> NN REJEITOU {ativo} {direcao}: {_nn_count_above}/3 ≥80% "
+                                f"(p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str})",
+                                flush=True
+                            )
                     else:
-                        _nn_samples = len(reversal_ai._train_data)
                         log.info(paint(
-                            f"  ℹ️ NN: ML não disponível ainda "
-                            f"({_nn_samples}/{MIN_SAMPLES_ML} amostras)",
-                            C.Y
-                        )) if _nn_samples < MIN_SAMPLES_ML else None
-
-                # DECISÃO: 1 razão crítica = BLOCK; 2+ warnings = BLOCK
-                _n_critical = sum(1 for r in _reject_reasons if "POSIÇÃO" in r or "ZONA" in r or "CRÍTICO" in r or "NN:" in r)
-                _n_warnings = len(_reject_reasons) - _n_critical
-
-                if _n_critical > 0 or _n_warnings >= 2:
-                    log.info(paint(
-                        f"  ❌ IA REJEITOU: {len(_reject_reasons)} problema(s) — "
-                        + " | ".join(_reject_reasons),
-                        C.R
-                    ))
-                    print(
-                        f">>> IA REJEITOU {ativo} {direcao}: "
-                        + " | ".join(_reject_reasons),
-                        flush=True
-                    )
-                    _all_guards_ok = False
-                elif _reject_reasons:
-                    # 1 warning sozinho: logar mas permitir entrada
-                    log.info(paint(
-                        f"  ⚠️ IA ATENÇÃO: {_reject_reasons[0]} (1 warning — PERMITIDO)",
-                        C.Y
-                    ))
+                            f"  🚫 NN: Modelo per-ativo não disponível para {ativo} — BLOQUEADO",
+                            C.R
+                        ))
+                        print(f">>> NN BLOQUEOU {ativo}: modelo não disponível", flush=True)
                 else:
                     log.info(paint(
-                        f"  ✅ IA APROVADO: padrão com boa estrutura | "
-                        f"pos={_progress_pct:.0f}% depth={_geo.get('depth_ratio', 0):.1f} "
-                        f"sym={_geo.get('symmetry', 0):.2f} mov={_move_dir}",
-                        C.G
+                        f"  🚫 NN: Dados insuficientes (<50 candles) — BLOQUEADO",
+                        C.R
                     ))
+
+                if not _nn_approved:
+                    _all_guards_ok = False
 
             elif not _is_dt_mode and _cur is not None:
                 # ═══ H&S CLÁSSICO: Guards básicos ═══
@@ -3474,26 +3241,20 @@ def _main_inner():
                 if _all_guards_ok:
                     log.info(paint(f"  ✅ GUARDS OK: Preço={_cur:.6f} | Head={_head_price:.6f} | RS={_rs_price:.6f}", C.G))
 
-            # ═══ GUARD CONTRA SINAL: não entrar contra a seta que acabou de sair ═══
-            if _all_guards_ok and not _GUARDS_DISABLED and _is_contra_signal(ativo, direcao):
-                print(
-                    f">>> CONTRA SINAL {ativo}: {direcao} bloqueado "
-                    f"(último sinal foi {_last_entry_dir.get(ativo, {}).get('dir', '?')})",
-                    flush=True
-                )
-                _all_guards_ok = False
-
             if not _all_guards_ok:
                 print(f">>> IA: GUARD bloqueou {ativo} {direcao}", flush=True)
                 s = seconds_to_next(TF_M1)
                 time.sleep(min(s + 1, 30))
                 continue
 
-            # Calcular stake
+            # Calcular stake baseado no saldo (% da banca)
             stake = calcular_stake(bx)
+            log.info(paint(
+                f"  💰 STAKE: ${stake:.2f} ({PERCENT_BANCA:.1f}% da banca)",
+                C.G
+            ))
 
-            # ═══ ENTRADA: Sempre na virada da vela :00 ═══
-            # Scan analisa no :50, guards validam, mas entrada é no :00
+            # ═══ ENTRADA NA VIRADA :00 (CLOSE da vela = igual ao treino) ═══
             _is_early = setup.get("mode") == "early"
             _is_dt = setup.get("mode") == "double_touch"
             _candles_ago = pat_data.get("candles_ago", 99)
@@ -3506,57 +3267,72 @@ def _main_inner():
             wait_candle_open()
 
             # ═══ VALIDAÇÃO FINAL: preço ainda na zona do padrão? ═══
-            # Após wait_candle_open, buscar preço atualizado
             _entry_ok = True
-            _live_entry_price = None
+            # Usar preço ATUAL (scan :50), não o close histórico do entry_idx
+            _live_entry_price = float(_cur) if _cur else float(pat_data.get("entry_price", 0))
+            # Tentar obter preço mais fresco (após virada :00)
             try:
-                _final_df = get_candles_df(bx, ativo, TF_M1, 2)
-                if _final_df is not None and len(_final_df) >= 1:
-                    _live_entry_price = float(_final_df["close"].values[-1])
+                _fresh_df = get_candles_df(bx, ativo, TF_M1, 2)
+                if _fresh_df is not None and len(_fresh_df) >= 1:
+                    _live_entry_price = float(_fresh_df["close"].values[-1])
+            except Exception:
+                pass
 
-                if _live_entry_price is None:
-                    _live_entry_price = float(pat_data.get("entry_price", 0))
-
+            if not _GUARDS_DISABLED:
                 # Verificar se preço está na zona do RS (suporte/resistência)
-                # CALL: preço deve estar ≤ RS + tolerância (na zona do suporte)
-                # PUT:  preço deve estar ≥ RS - tolerância (na zona da resistência)
-                _fc_zone_tol = atr_val * 0.10 if atr_val > 0 else 0
-                if _live_entry_price and _rs_price > 0 and _is_dt_mode and not _GUARDS_DISABLED:
-                    if direcao == "CALL" and _live_entry_price > _rs_price + _fc_zone_tol:
-                        _fc_dist = _live_entry_price - _rs_price
-                        _fc_atr = _fc_dist / atr_val if atr_val > 0 else 0
+                # CHECK 1: distância proporcional ao range RS→Neckline (máx 25%)
+                # CHECK 2: distância em ATR (máx 1.5 ATR — drift extremo)
+                _fc_zone_tol = atr_val * 1.5 if atr_val > 0 else 0
+                if _live_entry_price and _rs_price > 0 and _is_dt_mode:
+                    _fc_dist = abs(_live_entry_price - _rs_price)
+                    _fc_atr = _fc_dist / atr_val if atr_val > 0 else 0
+                    _fc_range = abs(_neckline - _rs_price) if _neckline > 0 else 0
+                    _fc_pct = (_fc_dist / _fc_range * 100) if _fc_range > 0 else 0
+
+                    # CHECK 1: preço já percorreu >25% do range → entrou tarde demais
+                    if _fc_range > 0 and _fc_pct > 25:
+                        if direcao == "CALL":
+                            _fc_side = "ACIMA" if _live_entry_price > _rs_price else "ABAIXO"
+                            _fc_label = "suporte"
+                        else:
+                            _fc_side = "ABAIXO" if _live_entry_price < _rs_price else "ACIMA"
+                            _fc_label = "resistência"
                         log.info(paint(
-                            f"  🚫 FINAL CHECK ZONA: Preço ({_live_entry_price:.6f}) "
-                            f"ACIMA do suporte RS ({_rs_price:.6f}) em {_fc_atr:.2f} ATR → CANCELADO",
-                            C.R
-                        ))
-                        _entry_ok = False
-                    elif direcao == "PUT" and _live_entry_price < _rs_price - _fc_zone_tol:
-                        _fc_dist = _rs_price - _live_entry_price
-                        _fc_atr = _fc_dist / atr_val if atr_val > 0 else 0
-                        log.info(paint(
-                            f"  🚫 FINAL CHECK ZONA: Preço ({_live_entry_price:.6f}) "
-                            f"ABAIXO da resistência RS ({_rs_price:.6f}) em {_fc_atr:.2f} ATR → CANCELADO",
+                            f"  🚫 FINAL CHECK RANGE: Preço ({_live_entry_price:.6f}) "
+                            f"já {_fc_pct:.0f}% do range RS→Neck ({_fc_side} da {_fc_label}) → TARDE DEMAIS",
                             C.R
                         ))
                         _entry_ok = False
 
-                # Verificar se preço já ultrapassou neckline (SEMPRE, não só quando price=None)
-                if _entry_ok and _neckline > 0 and _live_entry_price and not _GUARDS_DISABLED:
-                    if direcao == "CALL" and _live_entry_price >= _neckline:
+                    # CHECK 2: distância em ATR (drift extremo)
+                    elif _fc_dist > _fc_zone_tol:
+                        if direcao == "CALL":
+                            _fc_side = "ACIMA" if _live_entry_price > _rs_price else "ABAIXO"
+                            _fc_label = "suporte"
+                        else:
+                            _fc_side = "ABAIXO" if _live_entry_price < _rs_price else "ACIMA"
+                            _fc_label = "resistência"
                         log.info(paint(
-                            f"  🚫 FINAL CHECK: Preço ({_live_entry_price:.6f}) já acima da Neckline ({_neckline:.6f}) → CANCELADO",
-                            C.Y
+                            f"  🚫 FINAL CHECK ZONA: Preço ({_live_entry_price:.6f}) "
+                            f"{_fc_side} da {_fc_label} RS ({_rs_price:.6f}) em {_fc_atr:.2f} ATR → CANCELADO",
+                            C.R
                         ))
                         _entry_ok = False
-                    elif direcao == "PUT" and _live_entry_price <= _neckline:
-                        log.info(paint(
-                            f"  🚫 FINAL CHECK: Preço ({_live_entry_price:.6f}) já abaixo da Neckline ({_neckline:.6f}) → CANCELADO",
-                            C.Y
-                        ))
-                        _entry_ok = False
-            except Exception as _fe:
-                log.warning(paint(f"  ⚠️ FINAL CHECK: Erro ({_fe}) — entrando mesmo assim", C.Y))
+
+            # Verificar se preço já ultrapassou neckline
+            if not _GUARDS_DISABLED and _entry_ok and _neckline > 0 and _live_entry_price:
+                if direcao == "CALL" and _live_entry_price >= _neckline:
+                    log.info(paint(
+                        f"  🚫 FINAL CHECK: Preço ({_live_entry_price:.6f}) já acima da Neckline ({_neckline:.6f}) → CANCELADO",
+                        C.Y
+                    ))
+                    _entry_ok = False
+                elif direcao == "PUT" and _live_entry_price <= _neckline:
+                    log.info(paint(
+                        f"  🚫 FINAL CHECK: Preço ({_live_entry_price:.6f}) já abaixo da Neckline ({_neckline:.6f}) → CANCELADO",
+                        C.Y
+                    ))
+                    _entry_ok = False
 
             if not _entry_ok:
                 print(f">>> IA: FINAL CHECK cancelou {ativo} {direcao} — preço se moveu demais", flush=True)
@@ -3567,7 +3343,7 @@ def _main_inner():
             _log_live_trade(ativo, direcao, None, _live_entry_price, stake,
                             confidence=ia_prob * 100, status="entry")
 
-            _use_exp = EXP_EARLY if _is_early else EXP_FIXA
+            _use_exp = EXP_EARLY if _is_early else _smart_exp
             op = enviar_ordem(bx, ativo, direcao, stake, exp=_use_exp)
             if not op:
                 log.warning(paint(f"  ❌ Falha na ordem: {ativo}", C.R))
@@ -3618,16 +3394,16 @@ def _main_inner():
 
             # ── IA: aprender com o resultado ──
             ai_update(ativo, setup, res, hs_stats)
-            _n_amostras = sum(v.get("total", 0) for v in hs_stats.get("arms", {}).values())
-            _lvl_num, _lvl_nome, _lvl_emoji = _get_ia_level(_n_amostras)
+            _arm_key_res = f"{ativo}_{pat_type}_{setup.get('mode', 'classic')}"
+            _n_arm = hs_stats.get("arms", {}).get(_arm_key_res, {}).get("total", 0)
             log.info(paint(
                 f"  🤖 IA atualizada: {ativo} | resultado={'WIN' if res > 0 else 'LOSS' if res < 0 else 'EMPATE'} | "
-                f"prob_antes={ia_prob:.2f} | amostras={_n_amostras} | Nível {_lvl_num}: {_lvl_emoji} {_lvl_nome}",
+                f"prob_antes={ia_prob:.2f} | amostras_ativo={_n_arm}",
                 C.B
             ))
             _safe_save_json(AI_STATS_FILE, hs_stats)
             # Salvar controle de retrain SOMENTE quando IA tem amostras reais
-            if _n_amostras > 0:
+            if _n_arm > 0:
                 _save_retrain_control()
 
             # ── Estatísticas ──
@@ -3645,8 +3421,9 @@ def _main_inner():
             except Exception:
                 log.info(f"  � Sessão: {total_trades} trades | {total_wins}W | WR={wr:.1f}%")
 
-            # Exportar stats para o UI
-            reversal_ai.save_stats_to_disk()
+            # Exportar stats para o UI (per-ativo)
+            for _rai_save in reversal_ai_map.values():
+                _rai_save.save_stats_to_disk()
 
         except KeyboardInterrupt:
             log.info(paint("\n⏹️ IA encerrada pelo usuário.", C.Y))

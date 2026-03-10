@@ -20,13 +20,27 @@ Uso:
 Acesse: http://localhost:8899
 """
 
-import os, sys, json, time, logging, argparse, threading
+import os, sys, json, time, logging, argparse, threading, warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*InconsistentVersionWarning.*")
+try:
+    from sklearn.exceptions import InconsistentVersionWarning
+    warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+except ImportError:
+    pass
 import numpy as np
 import pandas as pd
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, parse_qs
+
+try:
+    from ws_reversal_ai import ReversalAI
+    from ws_adaptive_brain import extract_features
+    _HAS_NN = True
+except ImportError:
+    _HAS_NN = False
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -62,6 +76,74 @@ _stripe_product     = os.environ.get("STRIPE_PRODUCT_ID", "")
 _IS_PREMIUM = (_stripe_product == _PREMIUM_PRODUCT_ID)
 _IS_PRO     = (_stripe_product == _PRO_PRODUCT_ID)
 _IS_PAID    = _IS_PREMIUM or _IS_PRO
+
+# ── NN models per-asset (carregados 1x) ──
+_nn_models = {}  # {ativo: ReversalAI}
+_NN_MIN_PROB = 0.80
+
+def _load_nn_model(ativo):
+    """Carrega modelo NN per-ativo se disponível."""
+    if not _HAS_NN:
+        return None
+    if ativo in _nn_models:
+        return _nn_models[ativo]
+    try:
+        rai = ReversalAI(ativo)
+        if rai._ai1_ready:
+            _nn_models[ativo] = rai
+            log.info(f"[NN] Modelo carregado para {ativo}")
+            return rai
+    except Exception:
+        pass
+    return None
+
+def _nn_predict_pattern(ativo, pat, H, L, C, O, n, atr):
+    """Roda NN no padrão. Retorna dict {approved, count_above, p1, p2, p3} ou None."""
+    rai = _load_nn_model(ativo)
+    if rai is None or n < 50:
+        return None
+    try:
+        candles_ago = pat.get("candles_ago", 0)
+        rs_idx_local = n - 1 - candles_ago
+        if rs_idx_local < 0:
+            rs_idx_local = 0
+        win_start = max(0, rs_idx_local - 55)
+        win_end = min(n, rs_idx_local + 1)
+        H_w = H[win_start:win_end]
+        L_w = L[win_start:win_end]
+        C_w = C[win_start:win_end]
+        O_w = O[win_start:win_end]
+        n_w = len(H_w)
+        atr_vals = [float(H_w[k] - L_w[k]) for k in range(max(0, n_w - 14), n_w)]
+        atr_local = float(np.mean(atr_vals)) if atr_vals else atr
+        if atr_local <= 0:
+            atr_local = atr
+        pat_copy = dict(pat)
+        pat_copy["candles_ago"] = max(0, n_w - 1 - (rs_idx_local - win_start))
+        feats = extract_features(pat_copy, H_w, L_w, C_w, O_w, n_w, atr_local, {}, ativo)
+        if feats is None:
+            return None
+        pred = rai.predict_dt(feats)
+        if pred is None:
+            return None
+        p1 = pred.get("p1", 0)
+        p2 = pred.get("p2", 0)
+        p3 = pred.get("p3")
+        count_above = sum([
+            round(p1, 2) >= _NN_MIN_PROB,
+            round(p2, 2) >= _NN_MIN_PROB,
+            round(p3, 2) >= _NN_MIN_PROB if p3 is not None else False
+        ])
+        return {
+            "approved": count_above >= 2,
+            "count_above": count_above,
+            "p1": round(p1, 3),
+            "p2": round(p2, 3),
+            "p3": round(p3, 3) if p3 is not None else None,
+            "prob_win": round(pred.get("prob_win", 0), 3),
+        }
+    except Exception:
+        return None
 
 # ══════════════════════════════════════════════════════════════════
 # DETECÇÃO DE PIVOTS
@@ -397,7 +479,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
     tol = atr * 0.4
     min_spacing = 8
     max_spacing = 60
-    min_depth = atr * 1.0
+    min_depth = atr * 1.5  # detecção base — NN decide qualidade
     min_candle_range = atr * 0.20
 
     # ═══ DOUBLE TOP (PUT) ═══
@@ -441,6 +523,8 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 continue
             j_start = max(idx1 + min_spacing, n - 1 - max_candles_ago)
             for j in range(j_start, n):
+                if j - idx1 > max_spacing:
+                    continue
                 h_j, c_j, o_j, l_j = float(H[j]), float(C_arr[j]), float(O[j]), float(L[j])
                 candle_range = h_j - l_j
                 if candle_range < min_candle_range:
@@ -462,6 +546,8 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 depth = touch_level - v_price
                 if depth < min_depth:
                     continue
+                d_left = v_idx - idx1
+                d_right = j - v_idx
                 patterns.append({
                     "type": "DOUBLE_TOP", "direction": "PUT", "mode": "double_touch",
                     "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
@@ -520,6 +606,8 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 continue
             j_start = max(idx1 + min_spacing, n - 1 - max_candles_ago)
             for j in range(j_start, n):
+                if j - idx1 > max_spacing:
+                    continue
                 h_j, c_j, o_j, l_j = float(H[j]), float(C_arr[j]), float(O[j]), float(L[j])
                 candle_range = h_j - l_j
                 if candle_range < min_candle_range:
@@ -541,6 +629,8 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 depth = p_price - touch_level
                 if depth < min_depth:
                     continue
+                d_left = p_idx - idx1
+                d_right = j - p_idx
                 patterns.append({
                     "type": "DOUBLE_BOTTOM", "direction": "CALL", "mode": "double_touch",
                     "left_shoulder": {"idx": int(idx1), "price": round(float(price1), 6)},
@@ -796,10 +886,62 @@ class HS_IA:
                 self.global_stats = data.get("global_stats", {"wins": 0, "total": 0, "by_type": {}})
                 # IA: carregar geometria aprendida
                 self.geometry_history = data.get("geometry_history", [])
-                log.info(f"[IA] Stats carregadas do disco: {self.global_stats['total']} padrões | WR={self.global_stats['wins']/max(1,self.global_stats['total'])*100:.1f}% | geo={len(self.geometry_history)}")
+                log.info(f"[IA] Stats carregadas do disco: WR={self.global_stats['wins']/max(1,self.global_stats['total'])*100:.1f}% | geo={len(self.geometry_history)}")
                 return True
         except Exception as e:
             log.warning(f"Erro carregando IA: {e}")
+        return False
+
+    _bot_stats_cache = None  # cache class-level para evitar I/O repetido
+
+    def seed_from_bot_stats(self):
+        """Importa stats do bot principal (ws_ai_stats_hs.json) para enriquecer as predições.
+        Converte arms do bot (ATIVO_TYPE_MODE) para o formato do dashboard."""
+        bot_stats_file = os.path.join(_USER_DIR, "ws_ai_stats_hs.json")
+        try:
+            # Usar cache para não ler disco a cada 30s
+            if HS_IA._bot_stats_cache is None:
+                if not os.path.exists(bot_stats_file):
+                    return False
+                with open(bot_stats_file, "r", encoding="utf-8") as f:
+                    HS_IA._bot_stats_cache = json.load(f)
+            bot_data = HS_IA._bot_stats_cache
+            arms = bot_data.get("arms", {})
+            if not arms:
+                return False
+            _imported = 0
+            for arm_key, arm_val in arms.items():
+                w = arm_val.get("wins", 0)
+                t = arm_val.get("total", 0)
+                if t <= 0:
+                    continue
+                # Não sobrescrever stats que o dashboard já tem
+                if arm_key in self.stats and self.stats[arm_key]["total"] >= t:
+                    continue
+                self.stats[arm_key] = {"wins": w, "total": t, "patterns": []}
+                _imported += 1
+            if _imported > 0:
+                # Recalcular global_stats
+                self.global_stats = {"wins": 0, "total": 0, "by_type": {}}
+                for k, v in self.stats.items():
+                    self.global_stats["total"] += v["total"]
+                    self.global_stats["wins"] += v["wins"]
+                    # Extrair tipo do key
+                    parts = k.split("_")
+                    t_name = parts[1] if len(parts) >= 2 else "HS"
+                    if t_name not in self.global_stats["by_type"]:
+                        self.global_stats["by_type"][t_name] = {"wins": 0, "total": 0}
+                    self.global_stats["by_type"][t_name]["total"] += v["total"]
+                    self.global_stats["by_type"][t_name]["wins"] += v["wins"]
+                # Importar geometria do bot se disponível
+                bot_geo = bot_data.get("geometry_history", [])
+                if bot_geo and len(bot_geo) > len(self.geometry_history):
+                    self.geometry_history = bot_geo[-300:]
+                _wr = self.global_stats["wins"] / max(1, self.global_stats["total"]) * 100
+                log.debug(f"[IA] Bot seed: {_imported} novas chaves | WR={_wr:.1f}%")
+                return True
+        except Exception as e:
+            log.debug(f"Erro importando stats do bot: {e}")
         return False
 
 
@@ -854,8 +996,197 @@ def _get_ia_level(n_total: int) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════
-# DATA (leitura do cache do bot — SEM conexão ao broker)
+# LIVE BROKER — conexão INDEPENDENTE para o dashboard
 # ══════════════════════════════════════════════════════════════════
+_BROKER_TYPE = os.getenv("BROKER_TYPE", "bullex").strip().lower()
+_LIVE_ASSETS = [
+    "EURNZD-OTC", "GBPCHF-OTC", "EURAUD-OTC",
+    "USDCAD-OTC", "AUDNZD-OTC", "GBPAUD-OTC",
+]
+_LIVE_TF = 60  # M1
+_LIVE_N_CANDLES = 100  # candles para exibir no gráfico
+_LIVE_BROKER_REF = [None]  # referência mutável para reconexões
+_LIVE_CONNECTED = threading.Event()
+
+
+def _connect_live_broker():
+    """Conecta ao broker para leitura de candles (SOMENTE LEITURA — sem trades)."""
+    # Carregar credenciais do .env do usuário (mesmo arquivo que o login salva)
+    _env_file = os.path.join(_USER_DIR, ".env")
+    if os.path.exists(_env_file):
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(dotenv_path=_env_file, override=True)
+            log.info(f"Dashboard: credenciais carregadas de {_env_file}")
+        except ImportError:
+            # Fallback manual se dotenv não estiver instalado
+            try:
+                with open(_env_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if "=" in line and not line.startswith("#"):
+                            k, v = line.split("=", 1)
+                            os.environ[k.strip()] = v.strip()
+            except Exception:
+                pass
+
+    # Re-ler BROKER_TYPE após carregar .env
+    _bt = os.getenv("BROKER_TYPE", "").strip().lower()
+
+    # Auto-detectar broker pelas credenciais disponíveis
+    if not _bt:
+        if os.getenv("IQ_EMAIL") and (os.getenv("IQ_PASS") or os.getenv("IQ_PASSWORD")):
+            _bt = "iq_option"
+        elif os.getenv("CASATRADER_EMAIL") and os.getenv("CASATRADER_PASS"):
+            _bt = "casatrader"
+        elif os.getenv("BULLUX_EMAIL") or os.getenv("BULLEX_EMAIL"):
+            _bt = "bullex"
+        else:
+            _bt = _BROKER_TYPE  # fallback ao padrão do módulo
+
+    if _bt == "casatrader":
+        from casatraderapi.stable_api import Casa_Trader as _BrokerCls
+        _email = os.getenv("CASATRADER_EMAIL", "")
+        _senha = os.getenv("CASATRADER_PASS", "")
+    elif _bt == "iq_option":
+        from iqoptionapi.stable_api import IQ_Option as _BrokerCls
+        _email = os.getenv("IQ_EMAIL", "")
+        _senha = os.getenv("IQ_PASS", "") or os.getenv("IQ_PASSWORD", "")
+    else:
+        from bullexapi.stable_api import Bullex as _BrokerCls
+        _email = os.getenv("BULLUX_EMAIL", "") or os.getenv("BULLEX_EMAIL", "")
+        _senha = os.getenv("BULLUX_PASS", "") or os.getenv("BULLEX_PASS", "")
+
+    if not _email or not _senha:
+        log.warning("Dashboard: credenciais do broker não encontradas — usando cached data")
+        return None
+
+    try:
+        log.info(f"Dashboard: Conectando ao {_bt}...")
+        bx = _BrokerCls(_email, _senha)
+        check, reason = bx.connect()
+        if check is False:
+            log.warning(f"Dashboard: Falha na conexão — {reason}")
+            return None
+        for _ in range(12):
+            if bx.check_connect():
+                break
+            time.sleep(1.5)
+        if not bx.check_connect():
+            log.warning("Dashboard: Timeout na conexão")
+            return None
+        bx.change_balance("PRACTICE")  # dashboard = somente leitura
+        try:
+            bx.update_ACTIVES_OPCODE()
+        except Exception:
+            pass
+        time.sleep(2)  # aguardar servidor initializar before requesting data
+        log.info("Dashboard: Conectado ao broker (somente leitura)")
+        return bx
+    except Exception as e:
+        log.warning(f"Dashboard: Erro ao conectar — {e}")
+        return None
+
+
+def _read_live_candles_from_file():
+    """Lê velas live do arquivo escrito pelo bot.
+    Retorna dict {ativo: [candles]} ou {} se arquivo stale/inexistente."""
+    _live_file = os.path.join(_USER_DIR, "ws_live_candles.json")
+    try:
+        if not os.path.exists(_live_file):
+            return {}
+        age = time.time() - os.path.getmtime(_live_file)
+        if age > 120:  # aceita até 2 min (bot pode pausar entre scans)
+            return {}
+        with open(_live_file, "r") as f:
+            data = json.load(f)
+        return data.get("assets", {})
+    except Exception:
+        return {}
+
+
+def _live_broker_thread():
+    """Thread que alimenta o dashboard com dados de velas.
+    Lê EXCLUSIVAMENTE dos arquivos escritos pelo bot.
+    NUNCA abre conexão própria ao broker (evita conflito de WebSocket).
+    """
+    _last_log_ts = 0
+
+    while True:
+        try:
+            _has_data = False
+
+            # ── 1. Ler cache completo do bot (500 velas por ativo) ──
+            if os.path.exists(_DASHBOARD_CACHE_FILE):
+                try:
+                    bot_assets, payouts = _load_candles_from_cache()
+                    if bot_assets:
+                        with _lock:
+                            # Substituir ativos — se bot mudou de par, removemos os antigos
+                            _cache["assets_data"] = bot_assets
+                            _cache["payouts"] = payouts
+                        _has_data = True
+                except Exception:
+                    pass
+
+            # ── 2. Ler candles live do arquivo do bot e MERGE no cache ──
+            live_assets = _read_live_candles_from_file()
+            if live_assets:
+                _has_data = True
+                # Merge: atualizar DataFrames com candles live frescos
+                with _lock:
+                    for _la_ativo, _la_candles in live_assets.items():
+                        if _la_ativo not in _cache["assets_data"]:
+                            continue
+                        _df = _cache["assets_data"][_la_ativo]
+                        if _df is None or len(_df) == 0:
+                            continue
+                        for _lc in _la_candles:
+                            _lt = _lc.get("t", 0)
+                            if _lt <= 0:
+                                continue
+                            _ts = pd.Timestamp(_lt, unit="s", tz="UTC")
+                            try:
+                                _ts = _ts.tz_localize(None)
+                            except Exception:
+                                pass
+                            if _ts in _df.index:
+                                _df.at[_ts, "open"] = _lc.get("o", _df.at[_ts, "open"])
+                                _df.at[_ts, "high"] = _lc.get("h", _df.at[_ts, "high"])
+                                _df.at[_ts, "low"] = _lc.get("l", _df.at[_ts, "low"])
+                                _df.at[_ts, "close"] = _lc.get("c", _df.at[_ts, "close"])
+                            else:
+                                _new_row = pd.DataFrame(
+                                    [{"open": _lc.get("o", 0), "high": _lc.get("h", 0),
+                                      "low": _lc.get("l", 0), "close": _lc.get("c", 0), "volume": 0}],
+                                    index=[_ts]
+                                )
+                                _new_row.index.name = "time"
+                                _df = pd.concat([_df, _new_row])
+                                _df.sort_index(inplace=True)
+                                _df = _df.tail(120)  # manter últimas 120 velas
+                                _cache["assets_data"][_la_ativo] = _df
+
+            # ── 3. Atualizar status de conexão ──
+            with _lock:
+                if _has_data or _cache["assets_data"]:
+                    _cache["connected"] = True
+                    _cache["error"] = None
+                else:
+                    _cache["error"] = "Aguardando dados do bot..."
+
+            # Log periódico (a cada 60s)
+            if time.time() - _last_log_ts > 60:
+                n_assets = len(_cache.get("assets_data", {}))
+                has_live = bool(live_assets)
+                log.info(f"Dashboard live: {n_assets} ativos carregados, live={'sim' if has_live else 'não'}")
+                _last_log_ts = time.time()
+
+        except Exception as e:
+            log.debug(f"Live broker thread error: {e}")
+
+        time.sleep(1)
+
 
 # ══════════════════════════════════════════════════════════════════
 # CACHE GLOBAL
@@ -937,7 +1268,7 @@ def _load_candles_from_cache():
             data = json.load(f)
         for ativo, adata in data.get("assets", {}).items():
             candles = adata.get("candles", [])
-            if len(candles) < 50:
+            if len(candles) < 20:
                 continue
             df = pd.DataFrame(candles)
             df.rename(columns={"t": "time", "o": "open", "h": "high", "l": "low", "c": "close"}, inplace=True)
@@ -980,7 +1311,7 @@ def _signal_scan_thread():
             fresh_signals = []
 
             for ativo, df in ad_copy.items():
-                if df is None or len(df) < 100:
+                if df is None or len(df) < 20:
                     continue
 
                 H = df["high"].values
@@ -995,7 +1326,7 @@ def _signal_scan_thread():
 
                 # Detectar pivots e Double Touch (somente DT)
                 ph, pl = detect_pivots(H, L, PIVOT_WINDOW)
-                all_hs = detect_double_touch(H, L, C, O, ph, pl, atr, n, max_candles_ago=1)
+                all_hs = detect_double_touch(H, L, C, O, ph, pl, atr, n, max_candles_ago=0)
 
                 for pat in all_hs:
                     bt = backtest_pattern(pat, C, O, H, L, n)
@@ -1011,6 +1342,25 @@ def _signal_scan_thread():
                         ia_prob = round(ia_prob * _pq, 3)
                         pat["ia_prob"] = ia_prob
                         pat["ativo"] = ativo
+                        # NN prediction
+                        _nn_res = _nn_predict_pattern(ativo, pat, H, L, C, O, n, atr)
+                        if _nn_res is not None:
+                            pat["nn_approved"] = _nn_res["approved"]
+                            pat["nn_count"] = _nn_res["count_above"]
+                            pat["nn_p1"] = _nn_res["p1"]
+                            pat["nn_p2"] = _nn_res["p2"]
+                            pat["nn_p3"] = _nn_res["p3"]
+                        else:
+                            pat["nn_approved"] = None
+                        # Gravar timestamps nos pontos-chave
+                        _sig_df_index = df.index
+                        _sig_df_len = len(_sig_df_index)
+                        for _sk in ("left_shoulder", "head", "right_shoulder", "valley1", "valley2"):
+                            _sp = pat.get(_sk)
+                            if _sp and "idx" in _sp and 0 <= _sp["idx"] < _sig_df_len:
+                                _sp["ts"] = int(_sig_df_index[_sp["idx"]].timestamp()) if hasattr(_sig_df_index[_sp["idx"]], 'timestamp') else 0
+                        if "entry_idx" in pat and 0 <= pat["entry_idx"] < _sig_df_len:
+                            pat["entry_ts"] = int(_sig_df_index[pat["entry_idx"]].timestamp()) if hasattr(_sig_df_index[pat["entry_idx"]], 'timestamp') else 0
                         fresh_signals.append(pat)
 
             # Atualizar cache com sinais frescos
@@ -1029,35 +1379,53 @@ def _signal_scan_thread():
 
 
 def _update_thread():
-    """Thread principal: lê dados do cache do bot, detecta padrões, backtest, treina IA.
-    O dashboard NÃO conecta ao broker — apenas lê o cache escrito pelo bot.
-    Retrain semanal: limpa IA e retreina do zero 1x por semana.
+    """Thread principal: processa padrões, backtest, treina IA.
+    Usa dados do live broker thread OU do cache do bot (fallback).
     """
     global _ia, _scanning
     _first_cycle = True
     _last_cache_ts = 0
+    _last_process_ts = 0
     
     while True:
         try:
-            # ── Ler dados do cache do bot (NÃO conecta ao broker) ──
-            if not os.path.exists(_DASHBOARD_CACHE_FILE):
-                log.info("Aguardando bot escrever cache (ws_dashboard_cache.json)...")
-                with _lock:
-                    _cache["connected"] = False
-                    _cache["error"] = "Aguardando bot iniciar scan..."
-                time.sleep(10)
-                continue
+            # ── Fonte de dados: live broker OU cache do bot (fallback) ──
+            _has_live_data = False
+            with _lock:
+                _has_live_data = bool(_cache["assets_data"])
 
-            # Verificar se cache foi atualizado
-            try:
-                _cache_mtime = os.path.getmtime(_DASHBOARD_CACHE_FILE)
-            except Exception:
-                _cache_mtime = 0
-            if _cache_mtime <= _last_cache_ts:
-                # Cache não mudou — aguardar
-                time.sleep(2)
+            if not _has_live_data:
+                # Sem dados do live broker — tentar cache do bot
+                if not os.path.exists(_DASHBOARD_CACHE_FILE):
+                    log.info("Aguardando conexão live ou cache do bot...")
+                    with _lock:
+                        _cache["error"] = "Aguardando conexão ao broker..."
+                    time.sleep(5)
+                    continue
+
+                try:
+                    _cache_mtime = os.path.getmtime(_DASHBOARD_CACHE_FILE)
+                except Exception:
+                    _cache_mtime = 0
+                if _cache_mtime > _last_cache_ts:
+                    _last_cache_ts = _cache_mtime
+                    bot_assets, payouts = _load_candles_from_cache()
+                    if bot_assets:
+                        with _lock:
+                            for ativo, df in bot_assets.items():
+                                _cache["assets_data"][ativo] = df
+                            _cache["payouts"].update(payouts)
+                            _cache["connected"] = True
+                            _cache["error"] = None
+                else:
+                    time.sleep(2)
+                    continue
+
+            # Não processar mais de 1x a cada 30s
+            if time.time() - _last_process_ts < 30:
+                time.sleep(5)
                 continue
-            _last_cache_ts = _cache_mtime
+            _last_process_ts = time.time()
 
             # ── Retrain semanal (1x por semana) ──
             if _first_cycle:
@@ -1079,35 +1447,33 @@ def _update_thread():
                         log.info("[IA] Stats da semana carregados — continuando acumulação")
                     else:
                         log.info("[IA] Sem stats salvos — treinando do zero")
+                # Sempre enriquecer com stats do bot principal (63k+ amostras)
+                _ia.seed_from_bot_stats()
 
-            # ── Carregar dados do cache do bot ──
-            bot_assets, payouts = _load_candles_from_cache()
-            if not bot_assets:
-                log.warning("Cache do bot vazio ou sem ativos")
-                with _lock:
-                    _cache["connected"] = False
-                    _cache["error"] = "Cache do bot sem dados"
-                time.sleep(10)
-                continue
-
+            # ── Usar dados já em cache (preenchidos pelo live broker ou cache bot) ──
             with _lock:
-                _cache["connected"] = True
-                _cache["error"] = None
-                _cache["payouts"] = payouts
+                current_assets = dict(_cache["assets_data"])
+                current_payouts = dict(_cache["payouts"])
+
+            if not current_assets:
+                time.sleep(5)
+                continue
 
             assets_patterns = {}
             live_signals = []
             _ia_new = HS_IA()
+            # ── Seed a partir da base do bot (63k+ amostras estáveis) ──
+            _ia_new.seed_from_bot_stats()
+            # ── Herdar geometria aprendida (não perder histórico visual) ──
+            if _ia and _ia.geometry_history:
+                _ia_new.geometry_history = list(_ia.geometry_history)
 
-            log.info(f"Processando {len(bot_assets)} ativos do cache do bot...")
+            log.info(f"Processando {len(current_assets)} ativos...")
             _scanning = True
 
-            for ativo, df in bot_assets.items():
-                if df is None or len(df) < 100:
+            for ativo, df in current_assets.items():
+                if df is None or len(df) < 20:
                     continue
-
-                with _lock:
-                    _cache["assets_data"][ativo] = df
 
                 H = df["high"].values
                 L = df["low"].values
@@ -1135,12 +1501,43 @@ def _update_thread():
                         ia_prob = round(ia_prob * _pq, 3)
                         pat["ia_prob"] = ia_prob
                         pat["ativo"] = ativo
+                        # NN prediction for live signal
+                        _nn_res = _nn_predict_pattern(ativo, pat, H, L, C, O, n, atr)
+                        if _nn_res is not None:
+                            pat["nn_approved"] = _nn_res["approved"]
+                            pat["nn_count"] = _nn_res["count_above"]
+                            pat["nn_p1"] = _nn_res["p1"]
+                            pat["nn_p2"] = _nn_res["p2"]
+                            pat["nn_p3"] = _nn_res["p3"]
+                        else:
+                            pat["nn_approved"] = None
                         live_signals.append(pat)
                         patterns_with_results.append({**pat, "backtest": None, "ia_prob": ia_prob})
                     elif bt["result"] in ("win", "loss"):
                         _ia_new.learn(ativo, pat, bt, atr)
                         ia_prob = _ia.predict(ativo, pat)
                         patterns_with_results.append({**pat, "backtest": bt, "ia_prob": round(ia_prob, 3)})
+
+                # ── Gravar timestamps nos pontos-chave para mapeamento estável ──
+                _df_index = df.index
+                _df_len = len(_df_index)
+                for _pr in patterns_with_results:
+                    for _pkey in ("left_shoulder", "head", "right_shoulder", "valley1", "valley2"):
+                        _pt = _pr.get(_pkey)
+                        if _pt and "idx" in _pt:
+                            _pi = _pt["idx"]
+                            if 0 <= _pi < _df_len:
+                                _pt["ts"] = int(_df_index[_pi].timestamp()) if hasattr(_df_index[_pi], 'timestamp') else 0
+                    if "entry_idx" in _pr:
+                        _ei = _pr["entry_idx"]
+                        if 0 <= _ei < _df_len:
+                            _pr["entry_ts"] = int(_df_index[_ei].timestamp()) if hasattr(_df_index[_ei], 'timestamp') else 0
+                    _bt = _pr.get("backtest")
+                    if _bt:
+                        for _bk in ("entry_idx", "exit_idx"):
+                            _bi = _bt.get(_bk, -1)
+                            if 0 <= _bi < _df_len:
+                                _bt[_bk.replace("idx", "ts")] = int(_df_index[_bi].timestamp()) if hasattr(_df_index[_bi], 'timestamp') else 0
 
                 if patterns_with_results:
                     assets_patterns[ativo] = patterns_with_results
@@ -1165,7 +1562,7 @@ def _update_thread():
                 _cache["last_update"] = time.time()
                 _cache["scan_count"] += 1
 
-            log.info(f"[IA] Total: {summary['total']} padrões | WR: {summary['wr']:.1f}% | "
+            log.info(f"[IA] WR: {summary['wr']:.1f}% | "
                      f"Live: {len(live_signals)} sinais")
 
         except Exception as e:
@@ -1173,10 +1570,9 @@ def _update_thread():
             log.error(f"Erro: {e}", exc_info=True)
             with _lock:
                 _cache["error"] = str(e)
-                _cache["connected"] = False
 
-        # Sleep 3s e verificar novamente se cache foi atualizado  
-        time.sleep(3)
+        # Sleep 10s e verificar novamente se cache foi atualizado  
+        time.sleep(10)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1200,10 +1596,23 @@ def build_api_data():
         live = _cache["live_signals"]
         payouts = _cache["payouts"]
         scan_count = _cache["scan_count"]
+
+    # ── Ler velas live do bot para merge em tempo real ──
+    _live_candles_by_asset = {}
+    try:
+        _live_file = os.path.join(_USER_DIR, "ws_live_candles.json")
+        if os.path.exists(_live_file):
+            _lf_age = time.time() - os.path.getmtime(_live_file)
+            if _lf_age < 15:
+                with open(_live_file, "r") as _lf:
+                    _ld = json.load(_lf)
+                _live_candles_by_asset = _ld.get("assets", {})
+    except Exception:
+        pass
     
     charts = {}
     for ativo, df in ad.items():
-        last_120 = df.tail(120)
+        last_120 = df.tail(_LIVE_N_CANDLES)
         candles = []
         for ts, row in last_120.iterrows():
             candles.append({
@@ -1213,33 +1622,92 @@ def build_api_data():
                 "l": round(float(row["low"]), 6),
                 "c": round(float(row["close"]), 6),
             })
+
+        # ── Merge: atualizar/adicionar velas live no final ──
+        _asset_live = _live_candles_by_asset.get(ativo, [])
+        if _asset_live and candles:
+            for _lc in _asset_live:
+                _lt = _lc.get("t", 0)
+                if _lt <= 0:
+                    continue
+                _bar = {
+                    "t": int(_lt),
+                    "o": _lc.get("o", 0),
+                    "h": _lc.get("h", 0),
+                    "l": _lc.get("l", 0),
+                    "c": _lc.get("c", 0),
+                }
+                # Procurar candle existente com mesmo timestamp
+                _found = False
+                for _ci in range(len(candles) - 1, max(len(candles) - 10, -1), -1):
+                    _ct = candles[_ci].get("t", "")
+                    # Comparar: live usa int epoch, cache usa ISO string
+                    if isinstance(_ct, str) and _ct:
+                        try:
+                            _ct_epoch = int(pd.Timestamp(_ct).timestamp())
+                        except Exception:
+                            continue
+                    else:
+                        _ct_epoch = int(_ct) if _ct else 0
+                    if _ct_epoch == int(_lt):
+                        candles[_ci] = _bar
+                        _found = True
+                        break
+                if not _found:
+                    candles.append(_bar)
         
+        # ── Normalizar timestamps: tudo como epoch int ──
+        for _ci in range(len(candles)):
+            _ct = candles[_ci]["t"]
+            if isinstance(_ct, str):
+                try:
+                    candles[_ci]["t"] = int(pd.Timestamp(_ct).timestamp())
+                except Exception:
+                    pass
+            elif isinstance(_ct, float):
+                candles[_ci]["t"] = int(_ct)
+
         pats_data = ap.get(ativo, [])
-        n_total = len(df)
-        offset = n_total - 120  # para mapear índices do padrão para o gráfico
-        
+
+        # ── Lookup: epoch → chart_idx ──
+        _ts_to_ci = {}
+        for _ci, _candle in enumerate(candles):
+            _ts_to_ci[int(_candle["t"])] = _ci
+
         # Mapear padrões para coordenadas do gráfico
         mapped_pats = []
         for p in pats_data:
             mp = dict(p)
-            # Ajustar índices relativos aos 120 candles exibidos
             for key in ["left_shoulder", "head", "right_shoulder", "valley1", "valley2"]:
                 if key in mp and mp[key]:
                     mp[key] = dict(mp[key])
-                    mp[key]["chart_idx"] = mp[key]["idx"] - offset
+                    _pts = mp[key].get("ts", 0)
+                    if _pts and int(_pts) in _ts_to_ci:
+                        mp[key]["chart_idx"] = _ts_to_ci[int(_pts)]
+                    else:
+                        mp[key]["chart_idx"] = -1
             if "entry_idx" in mp:
-                mp["entry_chart_idx"] = mp["entry_idx"] - offset
+                _ets = mp.get("entry_ts", 0)
+                if _ets and int(_ets) in _ts_to_ci:
+                    mp["entry_chart_idx"] = _ts_to_ci[int(_ets)]
+                else:
+                    mp["entry_chart_idx"] = -1
             if mp.get("backtest") and "entry_idx" in mp["backtest"]:
                 mp["backtest"] = dict(mp["backtest"])
-                mp["backtest"]["entry_chart_idx"] = mp["backtest"]["entry_idx"] - offset
-                mp["backtest"]["exit_chart_idx"] = mp["backtest"]["exit_idx"] - offset
-            mapped_pats.append(mp)
+                _bet = mp["backtest"].get("entry_ts", 0)
+                _bxt = mp["backtest"].get("exit_ts", 0)
+                mp["backtest"]["entry_chart_idx"] = _ts_to_ci.get(int(_bet), -1) if _bet else -1
+                mp["backtest"]["exit_chart_idx"] = _ts_to_ci.get(int(_bxt), -1) if _bxt else -1
+            # Só incluir padrões com Toque 2 visível no gráfico
+            rs_ci = mp.get("right_shoulder", {}).get("chart_idx", -1)
+            if rs_ci >= 0 and rs_ci < len(candles):
+                mapped_pats.append(mp)
         
         charts[ativo] = {
             "candles": candles,
             "patterns": mapped_pats,
             "payout": payouts.get(ativo, 0),
-            "n_candles": n_total,
+            "n_candles": len(candles),
         }
     
     # Live signals com IA prob
@@ -1259,6 +1727,11 @@ def build_api_data():
             "scan_ts": s.get("scan_ts", 0),
             "target": s.get("target", 0),
             "stop": s.get("stop", 0),
+            "nn_approved": s.get("nn_approved"),
+            "nn_count": s.get("nn_count", 0),
+            "nn_p1": s.get("nn_p1"),
+            "nn_p2": s.get("nn_p2"),
+            "nn_p3": s.get("nn_p3"),
         })
     
     # Broker entries: APENAS trades REAIS feitos pelo bot (lidos dos logs)
@@ -1284,14 +1757,36 @@ def build_api_data():
     except Exception:
         pass
 
+    # ── NN Stats per-ativo (lidos dos arquivos de stats salvos pelo bot) ──
+    nn_per_asset = {}
+    _top_assets = ["NZDJPY-OTC", "GBPAUD-OTC", "USDCAD-OTC", "EURNZD-OTC"]
+    for _nn_asset in _top_assets:
+        _nn_file = os.path.join(_USER_DIR, f"ws_ai_stats_{_nn_asset}.json")
+        if os.path.exists(_nn_file):
+            try:
+                with open(_nn_file, "r", encoding="utf-8") as _nf:
+                    _nn_data = json.load(_nf)
+                nn_per_asset[_nn_asset] = {
+                    "samples": _nn_data.get("samples", 0),
+                    "ml": _nn_data.get("ml", False),
+                    "ai1_val": _nn_data.get("ai1_val", 0),
+                    "ai2_val": _nn_data.get("ai2_val", 0),
+                    "ai3_val": _nn_data.get("ai3_val", 0),
+                    "ai1_ready": _nn_data.get("ai1_ready", False),
+                }
+            except Exception:
+                pass
+
     return {
         "charts": charts,
         "summary": summary,
         "live_signals": live_mapped,
         "broker_entries": broker_entries,
         "ia_training_stats": ia_training_stats,
+        "nn_per_asset": nn_per_asset,
         "scan_count": scan_count,
         "last_update": datetime.now().strftime("%H:%M:%S"),
+        "connected": _cache.get("connected", False),
         "is_premium": _IS_PREMIUM,
         "is_pro": _IS_PRO,
         "is_paid": _IS_PAID,
@@ -1306,7 +1801,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WS Trader — IA H&S Dashboard</title>
+<title>WS Trader — IA Double Touch</title>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -1333,7 +1828,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 .logo h1{font-size:15px;font-weight:700;color:var(--text-primary);letter-spacing:-0.3px}
 .logo .sub{font-size:10px;color:var(--text-muted);font-weight:400;letter-spacing:0.5px}
 .top-badges{display:flex;gap:8px;margin-left:20px}
-.tbadge{padding:4px 12px;border-radius:var(--radius-full);font-size:11px;font-weight:600;border:1px solid var(--border);display:inline-flex;align-items:center;gap:5px}
+.tbadge{padding:4px 12px;border-radius:var(--radius-full);font-size:11px;font-weight:600;border:1px solid var(--border);display:inline-flex;align-items:center;gap:5px;cursor:pointer}
 .tbadge.online{background:var(--green-bg);border-color:var(--green);color:var(--green)}
 .tbadge.scanning{background:var(--orange-bg);border-color:var(--orange);color:var(--orange);animation:tblink 2s infinite}
 .tbadge.err{background:var(--red-bg);border-color:var(--red);color:var(--red)}
@@ -1341,7 +1836,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 .top-right{margin-left:auto;display:flex;align-items:center;gap:14px}
 .top-time{font-size:12px;color:var(--text-secondary);font-weight:600;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:5px}
 .clock-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite}
-.candle-timer{display:inline-flex;align-items:center;gap:6px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-full);padding:4px 12px 4px 6px;font-size:11px;font-weight:700;color:var(--orange);font-variant-numeric:tabular-nums}
+.candle-timer{display:inline-flex;align-items:center;gap:6px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-full);padding:4px 12px 4px 6px;font-size:11px;font-weight:700;color:var(--orange);font-variant-numeric:tabular-nums;cursor:pointer}
 .candle-timer .ct-ring{position:relative;width:24px;height:24px}
 .candle-timer .ct-ring svg{transform:rotate(-90deg)}
 .candle-timer .ct-ring-bg{fill:none;stroke:var(--border);stroke-width:3}
@@ -1485,7 +1980,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
     <div class="logo-icon">W</div>
     <div>
       <h1>WS Trader</h1>
-      <div class="sub">IA Head & Shoulders</div>
+      <div class="sub">IA Double Touch</div>
     </div>
   </div>
   <div class="top-badges">
@@ -1507,12 +2002,12 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 
 <!-- STATS ROW -->
 <div class="stats-row" id="stats-bar">
-  <div class="st blue"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-layers"/></svg> Padroes</div><div class="val blue" id="st-total">0</div></div>
+  <div class="st blue"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-brain"/></svg> NN Treinado</div><div class="val blue" id="st-total" style="font-size:12px">-</div></div>
   <div class="st green"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-target"/></svg> Win Rate</div><div class="val green" id="st-wr">0%</div></div>
   <div class="st green"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-check"/></svg> Wins</div><div class="val green" id="st-wins">0</div></div>
   <div class="st red"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-x"/></svg> Losses</div><div class="val red" id="st-losses">0</div></div>
-  <div class="st blue"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-arrow-down"/></svg> H&S PUT</div><div class="val blue" id="st-hs" style="font-size:14px">-</div></div>
-  <div class="st blue"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-arrow-up"/></svg> iH&S CALL</div><div class="val blue" id="st-ihs" style="font-size:14px">-</div></div>
+  <div class="st blue"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-arrow-down"/></svg> DT PUT</div><div class="val blue" id="st-hs" style="font-size:14px">-</div></div>
+  <div class="st blue"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-arrow-up"/></svg> DB CALL</div><div class="val blue" id="st-ihs" style="font-size:14px">-</div></div>
   <div class="st yellow"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-zap"/></svg> Ao Vivo</div><div class="val yellow" id="st-live">0</div></div>
   <div class="st" id="st-ia-level-box" style="border-color:var(--text-muted)"><div class="lbl"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-brain"/></svg> IA Nível</div><div class="val" id="st-ia-level" style="font-size:13px;color:var(--text-muted)">🌱 1 - Iniciante</div></div>
 </div>
@@ -1552,7 +2047,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
       <div class="empty-state" id="empty-state">
         <div class="e-icon"><svg style="width:64px;height:64px;stroke:var(--text-muted);fill:none;stroke-width:1.5"><use href="#i-candlestick"/></svg></div>
         <div class="e-text">Selecione um ativo na lista</div>
-        <div class="e-sub">Clique em um ativo para visualizar o grafico de velas com os padroes H&S detectados pela IA</div>
+        <div class="e-sub">Clique em um ativo para visualizar o grafico de velas com os padroes detectados pela IA</div>
       </div>
     </div>
     <div class="pat-footer" id="pat-footer" style="display:none"></div>
@@ -1567,7 +2062,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
       </div>
     </div>
     <div class="rp-section entries-section">
-      <div class="rp-header"><svg class="icon-svg" style="width:13px;height:13px;stroke:var(--green)"><use href="#i-activity"/></svg> Entradas na Corretora</div>
+      <div class="rp-header" style="display:flex;align-items:center;justify-content:space-between"><span><svg class="icon-svg" style="width:13px;height:13px;stroke:var(--green)"><use href="#i-activity"/></svg> Entradas na Corretora</span><button onclick="clearTrades()" style="background:var(--red);color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;opacity:.7" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.7">Limpar</button></div>
       <div class="rp-body entries-body" id="results-list">
         <div style="color:var(--text-muted);font-size:11px;text-align:center;padding:20px 0">Sem entradas ainda</div>
       </div>
@@ -1576,7 +2071,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 
 </div>
 
-<div class="footer"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> WS Trader v5.2 — IA H&S — Velas ao vivo a cada 1s</div>
+<div class="footer"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> WS Trader v5.3 — IA Double Touch — Velas ao vivo a cada 1s</div>
 
 <script>
 let mainChart = null, mainSeries = null, selectedAtivo = null, latestData = null, candleData = [], allAtivos = [];
@@ -1647,6 +2142,8 @@ function initChart() {
 function selectAsset(ativo) {
   if (selectedAtivo !== ativo || !mainChart) {
     selectedAtivo = ativo;
+    candleData = [];  /* Limpar velas do ativo anterior */
+    _lastCandleTime = 0;
     firstRender = true;
     initChart();
     /* Reiniciar streaming de velas para novo ativo */
@@ -1655,7 +2152,8 @@ function selectAsset(ativo) {
   document.querySelectorAll('.asset-item').forEach(function(el) { el.classList.remove('active'); });
   var itemEl = document.getElementById('ai-' + ativo.replace(/[^a-zA-Z0-9]/g, '_'));
   if (itemEl) { itemEl.classList.add('active'); itemEl.scrollIntoView({ block: 'nearest' }); }
-  if (latestData) renderChart(latestData);
+  /* Buscar dados frescos para o novo ativo */
+  fetchData();
 }
 
 function renderChart(data) {
@@ -1685,34 +2183,15 @@ function renderChart(data) {
     ctDir.style.display = 'none';
   }
 
-  // Candles — setData no primeiro render ou troca de ativo.
-  // Depois, usa update() para manter em sincronia sem resetar o gráfico.
-  // Se o streaming live atualizou recentemente, NÃO sobrescrever com dados do scan (stale).
-  var _skipCandleUpdate = (_liveUpdateTs > 0 && (Date.now() - _liveUpdateTs) < 15000);
+  // Candles — SEMPRE usa setData para dados do /api/data (120 velas).
+  // update() é reservado SOMENTE para live streaming (1-2 velas).
   var newCandles = (cdata.candles || []).map(function(c) {
     return { time: parseTime(c.t), open: c.o, high: c.h, low: c.l, close: c.c };
-  });
-  var needFullSet = firstRender || candleData.length === 0;
-  if (!needFullSet && newCandles.length > 0 && candleData.length > 0) {
-    /* Trocar apenas se ativo mudou (timestamps muito diferentes) */
-    var lastOld = candleData[0] ? candleData[0].time : 0;
-    var lastNew = newCandles[0] ? newCandles[0].time : 0;
-    if (Math.abs(lastOld - lastNew) > 120) needFullSet = true;
-  }
-  if (needFullSet) {
+  }).filter(function(c) { return !isNaN(c.time) && c.time > 0; });
+  newCandles.sort(function(a, b) { return a.time - b.time; });
+  if (newCandles.length > 0) {
     candleData = newCandles;
     mainSeries.setData(candleData);
-  } else if (newCandles.length > 0 && !_skipCandleUpdate) {
-    /* Atualizar as últimas 5 velas via update() — só se live stream NÃO atualizou recentemente */
-    var lastFive = newCandles.slice(-5);
-    lastFive.forEach(function(bar) {
-      mainSeries.update(bar);
-      var found = false;
-      for (var i = candleData.length - 1; i >= 0; i--) {
-        if (candleData[i].time === bar.time) { candleData[i] = bar; found = true; break; }
-      }
-      if (!found) candleData.push(bar);
-    });
   }
   if (firstRender) {
     mainChart.timeScale().fitContent();
@@ -1733,7 +2212,7 @@ function renderChart(data) {
         else if (bt.result === 'loss') { cls = 'loss'; icoRef = '#i-x'; txt = 'LOSS'; }
         else { cls = 'skip'; icoRef = '#i-arrow-down'; txt = 'SKIP'; }
       }
-      var typeName = p.type === 'DOUBLE_TOP' ? 'DT \u25BC' : p.type === 'DOUBLE_BOTTOM' ? 'DB \u25B2' : (p.type === 'HEAD_SHOULDERS' ? 'H&S' : 'iH&S');
+      var typeName = p.type === 'DOUBLE_TOP' ? 'DT \u25BC' : p.type === 'DOUBLE_BOTTOM' ? 'DB \u25B2' : (p.type === 'HEAD_SHOULDERS' ? 'DT \u25BC' : 'DB \u25B2');
       return '<div class="pat-row"><span class="pr-type"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> ' + typeName + ' ' + p.mode + '</span><span class="pr-ia"><svg class="icon-svg" style="width:11px;height:11px;stroke:var(--purple)"><use href="#i-brain"/></svg> ' + ((p.ia_prob||0.5)*100).toFixed(0) + '%</span><span class="pr-res ' + cls + '"><svg class="icon-svg" style="width:11px;height:11px"><use href="' + icoRef + '"/></svg> ' + txt + '</span></div>';
     }).join('');
   } else {
@@ -1770,20 +2249,46 @@ function drawHSOverlay() {
     if (!ls || !hd || !rs) return;
     var lsi = ls.chart_idx, hdi = hd.chart_idx, rsi = rs.chart_idx;
     var v1i = v1 ? v1.chart_idx : -1, v2i = v2 ? v2.chart_idx : -1;
-    if (lsi < 0 || hdi < 0 || rsi < 0) return;
+    // Pular apenas se o ombro direito está fora do gráfico (padrão totalmente invisível)
+    if (rsi < 0 || rsi >= candleData.length) return;
+    // Clamp pontos à esquerda que estão fora do range (desenhar da borda)
+    if (lsi < 0) lsi = 0;
+    if (hdi < 0) hdi = 0;
+    if (v1i >= 0 && v1i >= candleData.length) v1i = candleData.length - 1;
+    if (v2i >= 0 && v2i >= candleData.length) v2i = candleData.length - 1;
     var lsx = gx(lsi), lsy = gy(ls.price), hdx = gx(hdi), hdy = gy(hd.price), rsx = gx(rsi), rsy = gy(rs.price);
     if ([lsx,lsy,hdx,hdy,rsx,rsy].some(function(v){return v===null||isNaN(v)})) return;
 
     var isDT = pat.mode === 'double_touch';
+    /* DT fix: head marker no meio entre os 2 toques (head.idx aponta pro valley, preço é touch level) */
+    if (isDT) { hdx = (lsx + rsx) / 2; }
     var isBear = pat.type === 'HEAD_SHOULDERS' || pat.type === 'DOUBLE_TOP';
-    var mainC = isDT ? '#a855f7' : (isBear ? '#ef4444' : '#10b981');
-    var mainCa = isDT ? 'rgba(168,85,247,0.15)' : (isBear ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)');
+
+    // NN-based colors for live DT patterns (sem backtest)
+    var nnApproved = pat.nn_approved;
+    var isLive = !pat.backtest;
+    var mainC, mainCa;
+    if (isDT && isLive && nnApproved === true) {
+      mainC = '#10b981'; mainCa = 'rgba(16,185,129,0.18)';  // verde = NN aprovou
+    } else if (isDT && isLive && nnApproved === false) {
+      mainC = '#ef4444'; mainCa = 'rgba(239,68,68,0.12)';   // vermelho = NN rejeitou
+    } else if (isDT && isLive) {
+      mainC = '#6b7280'; mainCa = 'rgba(107,114,128,0.12)';  // cinza = sem modelo
+    } else if (isDT) {
+      mainC = '#a855f7'; mainCa = 'rgba(168,85,247,0.15)';   // roxo = histórico
+    } else {
+      mainC = isBear ? '#ef4444' : '#10b981';
+      mainCa = isBear ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)';
+    }
 
     // ── Fill area (shoulder-to-shoulder shape) ──
     var hasV = v1i >= 0 && v2i >= 0;
     var v1x, v1y, v2x, v2y;
     if (hasV) {
-      v1x = gx(v1i); v1y = gy(v1.price); v2x = gx(v2i); v2y = gy(v2.price);
+      // Clamp valley indices dentro do range visível
+      var v1ic = Math.max(0, Math.min(v1i, candleData.length - 1));
+      var v2ic = Math.max(0, Math.min(v2i, candleData.length - 1));
+      v1x = gx(v1ic); v1y = gy(v1.price); v2x = gx(v2ic); v2y = gy(v2.price);
       if ([v1x,v1y,v2x,v2y].some(function(v){return v===null||isNaN(v)})) hasV = false;
     }
 
@@ -1816,17 +2321,28 @@ function drawHSOverlay() {
         ctx.stroke(); ctx.globalAlpha = 1;
       }
 
-      // ── Neckline: dashed line through valleys ──
-      ctx.strokeStyle = 'rgba(59,130,246,0.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
-      ctx.beginPath(); ctx.moveTo(v1x, v1y); ctx.lineTo(v2x, v2y);
-      var ndx = v2x - v1x, ndy = v2y - v1y, nl = Math.sqrt(ndx*ndx + ndy*ndy);
-      if (nl > 0) ctx.lineTo(v2x + (ndx/nl)*140, v2y + (ndy/nl)*140);
-      ctx.stroke(); ctx.setLineDash([]);
-
-      // ── Valley dots ──
-      ctx.fillStyle = 'rgba(59,130,246,0.8)';
-      ctx.beginPath(); ctx.arc(v1x, v1y, 4, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(v2x, v2y, 4, 0, Math.PI*2); ctx.fill();
+      // ── Neckline ──
+      if (isDT) {
+        // DT: neckline horizontal no nível do valley (suporte/piso)
+        var nkY = v1y;
+        var nkL = gx(Math.max(0, lsi - 3)) || lsx;
+        var nkR = gx(Math.min(candleData.length - 1, rsi + 5)) || rsx;
+        ctx.strokeStyle = 'rgba(59,130,246,0.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(nkL, nkY); ctx.lineTo(nkR, nkY); ctx.stroke(); ctx.setLineDash([]);
+        // Valley dot (único para DT)
+        ctx.fillStyle = 'rgba(59,130,246,0.8)';
+        ctx.beginPath(); ctx.arc(v1x, v1y, 4, 0, Math.PI*2); ctx.fill();
+      } else {
+        ctx.strokeStyle = 'rgba(59,130,246,0.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+        ctx.beginPath(); ctx.moveTo(v1x, v1y); ctx.lineTo(v2x, v2y);
+        var ndx = v2x - v1x, ndy = v2y - v1y, nl = Math.sqrt(ndx*ndx + ndy*ndy);
+        if (nl > 0) ctx.lineTo(v2x + (ndx/nl)*140, v2y + (ndy/nl)*140);
+        ctx.stroke(); ctx.setLineDash([]);
+        // Valley dots
+        ctx.fillStyle = 'rgba(59,130,246,0.8)';
+        ctx.beginPath(); ctx.arc(v1x, v1y, 4, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(v2x, v2y, 4, 0, Math.PI*2); ctx.fill();
+      }
     } else {
       // No valleys, just draw LS -> Head -> RS
       ctx.strokeStyle = mainC; ctx.lineWidth = 2.5; ctx.setLineDash([]);
@@ -1839,24 +2355,47 @@ function drawHSOverlay() {
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(pt.x, pt.y, 6, 0, Math.PI*2); ctx.stroke();
     });
 
-    // ── Head: ORANGE for H&S, PURPLE for DT ──
-    var headCol = isDT ? '#a855f7' : '#f59e0b';
+    // ── Head: PURPLE for DT ──
+    var headCol = '#a855f7';
     ctx.shadowColor = headCol; ctx.shadowBlur = 12;
     ctx.fillStyle = headCol; ctx.beginPath(); ctx.arc(hdx, hdy, 9, 0, Math.PI*2); ctx.fill();
     ctx.shadowBlur = 0;
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hdx, hdy, 9, 0, Math.PI*2); ctx.stroke();
     // Label inside
     ctx.fillStyle = '#000'; ctx.font = 'bold 11px Inter, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(isDT ? 'DT' : 'H', hdx, hdy);
+    ctx.fillText('DT', hdx, hdy);
     ctx.textBaseline = 'alphabetic';
+
+    // ── Proportional offset: 10% of pattern depth ──
+    var neckAvgY = hasV ? (v1y + v2y) / 2 : (lsy + rsy) / 2;
+    var patDepthPx = Math.abs(hdy - neckAvgY) || 40;
+    var oU = Math.max(6, patDepthPx * 0.10);
 
     // ── Labels ──
     ctx.font = '600 10px Inter, sans-serif'; ctx.textAlign = 'center';
     ctx.fillStyle = mainC;
-    ctx.fillText(isDT ? 'Toque 1' : 'Ombro E', lsx, isBear ? lsy - 14 : lsy + 18);
-    ctx.fillText(isDT ? 'Toque 2' : 'Ombro D', rsx, isBear ? rsy - 14 : rsy + 18);
-    ctx.fillStyle = isDT ? '#a855f7' : '#f59e0b'; ctx.font = '700 11px Inter, sans-serif';
-    ctx.fillText(isDT ? (isBear ? 'RESIST\xCANCIA' : 'SUPORTE') : 'CABECA', hdx, isBear ? hdy - 18 : hdy + 22);
+    ctx.fillText('Toque 1', lsx, isBear ? lsy - oU : lsy + oU + 4);
+    ctx.fillText('Toque 2', rsx, isBear ? rsy - oU : rsy + oU + 4);
+    ctx.fillStyle = '#a855f7'; ctx.font = '700 11px Inter, sans-serif';
+    ctx.fillText(isBear ? 'RESIST\xCANCIA' : 'SUPORTE', hdx, isBear ? hdy - oU : hdy + oU + 4);
+
+    // ── NN Label (badge) para padrões live ──
+    if (isDT && isLive) {
+      var nnLabel, nnColor;
+      if (nnApproved === true) { nnLabel = '\u2705 NN APROVADO'; nnColor = '#10b981'; }
+      else if (nnApproved === false) { nnLabel = '\u274C NN REJEITOU'; nnColor = '#ef4444'; }
+      else { nnLabel = '\u2754 SEM MODELO'; nnColor = '#6b7280'; }
+      var nnY = isBear ? hdy - oU - 14 : hdy + oU + 18;
+      ctx.font = 'bold 10px Inter, sans-serif'; ctx.textAlign = 'center';
+      // fundo pill
+      var tw = ctx.measureText(nnLabel).width + 10;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.beginPath();
+      ctx.roundRect(hdx - tw/2, nnY - 9, tw, 16, 4);
+      ctx.fill();
+      ctx.fillStyle = nnColor;
+      ctx.fillText(nnLabel, hdx, nnY + 2);
+    }
 
     if (hasV) {
       ctx.fillStyle = 'rgba(59,130,246,0.7)'; ctx.font = '600 9px Inter, sans-serif';
@@ -1922,14 +2461,15 @@ function drawHSOverlay() {
     }
 
     // ── Direction arrow + label ──
+    var arrowOff = oU * 2;
     ctx.fillStyle = isBear ? '#ef4444' : '#10b981';
     ctx.beginPath();
-    if (isBear) { ctx.moveTo(rsx, rsy + 34); ctx.lineTo(rsx - 7, rsy + 24); ctx.lineTo(rsx + 7, rsy + 24); }
-    else { ctx.moveTo(rsx, rsy - 34); ctx.lineTo(rsx - 7, rsy - 24); ctx.lineTo(rsx + 7, rsy - 24); }
+    if (isBear) { ctx.moveTo(rsx, rsy + arrowOff); ctx.lineTo(rsx - 7, rsy + arrowOff - 10); ctx.lineTo(rsx + 7, rsy + arrowOff - 10); }
+    else { ctx.moveTo(rsx, rsy - arrowOff); ctx.lineTo(rsx - 7, rsy - arrowOff + 10); ctx.lineTo(rsx + 7, rsy - arrowOff + 10); }
     ctx.closePath(); ctx.fill();
     ctx.font = '800 11px Inter, sans-serif'; ctx.textAlign = 'left';
-    if (isBear) { ctx.fillStyle = '#ef4444'; ctx.fillText('PUT', rsx + 12, rsy + 33); }
-    else { ctx.fillStyle = '#10b981'; ctx.fillText('CALL', rsx + 12, rsy - 27); }
+    if (isBear) { ctx.fillStyle = '#ef4444'; ctx.fillText('PUT', rsx + 12, rsy + arrowOff - 1); }
+    else { ctx.fillStyle = '#10b981'; ctx.fillText('CALL', rsx + 12, rsy - arrowOff + 5); }
 
     // ── Result badge ──
     var bt = pat.backtest, btxt = 'LIVE', bcol = '#f59e0b', bbg = 'rgba(245,158,11,0.2)';
@@ -1938,7 +2478,7 @@ function drawHSOverlay() {
       else if (bt.result === 'loss') { btxt = 'LOSS'; bcol = '#ef4444'; bbg = 'rgba(239,68,68,0.2)'; }
     }
     var bw = ctx.measureText(btxt).width + 16;
-    var bx = hdx - bw/2, by = isBear ? hdy - 40 : hdy + 30;
+    var bx = hdx - bw/2, by = isBear ? hdy - oU*2 - 4 : hdy + oU*2;
     ctx.fillStyle = bbg;
     ctx.beginPath();
     ctx.roundRect(bx, by - 10, bw, 18, 6);
@@ -1952,7 +2492,7 @@ function drawHSOverlay() {
 
     // ── Pattern name ──
     ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '600 9px Inter, sans-serif';
-    ctx.fillText(isDT ? (isBear ? 'Double Top' : 'Double Bottom') : (isBear ? 'Head & Shoulders' : 'Inverse H&S'), hdx, by + (isBear ? -28 : 34));
+    ctx.fillText(isBear ? 'Double Top' : 'Double Bottom', hdx, by + (isBear ? -28 : 34));
   });
 }
 
@@ -2011,9 +2551,13 @@ function buildLivePanel(data) {
     var cls = sig.direction === 'PUT' ? 'put' : 'call';
     var prob = ((sig.ia_prob||0.5)*100).toFixed(0);
     var dirIcon = sig.direction === 'PUT' ? '#i-arrow-down' : '#i-arrow-up';
+    var nnBadge = '';
+    if (sig.nn_approved === true) { nnBadge = '<span style="color:#10b981;font-size:10px;font-weight:700"> \u2705 NN</span>'; }
+    else if (sig.nn_approved === false) { nnBadge = '<span style="color:#ef4444;font-size:10px;font-weight:700"> \u274C NN</span>'; }
+    else { nnBadge = '<span style="color:#6b7280;font-size:10px"> \u2754</span>'; }
     return '<div class="signal-card" onclick="selectAsset(\'' + sig.ativo + '\')">' +
-      '<div class="sc-top"><span class="sc-name">' + sig.ativo + '</span><span class="sc-dir ' + cls + '"><svg class="icon-svg" style="width:10px;height:10px"><use href="' + dirIcon + '"/></svg> ' + sig.direction + '</span></div>' +
-      '<div class="sc-bottom"><span class="sc-type"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-activity"/></svg> ' + (sig.type==='HEAD_SHOULDERS'?'H&S':'iH&S') + ' ' + sig.mode + '</span>' +
+      '<div class="sc-top"><span class="sc-name">' + sig.ativo + nnBadge + '</span><span class="sc-dir ' + cls + '"><svg class="icon-svg" style="width:10px;height:10px"><use href="' + dirIcon + '"/></svg> ' + sig.direction + '</span></div>' +
+      '<div class="sc-bottom"><span class="sc-type"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-activity"/></svg> ' + (sig.type==='DOUBLE_TOP'||sig.type==='HEAD_SHOULDERS'?'DT \u25BC':'DB \u25B2') + ' ' + sig.mode + '</span>' +
       '<span class="sc-prob"><svg class="icon-svg" style="width:12px;height:12px;stroke:var(--purple)"><use href="#i-brain"/></svg> ' + prob + '%' +
       '<span class="prob-bar"><span class="prob-fill" style="width:' + prob + '%"></span></span></span></div></div>';
   }).join('');
@@ -2054,25 +2598,54 @@ function buildResultsPanel(data) {
 function updateDashboard(data) {
   latestData = data;
   var s = data.summary || {};
-  document.getElementById('st-total').textContent = s.total || 0;
+  // NN Per-Ativo: mostrar amostras treinadas por ativo
+  var nn = data.nn_per_asset || {};
+  var nnKeys = Object.keys(nn);
+  if (nnKeys.length > 0) {
+    var nnParts = nnKeys.map(function(a) {
+      var d = nn[a];
+      var name = a.replace('-OTC','');
+      return name + '=' + (d.samples || 0);
+    });
+    document.getElementById('st-total').textContent = nnParts.join(' | ');
+  } else {
+    document.getElementById('st-total').textContent = '-';
+  }
   var wr = s.wr || 0;
   var wrEl = document.getElementById('st-wr');
   wrEl.textContent = wr.toFixed(1) + '%';
   wrEl.className = 'val ' + (wr >= 60 ? 'green' : wr >= 45 ? 'yellow' : 'red');
   document.getElementById('st-wins').textContent = s.wins || 0;
   document.getElementById('st-losses').textContent = (s.total || 0) - (s.wins || 0);
-  var hs = (s.by_type || {}).HEAD_SHOULDERS;
-  var ihs = (s.by_type || {}).INV_HEAD_SHOULDERS;
-  document.getElementById('st-hs').textContent = hs ? hs.wr + '% (' + hs.total + ')' : '-';
-  document.getElementById('st-ihs').textContent = ihs ? ihs.wr + '% (' + ihs.total + ')' : '-';
+  var dt = (s.by_type || {}).DOUBLE_TOP || (s.by_type || {}).HEAD_SHOULDERS;
+  var db = (s.by_type || {}).DOUBLE_BOTTOM || (s.by_type || {}).INV_HEAD_SHOULDERS;
+  document.getElementById('st-hs').textContent = dt ? dt.wr + '% (' + dt.total + ')' : '-';
+  document.getElementById('st-ihs').textContent = db ? db.wr + '% (' + db.total + ')' : '-';
   document.getElementById('st-live').textContent = (data.live_signals || []).length;
-  // IA Level
-  var lvl = s.ia_level || {num:1, nome:'Iniciante', emoji:'\ud83c\udf31', cor:'#94a3b8'};
+  // IA Level — mostrar status NN per-ativo
   var iaLvlEl = document.getElementById('st-ia-level');
   var iaLvlBox = document.getElementById('st-ia-level-box');
-  iaLvlEl.textContent = lvl.emoji + ' ' + lvl.num + ' - ' + lvl.nome;
-  iaLvlEl.style.color = lvl.cor;
-  iaLvlBox.style.borderColor = lvl.cor;
+  var nnReady = 0;
+  var nnTotal = 0;
+  var nnK = Object.keys(nn);
+  for (var ni = 0; ni < nnK.length; ni++) {
+    nnTotal++;
+    if (nn[nnK[ni]].ml) nnReady++;
+  }
+  if (nnReady > 0) {
+    iaLvlEl.textContent = '\ud83c\udfc6 NN ' + nnReady + '/' + nnTotal + ' ativos';
+    iaLvlEl.style.color = '#10b981';
+    iaLvlBox.style.borderColor = '#10b981';
+  } else if (nnTotal > 0) {
+    iaLvlEl.textContent = '\u26a0\ufe0f NN carregando...';
+    iaLvlEl.style.color = '#f59e0b';
+    iaLvlBox.style.borderColor = '#f59e0b';
+  } else {
+    var lvl = s.ia_level || {num:1, nome:'Iniciante', emoji:'\ud83c\udf31', cor:'#94a3b8'};
+    iaLvlEl.textContent = lvl.emoji + ' ' + lvl.num + ' - ' + lvl.nome;
+    iaLvlEl.style.color = lvl.cor;
+    iaLvlBox.style.borderColor = lvl.cor;
+  }
   document.getElementById('badge-scan').innerHTML = '<svg class="icon-svg" style="width:12px;height:12px"><use href="#i-layers"/></svg> Scan #' + (data.scan_count || 0);
   document.getElementById('badge-status').innerHTML = '<svg class="icon-svg" style="width:12px;height:12px"><use href="#i-wifi"/></svg> Online';
   document.getElementById('badge-status').className = 'tbadge online';
@@ -2098,9 +2671,9 @@ async function fetchData() {
 }
 
 fetchData();
-setInterval(fetchData, 5000);
+setInterval(fetchData, 15000);
 
-/* ═══ LIVE CANDLE STREAMING — atualiza a cada 5s ═══ */
+/* ═══ LIVE CANDLE STREAMING — atualiza a cada 2s ═══ */
 var _liveInterval = null;
 var _lastCandleTime = 0;
 var _liveFetching = false;
@@ -2114,7 +2687,7 @@ function startLiveCandles() {
     if (!selectedAtivo || !mainSeries || !mainChart) return;
     /* Safety: se _liveFetching ficou true por >15s, forçar reset */
     if (_liveFetching) {
-      if (Date.now() - _liveFetchStart > 15000) { _liveFetching = false; }
+      if (Date.now() - _liveFetchStart > 5000) { _liveFetching = false; }
       else return;
     }
     _liveFetchStart = Date.now();
@@ -2124,31 +2697,49 @@ function startLiveCandles() {
       if (!r.ok) { _liveFetching = false; return; }
       var d = await r.json();
       if (!d.candles || d.candles.length === 0 || d.ativo !== selectedAtivo) { _liveFetching = false; return; }
-      d.candles.forEach(function(c) {
-        var t = parseTime(c.t);
-        if (isNaN(t) || t <= 0) return;
-        var bar = { time: t, open: c.o, high: c.h, low: c.l, close: c.c };
-        mainSeries.update(bar);
-        if (t > _lastCandleTime && _lastCandleTime > 0) {
-          requestAnimationFrame(drawHSOverlay);
-        }
-        _lastCandleTime = Math.max(_lastCandleTime, t);
+      /* Filtrar e ordenar velas live */
+      var liveBars = d.candles.map(function(c) {
+        return { time: parseTime(c.t), open: c.o, high: c.h, low: c.l, close: c.c };
+      }).filter(function(c) { return !isNaN(c.time) && c.time > 0; });
+      liveBars.sort(function(a, b) { return a.time - b.time; });
+      /* Atualizar as últimas 5 velas via update() para manter gráfico fresco */
+      var barsToUpdate = liveBars.slice(-5);
+      barsToUpdate.forEach(function(bar) {
+        try { mainSeries.update(bar); } catch(e) { /* timestamp fora de ordem — ignorar */ }
+        _lastCandleTime = Math.max(_lastCandleTime, bar.time);
         var found = false;
-        for (var i = candleData.length - 1; i >= 0; i--) {
-          if (candleData[i].time === t) { candleData[i] = bar; found = true; break; }
+        for (var i = candleData.length - 1; i >= Math.max(0, candleData.length - 10); i--) {
+          if (candleData[i].time === bar.time) { candleData[i] = bar; found = true; break; }
         }
         if (!found) candleData.push(bar);
       });
+      /* Sempre redesenhar overlay após atualizar velas */
+      requestAnimationFrame(drawHSOverlay);
       _liveUpdateTs = Date.now();
       _liveErrorCount = 0;
     } catch(e) {
       _liveErrorCount++;
     }
     _liveFetching = false;
-  }, 5000);
+  }, 2000);
 }
 /* Iniciar streaming de velas automaticamente */
 startLiveCandles();
+
+/* ═══ REDRAW PERIÓDICO — redesenha overlay a cada 30s para manter sincronizado ═══ */
+setInterval(function() {
+  if (mainChart && mainSeries && selectedAtivo) {
+    requestAnimationFrame(drawHSOverlay);
+  }
+}, 30000);
+
+async function clearTrades() {
+  try {
+    await fetch('/api/clear_trades', {method:'POST'});
+    var el = document.getElementById('results-list');
+    if (el) el.innerHTML = '<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:20px 0">Entradas limpas</div>';
+  } catch(e) {}
+}
 
 </script>
 </body>
@@ -2174,7 +2765,24 @@ class HSHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path == "/api/trade":
+        if path == "/api/clear_trades":
+            with _real_trades_lock:
+                _real_trades.clear()
+            # Limpar arquivos de trade logs também
+            for suffix in ("iq", "bullex", "casatrader"):
+                _fpath = os.path.join(_USER_DIR, f"ws_live_trades_{suffix}.json")
+                try:
+                    if os.path.exists(_fpath):
+                        with open(_fpath, "w", encoding="utf-8") as _f:
+                            json.dump({"trades": []}, _f)
+                except Exception:
+                    pass
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":true}')
+        elif path == "/api/trade":
             # Bot envia trade real em tempo real
             try:
                 length = int(self.headers.get("Content-Length", 0))
@@ -2229,12 +2837,14 @@ class HSHandler(SimpleHTTPRequestHandler):
         if path == "/" or path == "/index.html":
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
             self.end_headers()
             self.wfile.write(DASHBOARD_HTML.encode("utf-8"))
         
         elif path == "/api/data":
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self._cors_headers()
             self.end_headers()
             try:
@@ -2251,19 +2861,20 @@ class HSHandler(SimpleHTTPRequestHandler):
                 _selected_ativo = ativo
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self._cors_headers()
             self.end_headers()
             try:
                 candles = []
-                # PRIORIDADE 1: Ler arquivo live do bot (streaming real-time 1s)
+
+                # PRIORIDADE 1: Ler arquivo live do bot
                 _live_file = os.path.join(_USER_DIR, "ws_live_candles.json")
-                _used_live = False
                 if os.path.exists(_live_file):
                     _max_retries = 2
                     for _retry in range(_max_retries):
                         try:
                             _lf_age = time.time() - os.path.getmtime(_live_file)
-                            if _lf_age < 30:  # Arquivo com menos de 30s = fresco
+                            if _lf_age < 120:  # aceita até 2 min
                                 with open(_live_file, "r") as _lf:
                                     _raw = _lf.read()
                                 if _raw:
@@ -2279,16 +2890,14 @@ class HSHandler(SimpleHTTPRequestHandler):
                                                 "l": _c.get("l", 0),
                                                 "c": _c.get("c", 0),
                                             })
-                                        _used_live = True
-                                break  # sucesso, sair do retry
+                                break
                         except (json.JSONDecodeError, PermissionError):
-                            # Arquivo sendo escrito pelo bot — retry
                             import time as _time_mod
                             _time_mod.sleep(0.05)
                         except Exception:
                             break
 
-                # FALLBACK: cache antigo (DataFrame)
+                # FALLBACK: cache DataFrame
                 if not candles:
                     with _lock:
                         df = _cache["assets_data"].get(ativo)
@@ -2321,20 +2930,22 @@ def main():
     args = parser.parse_args()
     
     log.info(f"{'='*60}")
-    log.info(f"  🧠 WS Trader — IA H&S Dashboard (SOMENTE LEITURA)")
-    log.info(f"  📊 Dados: lidos do cache do bot (sem conexão ao broker)")
+    log.info(f"  🧠 WS Trader — IA Double Touch Dashboard")
+    log.info(f"  📊 Dados: leitura passiva dos arquivos do bot (sem conexão própria)")
     log.info(f"  🌐 http://localhost:{args.port}")
     log.info(f"{'='*60}")
     
-    # Thread de dados (lê cache do bot a cada ~10s — detecta padrões + treino IA)
+    # Thread LIVE: conecta ao broker independentemente e busca candles
+    t_live = threading.Thread(target=_live_broker_thread, daemon=True)
+    t_live.start()
+    
+    # Thread de dados (lê cache do bot + dados live — detecta padrões + treino IA)
     t = threading.Thread(target=_update_thread, daemon=True)
     t.start()
     
     # Thread de detecção rápida de sinais (a cada ~55s — mantém live_signals frescos)
     t_sig = threading.Thread(target=_signal_scan_thread, daemon=True)
     t_sig.start()
-    
-    # SEM thread de atualização rápida de velas (não conecta ao broker)
     
     # HTTP server THREADING com reuse_address — live candles não trava!
     class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):

@@ -755,6 +755,7 @@ def login_screen(page: ft.Page):
         bgcolor="#607D8B",
         style=ft.ButtonStyle(
             shape=ft.RoundedRectangleBorder(radius=8),
+            mouse_cursor=ft.MouseCursor.CLICK,
         ),
         disabled=True
     )
@@ -837,7 +838,8 @@ def login_screen(page: ft.Page):
                             icon=ft.Icons.HOME,
                             icon_color="#FFFFFF",
                             icon_size=18,
-                            on_click=go_home
+                            on_click=go_home,
+                            style=ft.ButtonStyle(mouse_cursor=ft.MouseCursor.CLICK),
                         ),
                     ],
                     spacing=6,
