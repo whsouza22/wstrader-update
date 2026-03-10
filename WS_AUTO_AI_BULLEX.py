@@ -1903,18 +1903,6 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict, early_on
             pat_type = pat["type"]
             mode = pat.get("mode", "classic")
 
-            # ═══ BLOQUEIO 3º+ TOQUE: contar pivots confirmados no nível ═══
-            # n_pivots_at_level conta TODOS os pivots no nível (inclui LS + RS do DT).
-            # DT normal = 2 pivots (left + right shoulder). 3+ = nível desgastado.
-            _n_piv = pat.get("n_pivots_at_level", 1)
-            if _n_piv >= 3:
-                log.info(paint(
-                    f"  🚫 3º+ TOQUE BLOQUEADO: {ativo} {direction} "
-                    f"— {_n_piv} pivots confirmados no nível (desgastado)",
-                    C.R
-                ))
-                continue
-
             # ═══ MEMÓRIA DT: Bloquear nível já operado ═══
             _rs_price_check = pat.get("right_shoulder", {}).get("price", 0)
             if _is_dt_level_already_traded(ativo, _rs_price_check, direction, atr):
@@ -3344,39 +3332,12 @@ def _main_inner():
                         _nn_penalty = _nn_pred.get("consensus_penalty", 0)
                         _NN_MIN_PROB = _dyn_params["nn_min_prob"]
 
-                        # ── MACRO TREND PENALTY (NN mais inteligente) ──
-                        _macro = _analyze_macro_trend(_guard_df, atr_val, direcao)
-                        _macro_penalty = _macro.get("macro_penalty", 0.0)
-                        if _macro_penalty > 0:
-                            _nn_score = max(0.0, _nn_score - _macro_penalty)
-                            log.info(paint(
-                                f"  📉 MACRO TREND: penalty=-{_macro_penalty:.2f} → "
-                                f"nn_score ajustado={_nn_score:.0%} | "
-                                f"consec={_macro['consecutive']} bear={_macro['bearish_pct']:.0%} "
-                                f"drift={_macro['drift_atr']:.1f}ATR",
-                                C.Y
-                            ))
-
                         _nn_approved = _nn_score >= _NN_MIN_PROB
-
-                        # ── MACRO TREND HARD BLOCK ──
-                        if _nn_approved and _macro.get("block", False):
-                            _nn_approved = False
-                            log.info(paint(
-                                f"  🚫 MACRO TREND GUARD: Tendência forte contra {direcao} — "
-                                f"{_macro['reason']} — BLOQUEADO",
-                                C.R
-                            ))
-                            print(
-                                f">>> MACRO TREND bloqueou {ativo} {direcao}: {_macro['reason']}",
-                                flush=True
-                            )
 
                         if _nn_approved:
                             log.info(paint(
                                 f"  ✅ NN APROVADO: score={_nn_score:.0%} "
-                                f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}"
-                                f" macro=-{_macro_penalty:.2f}) | "
+                                f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
                                 f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str} | "
                                 f"EXP={_smart_exp}min",
                                 C.G

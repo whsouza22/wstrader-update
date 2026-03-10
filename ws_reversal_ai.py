@@ -172,6 +172,7 @@ DT_FEATURE_NAMES = [
     "rsi_dir_adjusted",      # f20 RSI(14) ajustado pela direção       0–1
     "candle_range_ratio",    # f21 Tamanho da vela RS / ATR             0–1
     "acceleration",          # f22 Aceleração do momentum              -1 to +1
+    "n_pivots_at_level",     # f23 Pivots no nível (2=DT, 3+=desgast)   0–1
 ]
 
 
