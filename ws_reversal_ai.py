@@ -91,7 +91,7 @@ MODEL_PERSIST_FILE    = os.path.join(_user_data_dir, "reversal_tf_{broker}.pkl")
 MODEL_PERSIST_MAX_AGE = 365 * 24 * 3600   # 365 dias — modelo treinado NUNCA expira
 GITHUB_MODEL_URL = os.getenv(
     "WS_MODEL_URL",
-    "https://raw.githubusercontent.com/whsouza22/wstrader-update/main/reversal_tf_{broker}.pkl"
+    "https://raw.githubusercontent.com/whsouza22/wstrader-update/main/models/reversal_tf_{broker}.pkl"
 )
 
 # ═══════════════════════════════════════════════════════

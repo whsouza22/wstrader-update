@@ -27,6 +27,10 @@
 !agents/
 !agents/**
 
+# Modelos NN treinados
+!models/
+!models/**
+
 # Imagens
 !Img/
 !Img/**
