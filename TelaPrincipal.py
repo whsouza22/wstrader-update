@@ -1280,6 +1280,14 @@ async def main(page: ft.Page):
             page.views.append(ft.View(route="/password_changed_success", controls=[]))
             from Login_Screen import password_changed_success_screen
             password_changed_success_screen(page)
+        elif page.route.startswith("/license_validation"):
+            page.views.append(ft.View(route="/license_validation", controls=[]))
+            from Login_Screen import license_validation_screen
+            license_validation_screen(page)
+        elif page.route.startswith("/license_checking"):
+            page.views.append(ft.View(route="/license_checking", controls=[]))
+            from Login_Screen import show_license_checking
+            show_license_checking(page)
         elif page.route.startswith("/authenticating"):
             page.views.append(ft.View(route="/authenticating", controls=[]))
             show_auth_and_process(page)

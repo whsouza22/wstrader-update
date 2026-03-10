@@ -128,45 +128,48 @@ CUSTOMER_PORTAL_LINK = "https://billing.stripe.com/p/login/00g6oQcPN8tl3VC9AA"
 # Função para verificar a assinatura via API externa
 def check_subscription(email, selected_lang):
     t = get_translation(selected_lang)
+    _product_map = {"PRO": "prod_S4t8FQuUptWQ6R", "DEMO": "prod_U3CRqZJMVigJAK", "PREMIUM": "prod_U4ZxrEEApDg2Hb"}
     try:
-        # Tenta o backend LOCAL primeiro (retorna product_id)
-        urls = [
-            "http://127.0.0.1:8000/check_subscription",
-            "https://api-wstrader.onrender.com/check_subscription",
-        ]
-        data = None
-        for url in urls:
-            try:
-                response = requests.post(url, json={"email": email}, timeout=10)
-                response.raise_for_status()
-                data = response.json()
-                if data.get("status") in ["active", "trial"]:
-                    logger.info(f"Assinatura válida via {url}")
-                    break
-            except Exception as ex:
-                logger.debug(f"Fallback: {url} falhou ({ex})")
-                continue
-
-        if data is None:
-            return False, t['backend_config_error']
-
-        if data.get("status") in ["active", "trial"]:
-            logger.info(f"Assinatura válida encontrada para o email: {email}")
-            # Salvar product_id no .env para controle de plano (DEMO vs PRO)
-            product_id = data.get("product_id", "")
-            if product_id:
-                try:
-                    _save_product_id(product_id)
-                except Exception as ex:
-                    logger.warning(f"Não foi possível salvar product_id: {ex}")
+        # 1) Tenta backend LOCAL (mais rápido — roda junto com o app)
+        try:
+            response = requests.post(
+                "http://127.0.0.1:8000/check_subscription",
+                json={"email": email}, timeout=5
+            )
+            response.raise_for_status()
+            data = response.json()
+            if data.get("status") in ["active", "trial"]:
+                logger.info(f"Assinatura válida via backend local")
+                product_id = data.get("product_id", "")
+                if product_id:
+                    try:
+                        _save_product_id(product_id)
+                    except Exception:
+                        pass
+                return True, data.get("message", "Assinatura ativa.")
             else:
-                logger.warning("⚠️ Backend não retornou product_id — plano pode ficar bloqueado")
-            return True, data.get("message", "Assinatura ativa.")
+                return False, data.get("message", t['backend_no_active_subscription'])
+        except Exception as ex:
+            logger.debug(f"Backend local indisponível: {ex}")
+
+        # 2) Stripe direto (sem backend intermediário)
+        from license_manager import check_stripe_subscription
+        logger.info(f"🔑 Verificando Stripe direto para: {email}")
+        is_valid, license_type, error = check_stripe_subscription(email)
+        if is_valid:
+            logger.info(f"✅ Stripe direto: plano {license_type} válido")
+            _pid = _product_map.get(license_type, "")
+            if _pid:
+                try:
+                    _save_product_id(_pid)
+                except Exception:
+                    pass
+            return True, f"Assinatura {license_type} ativa."
         else:
-            logger.warning(f"Assinatura inválida para o email: {email}. Motivo: {data.get('message')}")
-            return False, data.get("message", t['backend_no_active_subscription'])
-    except RequestException as e:
-        logger.error(f"Erro ao verificar assinatura via API: {str(e)}")
+            logger.warning(f"Stripe direto: {error}")
+            return False, error or t['backend_no_active_subscription']
+    except Exception as e:
+        logger.error(f"Erro ao verificar assinatura: {str(e)}")
         return False, t['backend_config_error']
 
 

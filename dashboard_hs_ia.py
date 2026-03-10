@@ -134,9 +134,11 @@ def _nn_predict_pattern(ativo, pat, H, L, C, O, n, atr):
             round(p2, 2) >= _NN_MIN_PROB,
             round(p3, 2) >= _NN_MIN_PROB if p3 is not None else False
         ])
+        nn_score = pred.get("nn_score", pred.get("prob_win", 0))
         return {
-            "approved": count_above >= 2,
+            "approved": nn_score >= _NN_MIN_PROB,
             "count_above": count_above,
+            "nn_score": round(nn_score, 3),
             "p1": round(p1, 3),
             "p2": round(p2, 3),
             "p3": round(p3, 3) if p3 is not None else None,
@@ -1234,6 +1236,10 @@ def _load_bot_trade_logs() -> list:
                             "time": (t.get("time", "")[-8:-3] if t.get("time") else ""),
                             "ts": t.get("ts", 0),
                             "broker": t.get("broker", suffix),
+                            "nn_approved": t.get("nn_approved"),
+                            "nn_p1": t.get("nn_p1"),
+                            "nn_p2": t.get("nn_p2"),
+                            "nn_p3": t.get("nn_p3"),
                         })
         except Exception:
             pass
@@ -1347,6 +1353,7 @@ def _signal_scan_thread():
                         if _nn_res is not None:
                             pat["nn_approved"] = _nn_res["approved"]
                             pat["nn_count"] = _nn_res["count_above"]
+                            pat["nn_score"] = _nn_res.get("nn_score", 0)
                             pat["nn_p1"] = _nn_res["p1"]
                             pat["nn_p2"] = _nn_res["p2"]
                             pat["nn_p3"] = _nn_res["p3"]
@@ -1506,6 +1513,7 @@ def _update_thread():
                         if _nn_res is not None:
                             pat["nn_approved"] = _nn_res["approved"]
                             pat["nn_count"] = _nn_res["count_above"]
+                            pat["nn_score"] = _nn_res.get("nn_score", 0)
                             pat["nn_p1"] = _nn_res["p1"]
                             pat["nn_p2"] = _nn_res["p2"]
                             pat["nn_p3"] = _nn_res["p3"]
@@ -1710,6 +1718,26 @@ def build_api_data():
             "n_candles": len(candles),
         }
     
+    # Broker entries: APENAS trades REAIS feitos pelo bot (lidos dos logs)
+    broker_entries = _load_bot_trade_logs()
+
+    # ── Sincronizar NN: se o engine entrou (entry), o NN APROVOU ──
+    # Dashboard e engine avaliam NN em momentos diferentes → podem divergir.
+    # Se existe uma entrada ativa do engine, usar o resultado do engine.
+    _active_entries = {}
+    for be in broker_entries:
+        if be.get("result") == "entry":
+            _active_entries[(be.get("ativo", ""), be.get("dir", ""))] = be
+
+    # Corrigir nn_approved nos padrões do gráfico também
+    for ativo_key, chart_data in charts.items():
+        for mp in chart_data.get("patterns", []):
+            if not mp.get("backtest"):  # só padrões live
+                _mp_key = (ativo_key, mp.get("direction", ""))
+                _be_match = _active_entries.get(_mp_key)
+                if _be_match:
+                    mp["nn_approved"] = True
+
     # Live signals com IA prob
     live_mapped = []
     for s in live:
@@ -1729,13 +1757,23 @@ def build_api_data():
             "stop": s.get("stop", 0),
             "nn_approved": s.get("nn_approved"),
             "nn_count": s.get("nn_count", 0),
+            "nn_score": s.get("nn_score", 0),
             "nn_p1": s.get("nn_p1"),
             "nn_p2": s.get("nn_p2"),
             "nn_p3": s.get("nn_p3"),
         })
     
     # Broker entries: APENAS trades REAIS feitos pelo bot (lidos dos logs)
-    broker_entries = _load_bot_trade_logs()
+    # (já carregado acima para sincronizar NN nos gráficos)
+    for lm in live_mapped:
+        _lm_key = (lm["ativo"], lm["direction"])
+        _be_match = _active_entries.get(_lm_key)
+        if _be_match:
+            lm["nn_approved"] = True
+            if _be_match.get("nn_p1") is not None:
+                lm["nn_p1"] = _be_match["nn_p1"]
+                lm["nn_p2"] = _be_match.get("nn_p2")
+                lm["nn_p3"] = _be_match.get("nn_p3")
     # Mesclar com trades recebidos via POST (tempo real), sem duplicar
     # Cria set de chaves únicas dos trades já lidos do arquivo
     _seen = set()
@@ -2382,8 +2420,8 @@ function drawHSOverlay() {
     // ── NN Label (badge) para padrões live ──
     if (isDT && isLive) {
       var nnLabel, nnColor;
-      if (nnApproved === true) { nnLabel = '\u2705 NN APROVADO'; nnColor = '#10b981'; }
-      else if (nnApproved === false) { nnLabel = '\u274C NN REJEITOU'; nnColor = '#ef4444'; }
+      if (nnApproved === true) { nnLabel = '\u2705 NN ' + ((pat.nn_score||0)*100).toFixed(0) + '%'; nnColor = '#10b981'; }
+      else if (nnApproved === false) { nnLabel = '\u274C NN ' + ((pat.nn_score||0)*100).toFixed(0) + '%'; nnColor = '#ef4444'; }
       else { nnLabel = '\u2754 SEM MODELO'; nnColor = '#6b7280'; }
       var nnY = isBear ? hdy - oU - 14 : hdy + oU + 18;
       ctx.font = 'bold 10px Inter, sans-serif'; ctx.textAlign = 'center';
@@ -2552,8 +2590,8 @@ function buildLivePanel(data) {
     var prob = ((sig.ia_prob||0.5)*100).toFixed(0);
     var dirIcon = sig.direction === 'PUT' ? '#i-arrow-down' : '#i-arrow-up';
     var nnBadge = '';
-    if (sig.nn_approved === true) { nnBadge = '<span style="color:#10b981;font-size:10px;font-weight:700"> \u2705 NN</span>'; }
-    else if (sig.nn_approved === false) { nnBadge = '<span style="color:#ef4444;font-size:10px;font-weight:700"> \u274C NN</span>'; }
+    if (sig.nn_approved === true) { nnBadge = '<span style="color:#10b981;font-size:10px;font-weight:700"> \u2705 NN ' + ((sig.nn_score||0)*100).toFixed(0) + '%</span>'; }
+    else if (sig.nn_approved === false) { nnBadge = '<span style="color:#ef4444;font-size:10px;font-weight:700"> \u274C NN ' + ((sig.nn_score||0)*100).toFixed(0) + '%</span>'; }
     else { nnBadge = '<span style="color:#6b7280;font-size:10px"> \u2754</span>'; }
     return '<div class="signal-card" onclick="selectAsset(\'' + sig.ativo + '\')">' +
       '<div class="sc-top"><span class="sc-name">' + sig.ativo + nnBadge + '</span><span class="sc-dir ' + cls + '"><svg class="icon-svg" style="width:10px;height:10px"><use href="' + dirIcon + '"/></svg> ' + sig.direction + '</span></div>' +

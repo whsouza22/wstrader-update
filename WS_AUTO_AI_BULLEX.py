@@ -200,6 +200,19 @@ HORARIO_FIM_MIN    = 1080  # 18h00 (18*60)
 MAX_DIST_OMBRO_ATR = 0.5  # CORRIGIDO: era 1.0 (muito longe do ombro D = entrada ruim)
 MAX_DIST_NECKLINE_ATR = 0.25  # Distância máx ALÉM da neckline — se preço já ultrapassou muito, é tarde demais
 
+
+# ═══════════════════════════════════════════════════════════════
+# PARÂMETROS FIXOS — valores que rodaram bem (NN≥80%, EXP=2, cooldown=2min)
+# ═══════════════════════════════════════════════════════════════
+def _get_session_params(guard_df=None, atr_val=0.0):
+    """Retorna parâmetros fixos: NN≥80%, EXP=2min, cooldown=2min."""
+    return {
+        "nn_min_prob": 0.80,
+        "exp_minutes": 2,
+        "cooldown_sec": 2 * 60,
+    }
+
+
 # ── Ativos fixos — melhores ativos (OTC + REAL com volume) ──
 # Ranking: EURJPY-OTC 56.7% | AUDCAD-OTC 56.1% | EURGBP 55.0%
 # EURUSD 50.8% | USDCHF 50.7% | EURGBP-OTC 50.0% | EURJPY 50.0%
@@ -2489,7 +2502,8 @@ _LIVE_LOG_MAX = 100
 
 def _log_live_trade(ativo: str, direcao: str, resultado: Optional[float],
                     entry_price: Optional[float], stake: float,
-                    confidence: float = 0.0, status: str = "entry"):
+                    confidence: float = 0.0, status: str = "entry",
+                    nn_data: dict = None):
     """Grava trade no log para consumo pelo dashboard.
     Salva no arquivo JSON E envia POST ao dashboard (tempo real)."""
     record = {
@@ -2506,6 +2520,13 @@ def _log_live_trade(ativo: str, direcao: str, resultado: Optional[float],
         "dot_prob": 0.0,
         "broker": _broker_suffix,
     }
+    if nn_data:
+        record["nn_approved"] = nn_data.get("approved", True)
+        record["nn_p1"] = nn_data.get("p1", 0)
+        record["nn_p2"] = nn_data.get("p2", 0)
+        record["nn_p3"] = nn_data.get("p3")
+        record["nn_score"] = nn_data.get("nn_score", 0)
+        record["consensus_penalty"] = nn_data.get("consensus_penalty", 0)
     # ── 1) Salvar no arquivo JSON (persistência) ──
     try:
         trades = []
@@ -3002,10 +3023,10 @@ def _main_inner():
             _entry_key_simple = f"{ativo}_{direcao}"  # Bloqueia mesma direção no mesmo ativo
             _last_key_simple = "_".join(_last_entry_key.split("_")[:2]) if _last_entry_key else ""
 
-            # ── TIME DEDUP: Bloqueia qualquer entrada por 2 min após trade ──
-            # Com 3 ativos, 2 min é suficiente para evitar overtrading.
+            # ── TIME DEDUP: Cooldown dinâmico por sessão ──
+            _session_params = _get_session_params()
             _secs_since_trade = time.time() - _last_trade_time
-            _min_trade_interval = 2 * 60  # 2 minutos — rápido mas seguro
+            _min_trade_interval = _session_params["cooldown_sec"]
             if _last_trade_time > 0 and _secs_since_trade < _min_trade_interval:
                 _wait_remain = int(_min_trade_interval - _secs_since_trade)
                 log.info(paint(
@@ -3022,6 +3043,13 @@ def _main_inner():
                     f"  🚫 DEDUP: Mesmo padrão/direção já operado ({ativo} {direcao}) — SKIP",
                     C.Y
                 ))
+                s = seconds_to_next(TF_M1)
+                time.sleep(min(s + 1, 30))
+                continue
+
+            # ── CONTRA SINAL: bloqueia direção oposta no mesmo ativo ──
+            if _is_contra_signal(ativo, direcao):
+                print(f">>> IA: CONTRA SINAL bloqueou {ativo} {direcao}", flush=True)
                 s = seconds_to_next(TF_M1)
                 time.sleep(min(s + 1, 30))
                 continue
@@ -3121,9 +3149,16 @@ def _main_inner():
                 )
 
                 # ═══ NN OBRIGATÓRIA — ÚNICA DECISÃO ═══
-                # Sem NN = sem entrada. NN 2/3 ≥ 80% = APROVADO.
-                _smart_exp = EXP_FIXA
+                # Sem NN = sem entrada. NN 2/3 ≥ dinâmico = APROVADO.
+                _dyn_params = _get_session_params(_guard_df, atr_val)
+                _smart_exp = _dyn_params["exp_minutes"]
                 _nn_approved = False
+
+                log.info(paint(
+                    f"  ⚙️ SESSÃO DINÂMICA: NN_min={_dyn_params['nn_min_prob']:.0%} | "
+                    f"EXP={_smart_exp}min | cooldown={_dyn_params['cooldown_sec']//60}min",
+                    C.B
+                ))
                 if _guard_df is not None and len(_guard_df) >= 50:
                     _nn_pred = None
                     try:
@@ -3173,31 +3208,29 @@ def _main_inner():
                         _nn_p3 = _nn_pred.get("p3")
                         _nn_p3_str = f" p3={_nn_p3:.2f}" if _nn_p3 is not None else ""
                         _nn_prob = _nn_pred.get("prob_win", 0)
-                        _NN_MIN_PROB = 0.80
+                        _nn_score = _nn_pred.get("nn_score", _nn_prob)
+                        _nn_penalty = _nn_pred.get("consensus_penalty", 0)
+                        _NN_MIN_PROB = _dyn_params["nn_min_prob"]
 
-                        _nn_count_above = sum([
-                            round(_nn_p1, 2) >= _NN_MIN_PROB,
-                            round(_nn_p2, 2) >= _NN_MIN_PROB,
-                            round(_nn_p3, 2) >= _NN_MIN_PROB if _nn_p3 is not None else False
-                        ])
-                        _nn_approved = _nn_count_above >= 2
+                        _nn_approved = _nn_score >= _NN_MIN_PROB
 
                         if _nn_approved:
                             log.info(paint(
-                                f"  ✅ NN APROVADO: {_nn_count_above}/3 IAs ≥80% "
-                                f"(prob={_nn_prob:.0%} votos={_nn_votes}/{_nn_total}) | "
-                                f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}",
+                                f"  ✅ NN APROVADO: score={_nn_score:.0%} "
+                                f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
+                                f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str} | "
+                                f"EXP={_smart_exp}min",
                                 C.G
                             ))
                         else:
                             log.info(paint(
-                                f"  🚫 NN REJEITOU: apenas {_nn_count_above}/3 IAs ≥80% "
-                                f"(prob={_nn_prob:.0%} votos={_nn_votes}/{_nn_total}) | "
+                                f"  🚫 NN REJEITOU: score={_nn_score:.0%} < {_NN_MIN_PROB:.0%} "
+                                f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
                                 f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}",
                                 C.R
                             ))
                             print(
-                                f">>> NN REJEITOU {ativo} {direcao}: {_nn_count_above}/3 ≥80% "
+                                f">>> NN REJEITOU {ativo} {direcao}: score={_nn_score:.0%} "
                                 f"(p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str})",
                                 flush=True
                             )
@@ -3340,8 +3373,19 @@ def _main_inner():
                 time.sleep(min(s + 1, 30))
                 continue
 
+            _nn_entry_data = None
+            if _nn_pred is not None:
+                _nn_entry_data = {
+                    "approved": True,
+                    "p1": round(_nn_p1, 3),
+                    "p2": round(_nn_p2, 3),
+                    "p3": round(_nn_p3, 3) if _nn_p3 is not None else None,
+                    "nn_score": round(_nn_score, 3),
+                    "consensus_penalty": round(_nn_penalty, 3),
+                }
             _log_live_trade(ativo, direcao, None, _live_entry_price, stake,
-                            confidence=ia_prob * 100, status="entry")
+                            confidence=ia_prob * 100, status="entry",
+                            nn_data=_nn_entry_data)
 
             _use_exp = EXP_EARLY if _is_early else _smart_exp
             op = enviar_ordem(bx, ativo, direcao, stake, exp=_use_exp)

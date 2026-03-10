@@ -3,32 +3,36 @@ WS Trader — Engine de 3 Redes Neurais para Double Top/Bottom
 ═════════════════════════════════════════════════════════════
 Contém 3 modelos de ML independentes que votam Win/Loss de padrões DT:
 
-  IA 1 (Geradora):     GradientBoosting  — analisa 15 features DT → prediz Win/Loss
+  IA 1 (Geradora):     GradientBoosting  — analisa 19 features DT → prediz Win/Loss
   IA 2 (Validadora):   LightGBM          — confirma ou rejeita a IA 1
-  IA 3 (Validadora 2): MLP 128→64→32     — captura padrões não-lineares
+  IA 3 (Validadora 2): MLP 32→16         — captura padrões não-lineares
 
 COMO FUNCIONA:
   1. O bot (WS_AUTO_AI_BULLEX.py) detecta um Double Top/Bottom
-  2. Chama extract_features() do ws_adaptive_brain.py → vetor de 15 floats
+  2. Chama extract_features() do ws_adaptive_brain.py → vetor de 19 floats
   3. Chama predict_dt(features) deste arquivo → 3 NNs votam Win ou Loss
   4. Se 2+ NNs votam Win com confiança mínima → GUARD IA 6 aprova a entrada
 
-FEATURES USADAS (15 do DT — DT_FEATURE_NAMES):
-  f0  wick_ratio         — tamanho do wick de rejeição
-  f1  close_position     — posição do close na vela (0=low, 1=high)
-  f2  candles_ago        — velas desde o toque (/10)
-  f3  depth_ratio        — profundidade do padrão / ATR
-  f4  symmetry           — simetria temporal
-  f5  span               — largura do padrão (/200)
-  f6  shoulder_ratio     — similaridade dos 2 toques
-  f7  progress_pct       — % do caminho RS→Neck já andado
-  f8  ema_score          — EMA8-EMA20 normalizado
-  f9  momentum           — força do momentum
-  f10 zone_score         — toques históricos no nível
-  f11 arm_wr             — WR histórico do ativo+tipo+modo
-  f12 approach_decay     — desaceleração do momentum na chegada
-  f13 rejection_quality  — qualidade da rejeição (41.7% importância — TOP 1)
-  f14 volatility_regime  — regime de volatilidade
+FEATURES USADAS (19 do DT — DT_FEATURE_NAMES):
+  f0  wick_ratio             — tamanho do wick de rejeição
+  f1  close_position         — posição do close na vela (0=low, 1=high)
+  f2  candles_ago            — velas desde o toque (/10)
+  f3  depth_ratio            — profundidade do padrão / ATR
+  f4  symmetry               — simetria temporal
+  f5  span                   — largura do padrão (/200)
+  f6  shoulder_ratio         — similaridade dos 2 toques
+  f7  progress_pct           — % do caminho RS→Neck já andado
+  f8  ema_score              — EMA8-EMA20 normalizado
+  f9  momentum               — momentum 5 velas (melhorado)
+  f10 zone_score             — toques históricos no nível
+  f11 arm_wr                 — WR histórico do ativo+tipo+modo
+  f12 approach_decay         — desaceleração do momentum na chegada
+  f13 rejection_quality      — qualidade da rejeição
+  f14 volatility_regime      — regime de volatilidade
+  f15 trend_strength         — tendência EMA10 vs EMA50
+  f16 price_vs_ema50         — distância preço à EMA50
+  f17 consecutive_against    — velas consecutivas contra o trade
+  f18 body_dominance         — pressão direcional líquida
 
 TREINAMENTO:
   - Offline: python train_neural_network.py (usa CSVs de candles_5000/ e candles_deep/)
@@ -37,7 +41,7 @@ TREINAMENTO:
   - Online: _train_ia_from_history() no bot faz retreino se modelo expirado
 
 MÉTODOS PRINCIPAIS:
-  - feed_dt_features(features, result) — alimenta 15 features + Win(1)/Loss(0)
+  - feed_dt_features(features, result) — alimenta 19 features + Win(1)/Loss(0)
   - predict_dt(features) — prediz Win/Loss, retorna {win, prob_win, confidence, votes}
   - train_all() — treina os 3 modelos com dados acumulados
   - feed_candles(df) — alimenta 32 features genéricas (backward compat, não usado pelo DT)
@@ -138,7 +142,7 @@ FEATURE_NAMES = [
 ]
 
 # ═══════════════════════════════════════════════════════
-#  DT FEATURES  — 17 features reais (extract_features do ws_adaptive_brain)
+#  DT FEATURES  — 19 features reais (extract_features do ws_adaptive_brain)
 # ═══════════════════════════════════════════════════════
 DT_FEATURE_NAMES = [
     "wick_ratio",            # f0  Rejection wick size                   0–1
@@ -150,7 +154,7 @@ DT_FEATURE_NAMES = [
     "shoulder_ratio",        # f6  Touch similarity                    ~0.99–1
     "progress_pct",          # f7  % of RS→Neck path traveled           0–1
     "ema_score",             # f8  EMA8-EMA20/ATR dir-adjusted         -1 to +1
-    "momentum",              # f9  Momentum strength                   -1 to +1
+    "momentum",              # f9  Momentum 5 candles dir-adjusted     -1 to +1
     "zone_score",            # f10 Historical level touches (/10)       0–1
     "arm_wr",                # f11 Historical WR for asset+type+mode    0–1
     "approach_decay",        # f12 Momentum deceleration at approach     0–1
@@ -158,6 +162,8 @@ DT_FEATURE_NAMES = [
     "volatility_regime",     # f14 Volatility regime (0=expl,1=calm)     0–1
     "trend_strength",        # f15 EMA10 vs EMA50 trend dir-adjusted   -1 to +1
     "price_vs_ema50",        # f16 Price distance from EMA50 dir-adj   -1 to +1
+    "consecutive_against",   # f17 Consecutive candles against trade     0–1
+    "body_dominance",        # f18 Net body pressure in trade dir      -1 to +1
 ]
 
 
@@ -1107,24 +1113,51 @@ class ReversalAI:
             # Peso exponencial (dados recentes valem mais)
             w = np.exp(np.linspace(-2.0, 0.0, len(Xt)))
 
-            # ── IA 1: GradientBoosting (Geradora) ──
+            # Balanceamento de classes: upweight LOSSes para evitar bias WIN
+            n_pos = int(np.sum(yt == 1))
+            n_neg = int(np.sum(yt == 0))
+            if n_pos > 0 and n_neg > 0 and n_pos > 2 * n_neg:
+                class_ratio = n_pos / n_neg
+                class_w = np.ones(len(yt))
+                class_w[yt == 0] = np.sqrt(class_ratio)  # LOSSes pesam mais
+                w = w * class_w
+                log.info(f"  Class balance: {n_pos}W/{n_neg}L → LOSSes ×{np.sqrt(class_ratio):.1f}")
+
+            # ── IA 1: GradientBoosting (Geradora) — 1ª passada ──
             ai1 = GradientBoostingClassifier(
                 n_estimators=120, max_depth=4, learning_rate=0.08,
                 subsample=0.8, min_samples_leaf=10, random_state=42)
             ai1.fit(Xt, yt, sample_weight=w)
 
-            # ── IA 2: LightGBM / ExtraTrees (Validadora) ──
+            # ── HARD-EXAMPLE MINING: upweight padrões que IA1 erra ──
+            # Padrões borderline (prob ~0.5) e errados pesam 3x mais
+            # Isso força IA2 e IA3 a focar nos casos DIFÍCEIS
+            try:
+                _proba_train = ai1.predict_proba(Xt)[:, 1]
+                _confidence = np.abs(_proba_train - 0.5)  # 0 = borderline, 0.5 = fácil
+                _hard_w = 1.0 + 2.0 * (1.0 - np.clip(_confidence * 2, 0, 1))
+                # Errados pesam 3x extra
+                _pred_train = (_proba_train >= 0.5).astype(int)
+                _wrong = _pred_train != yt
+                _hard_w[_wrong] *= 3.0
+                w_hard = w * _hard_w
+                _n_hard = int(np.sum(_wrong))
+                log.info(f"  Hard-mining: {_n_hard}/{len(yt)} errados upweighted 3×")
+            except Exception:
+                w_hard = w
+
+            # ── IA 2: LightGBM / ExtraTrees (Validadora) — com hard weights ──
             if _lgbm_ok:
                 ai2 = LGBMClassifier(
                     n_estimators=120, max_depth=4, learning_rate=0.08,
                     subsample=0.8, min_child_samples=15,
                     random_state=99, verbose=-1)
-                ai2.fit(Xt, yt, sample_weight=w)
+                ai2.fit(Xt, yt, sample_weight=w_hard)
             else:
                 ai2 = ExtraTreesClassifier(
                     n_estimators=80, max_depth=6,
                     min_samples_leaf=10, random_state=99)
-                ai2.fit(Xt, yt, sample_weight=w)
+                ai2.fit(Xt, yt, sample_weight=w_hard)
 
             # ── Validação ──
             ai1_ok = True
@@ -1165,15 +1198,41 @@ class ReversalAI:
 
                     # MLP precisa de dados normalizados
                     scaler = StandardScaler()
+
+                    # Balancear classes + oversample hard examples para MLP
+                    _pos_idx = np.where(yt == 1)[0]
+                    _neg_idx = np.where(yt == 0)[0]
+                    if len(_pos_idx) > 2 * len(_neg_idx) and len(_neg_idx) >= 20:
+                        _rng_mlp = np.random.RandomState(77)
+                        _keep_pos = _rng_mlp.choice(_pos_idx, size=2 * len(_neg_idx), replace=False)
+                        _bal_idx = np.sort(np.concatenate([_keep_pos, _neg_idx]))
+                    else:
+                        _bal_idx = np.arange(len(yt))
+
+                    # Oversample hard examples: duplicar os que IA1 errou
+                    try:
+                        _proba_mlp = ai1.predict_proba(Xt)[:, 1]
+                        _pred_mlp = (_proba_mlp >= 0.5).astype(int)
+                        _wrong_mlp = np.where(_pred_mlp != yt)[0]
+                        _hard_in_bal = np.intersect1d(_bal_idx, _wrong_mlp)
+                        if len(_hard_in_bal) >= 5:
+                            _bal_idx = np.sort(np.concatenate([_bal_idx, _hard_in_bal]))
+                            log.info(f"  MLP hard-mining: +{len(_hard_in_bal)} hard examples oversampled")
+                    except Exception:
+                        pass
+
+                    Xt_mlp = Xt.iloc[_bal_idx]
+                    yt_mlp = yt[_bal_idx]
+
                     Xt_scaled = pd.DataFrame(
-                        scaler.fit_transform(Xt), columns=Xt.columns
+                        scaler.fit_transform(Xt_mlp), columns=Xt.columns
                     )
 
                     ai3 = MLPClassifier(
-                        hidden_layer_sizes=(128, 64, 32),
+                        hidden_layer_sizes=(32, 16),
                         activation='relu',
                         solver='adam',
-                        alpha=0.001,          # Regularização L2
+                        alpha=0.1,            # Regularização L2 forte (evita overfitting)
                         learning_rate='adaptive',
                         learning_rate_init=0.001,
                         max_iter=300,
@@ -1183,7 +1242,7 @@ class ReversalAI:
                         random_state=77,
                         verbose=False,
                     )
-                    ai3.fit(Xt_scaled, yt)
+                    ai3.fit(Xt_scaled, yt_mlp)
                     self._ai3_scaler = scaler  # Guardar scaler para predição
 
                     if Xv is not None:
@@ -1193,7 +1252,7 @@ class ReversalAI:
                         pred3 = (ai3.predict_proba(Xv_scaled)[:, 1] >= 0.5).astype(int)
                         acc3 = float(np.mean(pred3 == yv))
                         self._ai3_val = acc3
-                        log.info(f"  IA 3 (MLP): val={acc3:.1%} | layers=(128,64,32)")
+                        log.info(f"  IA 3 (MLP): val={acc3:.1%} | layers=(32,16)")
                         if acc3 < MIN_VALIDATION_ACC:
                             log.info(f"  ⚠ IA 3 ({acc3:.1%}) < {MIN_VALIDATION_ACC:.0%} → desativada")
                         else:
@@ -1456,7 +1515,7 @@ class ReversalAI:
     # ──────────────────────────────────────────────
 
     def feed_dt_features(self, features, result: int):
-        """Alimenta features DT pré-extraídas (15-float) com resultado Win=1/Loss=0.
+        """Alimenta features DT pré-extraídas (19-float) com resultado Win=1/Loss=0.
 
         As features devem vir de ws_adaptive_brain.extract_features().
         SEM retreinar. Retorna 1 se adicionou, 0 se falhou.
@@ -1470,7 +1529,7 @@ class ReversalAI:
         return 1
 
     def predict_dt(self, features) -> dict | None:
-        """Prediz Win/Loss para features DT pré-extraídas (15-float).
+        """Prediz Win/Loss para features DT pré-extraídas (19-float).
 
         As features devem vir de ws_adaptive_brain.extract_features().
         Retorna dict com prob_win, confidence, p1, p2, p3, votes ou None.
@@ -1506,7 +1565,7 @@ class ReversalAI:
                 except Exception:
                     p3 = None
 
-            # Votação: 2 de 3 devem dizer WIN (p > 0.5)
+            # Votação + Consenso Inteligente
             ai1_win = p1 > 0.5
             ai2_win = p2 > 0.5
             ai1_conf = (p1 if ai1_win else 1 - p1) * 100
@@ -1529,12 +1588,23 @@ class ReversalAI:
                 prob_win = p1 * 0.6 + p2 * 0.4
                 confidence = ai1_conf * 0.6 + ai2_conf * 0.4
 
-            # WIN se maioria vota WIN
+            # ── CONSENSO INTELIGENTE ──
+            # Quando modelos discordam muito (alta variância), a predição é INCERTA.
+            # Penalizar nn_score proporcionalmente ao desvio padrão das probabilidades.
+            # Ex: p1=0.66,p2=0.90,p3=0.95 → std=0.127 → penalty=0.047 → score=0.77 (BLOQUEADO)
+            # Ex: p1=0.94,p2=0.92,p3=0.91 → std=0.012 → penalty=0    → score=0.92 (APROVADO)
+            _all_probs = [p1, p2] + ([p3] if p3 is not None else [])
+            _prob_std = float(np.std(_all_probs))
+            _consensus_penalty = max(0.0, _prob_std - 0.08) * 1.0
+            nn_score = max(0.0, prob_win - _consensus_penalty)
+
             is_win = votes_win > (total_voters / 2)
 
             return {
                 "win": is_win,
                 "prob_win": round(float(prob_win), 4),
+                "nn_score": round(float(nn_score), 4),
+                "consensus_penalty": round(float(_consensus_penalty), 4),
                 "confidence": round(float(confidence), 1),
                 "p1": round(float(p1), 4),
                 "p2": round(float(p2), 4),

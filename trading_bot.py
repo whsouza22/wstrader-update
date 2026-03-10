@@ -1560,12 +1560,12 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
     def _check_license_validity() -> bool:
         """Verifica se a licença/assinatura é válida via Stripe API.
         Retorna True se válida, False se inválida."""
+        # 1) Backend local (roda junto com o app)
         try:
-            url = "https://api-wstrader.onrender.com/check_subscription"
             response = requests.post(
-                url,
+                "http://127.0.0.1:8000/check_subscription",
                 json={"email": email.strip().lower()},
-                timeout=15
+                timeout=5
             )
             if response.status_code == 200:
                 data = response.json()
@@ -1575,17 +1575,20 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                 else:
                     logger.warning(f"❌ Licença inválida: {data.get('message', 'sem assinatura')}")
                     return False
-            else:
-                logger.warning(f"❌ Erro HTTP {response.status_code} ao verificar licença")
-                return False
-        except requests.exceptions.Timeout:
-            logger.warning("⚠️ Timeout na verificação de licença - mantendo acesso")
-            return True  # Em caso de timeout, não bloquear (falha aberta)
-        except requests.exceptions.ConnectionError:
-            logger.warning("⚠️ Sem conexão na verificação de licença - mantendo acesso")
-            return True  # Sem internet, não bloquear
-        except Exception as e:
-            logger.error(f"⚠️ Erro na verificação de licença: {e}")
+        except Exception as ex:
+            logger.debug(f"Backend local indisponível: {ex}")
+
+        # 2) Stripe direto (sem backend intermediário)
+        try:
+            from license_manager import check_stripe_subscription
+            is_valid, license_type, error = check_stripe_subscription(email.strip().lower())
+            if is_valid:
+                logger.info(f"✅ Licença válida via Stripe direto (plano {license_type})")
+                return True
+            logger.warning(f"❌ Licença inválida via Stripe direto: {error}")
+            return False
+        except Exception as ex:
+            logger.warning(f"⚠️ Stripe direto falhou: {ex} - mantendo acesso")
             return True  # Erro genérico, não bloquear
 
     async def _license_watchdog():
