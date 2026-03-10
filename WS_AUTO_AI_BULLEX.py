@@ -204,6 +204,118 @@ MAX_DIST_NECKLINE_ATR = 0.25  # Distância máx ALÉM da neckline — se preço 
 # ═══════════════════════════════════════════════════════════════
 # PARÂMETROS FIXOS — valores que rodaram bem (NN≥80%, EXP=2, cooldown=2min)
 # ═══════════════════════════════════════════════════════════════
+def _analyze_macro_trend(guard_df, atr_val, direcao):
+    """Analisa tendência macro das últimas 15 velas.
+    Retorna dict com métricas de tendência e se deve bloquear.
+    """
+    result = {
+        "block": False,
+        "reason": "",
+        "consecutive": 0,
+        "bearish_pct": 0.5,
+        "drift_atr": 0.0,
+        "macro_penalty": 0.0,
+    }
+    if guard_df is None or len(guard_df) < 15 or atr_val <= 0:
+        return result
+
+    closes = guard_df["close"].values
+    opens = guard_df["open"].values
+    n = len(closes)
+
+    # Últimas 15 velas
+    _w = min(15, n)
+    c_w = closes[-_w:]
+    o_w = opens[-_w:]
+
+    # Velas bearish/bullish
+    bearish = [c_w[i] < o_w[i] for i in range(_w)]
+    bearish_pct = sum(bearish) / _w
+    bullish_pct = 1.0 - bearish_pct
+
+    # Consecutivas na mesma direção (de trás pra frente)
+    consec = 0
+    if _w >= 2:
+        last_bear = bearish[-1]
+        for i in range(_w - 1, -1, -1):
+            if bearish[i] == last_bear:
+                consec += 1
+            else:
+                break
+
+    # Drift total (variação de preço / ATR)
+    drift = (float(c_w[-1]) - float(c_w[0])) / atr_val
+
+    # EMA rápida slope (últimas 10 velas)
+    _ema_w = min(10, n)
+    ema_closes = [float(closes[-(i+1)]) for i in range(_ema_w)][::-1]
+    if len(ema_closes) >= 5:
+        ema_first_half = sum(ema_closes[:len(ema_closes)//2]) / (len(ema_closes)//2)
+        ema_second_half = sum(ema_closes[len(ema_closes)//2:]) / (len(ema_closes) - len(ema_closes)//2)
+        slope = (ema_second_half - ema_first_half) / atr_val
+    else:
+        slope = 0.0
+
+    result["consecutive"] = consec
+    result["bearish_pct"] = bearish_pct
+    result["drift_atr"] = drift
+
+    # ── Classificar tendência e calcular penalidade ──
+    is_call = direcao == "CALL"
+    is_put = direcao == "PUT"
+
+    # Score de força contra o trade (0-1)
+    against_score = 0.0
+    if is_call:
+        # CALL contra tendência de baixa
+        if drift < -1.0:
+            against_score += min(abs(drift) / 5.0, 0.4)
+        if bearish_pct >= 0.65:
+            against_score += (bearish_pct - 0.65) * 2.0
+        if consec >= 4 and bearish[-1]:
+            against_score += min((consec - 3) * 0.08, 0.3)
+    elif is_put:
+        # PUT contra tendência de alta
+        if drift > 1.0:
+            against_score += min(abs(drift) / 5.0, 0.4)
+        if bullish_pct >= 0.65:
+            against_score += (bullish_pct - 0.65) * 2.0
+        if consec >= 4 and not bearish[-1]:
+            against_score += min((consec - 3) * 0.08, 0.3)
+
+    against_score = min(against_score, 1.0)
+
+    # Penalidade ao nn_score (proporcional à força contra)
+    # against_score 0.3+ começa a penalizar, 0.6+ penaliza forte
+    if against_score >= 0.3:
+        result["macro_penalty"] = (against_score - 0.2) * 0.25
+
+    # Hard block: tendência MUITO forte contra o trade
+    # 7+ consecutivas na direção oposta OU 80%+ velas contra + drift > 2 ATR
+    if is_call:
+        if consec >= 7 and bearish[-1]:
+            result["block"] = True
+            result["reason"] = f"{consec} velas vermelhas consecutivas"
+        elif bearish_pct >= 0.80 and drift < -2.0:
+            result["block"] = True
+            result["reason"] = f"{bearish_pct:.0%} bearish + queda {abs(drift):.1f}ATR"
+        elif drift < -3.5:
+            result["block"] = True
+            result["reason"] = f"queda forte {abs(drift):.1f}ATR em {_w} velas"
+    elif is_put:
+        if consec >= 7 and not bearish[-1]:
+            result["block"] = True
+            result["reason"] = f"{consec} velas verdes consecutivas"
+        elif bullish_pct >= 0.80 and drift > 2.0:
+            result["block"] = True
+            result["reason"] = f"{bullish_pct:.0%} bullish + subida {abs(drift):.1f}ATR"
+        elif drift > 3.5:
+            result["block"] = True
+            result["reason"] = f"subida forte {abs(drift):.1f}ATR em {_w} velas"
+
+    return result
+
+
 def _get_session_params(guard_df=None, atr_val=0.0):
     """Retorna parâmetros fixos: NN≥80%, EXP=2min, cooldown=2min."""
     return {
@@ -3212,12 +3324,39 @@ def _main_inner():
                         _nn_penalty = _nn_pred.get("consensus_penalty", 0)
                         _NN_MIN_PROB = _dyn_params["nn_min_prob"]
 
+                        # ── MACRO TREND PENALTY (NN mais inteligente) ──
+                        _macro = _analyze_macro_trend(_guard_df, atr_val, direcao)
+                        _macro_penalty = _macro.get("macro_penalty", 0.0)
+                        if _macro_penalty > 0:
+                            _nn_score = max(0.0, _nn_score - _macro_penalty)
+                            log.info(paint(
+                                f"  📉 MACRO TREND: penalty=-{_macro_penalty:.2f} → "
+                                f"nn_score ajustado={_nn_score:.0%} | "
+                                f"consec={_macro['consecutive']} bear={_macro['bearish_pct']:.0%} "
+                                f"drift={_macro['drift_atr']:.1f}ATR",
+                                C.Y
+                            ))
+
                         _nn_approved = _nn_score >= _NN_MIN_PROB
+
+                        # ── MACRO TREND HARD BLOCK ──
+                        if _nn_approved and _macro.get("block", False):
+                            _nn_approved = False
+                            log.info(paint(
+                                f"  🚫 MACRO TREND GUARD: Tendência forte contra {direcao} — "
+                                f"{_macro['reason']} — BLOQUEADO",
+                                C.R
+                            ))
+                            print(
+                                f">>> MACRO TREND bloqueou {ativo} {direcao}: {_macro['reason']}",
+                                flush=True
+                            )
 
                         if _nn_approved:
                             log.info(paint(
                                 f"  ✅ NN APROVADO: score={_nn_score:.0%} "
-                                f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
+                                f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}"
+                                f" macro=-{_macro_penalty:.2f}) | "
                                 f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str} | "
                                 f"EXP={_smart_exp}min",
                                 C.G
