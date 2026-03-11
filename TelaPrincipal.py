@@ -317,7 +317,6 @@ async def check_for_update(page: ft.Page, lang: str = "PT", status_column: ft.Co
         os.makedirs(temp_dir, exist_ok=True)
         installer_path = os.path.join(temp_dir, "WsTrader_Update.exe")
 
-        30
         install_dir = os.environ.get('PROGRAMFILES', 'C:\\Program Files') + '\\WsTrader'
         app_exe = os.path.join(install_dir, 'WsTrader.exe')
 

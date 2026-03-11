@@ -1,9 +1,13 @@
 ﻿"""
-API WS Trader - Backend local (Stripe only)
+API WS Trader - Backend local (Stripe + Dashboard)
 """
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import os
+import sys
+from pathlib import Path
 
 # Stripe
 try:
@@ -14,6 +18,32 @@ except ImportError:
 
 # ===================== APP =====================
 app = FastAPI(title="WS Trader API", version="2.0.0")
+
+# CORS — permite o dashboard HTML acessar a API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ─── Dashboard API router ───
+try:
+    from dashboard_api import router as dashboard_router
+    app.include_router(dashboard_router)
+except ImportError:
+    pass
+
+# ─── Servir arquivos estáticos (img/, dashboard.html) ───
+def _get_project_root():
+    if getattr(sys, 'frozen', False):
+        return Path(sys._MEIPASS) if hasattr(sys, '_MEIPASS') else Path(sys.executable).parent
+    return Path(__file__).parent.parent
+
+_root = _get_project_root()
+_img_dir = _root / "img"
+if _img_dir.exists():
+    app.mount("/img", StaticFiles(directory=str(_img_dir)), name="img")
 
 # ===================== ENDPOINTS =====================
 @app.get("/")

@@ -3,57 +3,46 @@ WS Trader — Engine de 3 Redes Neurais para Double Top/Bottom
 ═════════════════════════════════════════════════════════════
 Contém 3 modelos de ML independentes que votam Win/Loss de padrões DT:
 
-  IA 1 (Geradora):     GradientBoosting  — analisa 23 features DT → prediz Win/Loss
+  IA 1 (Geradora):     XGBoost           — analisa 40 features DT → prediz Win/Loss
   IA 2 (Validadora):   LightGBM          — confirma ou rejeita a IA 1
-  IA 3 (Validadora 2): MLP 64→32         — captura padrões não-lineares
+  IA 3 (Validadora 2): MLP 128→64→32     — captura padrões não-lineares
 
 COMO FUNCIONA:
   1. O bot (WS_AUTO_AI_BULLEX.py) detecta um Double Top/Bottom
-  2. Chama extract_features() do ws_adaptive_brain.py → vetor de 19 floats
+  2. Chama extract_features() do ws_adaptive_brain.py → vetor de 40 floats
   3. Chama predict_dt(features) deste arquivo → 3 NNs votam Win ou Loss
-  4. Se 2+ NNs votam Win com confiança mínima → GUARD IA 6 aprova a entrada
+  4. Se 2+ NNs votam Win com confiança mínima → APROVADO (sem filtros hardcoded)
 
-FEATURES USADAS (23 do DT — DT_FEATURE_NAMES):
-  f0  wick_ratio             — tamanho do wick de rejeição
-  f1  close_position         — posição do close na vela (0=low, 1=high)
-  f2  macro_against_pct      — % velas contra trade (15 velas)
-  f3  depth_ratio            — profundidade do padrão / ATR
-  f4  symmetry               — simetria temporal
-  f5  span                   — largura do padrão (/200)
-  f6  macro_body_avg         — corpo médio 10 velas / ATR
-  f7  progress_pct           — % do caminho RS→Neck já andado
-  f8  ema_score              — EMA8-EMA20 normalizado
-  f9  momentum               — momentum 5 velas (melhorado)
-  f10 zone_score             — toques históricos no nível
-  f11 arm_wr                 — WR histórico do ativo+tipo+modo
-  f12 approach_decay         — desaceleração do momentum na chegada
-  f13 rejection_quality      — qualidade da rejeição
-  f14 volatility_regime      — regime de volatilidade
-  f15 trend_strength         — tendência EMA10 vs EMA50
-  f16 price_vs_ema50         — distância preço à EMA50
-  f17 consecutive_against    — velas consecutivas contra o trade
-  f18 body_dominance         — pressão direcional líquida
-  f19 macro_drift_against    — drift contra trade (15 velas)
-  f20 rsi_dir_adjusted       — RSI(14) ajustado pela direção
-  f21 candle_range_ratio     — tamanho da vela RS / ATR
-  f22 acceleration           — aceleração/desaceleração do momentum
+FEATURES USADAS (40 — DT_FEATURE_NAMES):
+  f0-f25:  Features originais (geometria, rejeição, momentum, trend, etc.)
+  f26-f39: Features de CONTEXTO/REGIME (a IA aprende sozinha):
+    f26 range_compression     — mercado morto? compressão de range
+    f27 ema_slope_20          — inclinação EMA20 (tendência curta)
+    f28 trend_consistency     — % velas alinhadas com tendência
+    f29 market_efficiency     — direcional vs ruído
+    f30 alternation_rate      — alternância de cor (choppy?)
+    f31 body_avg_vs_range     — corpo médio vs range médio
+    f32 dist_to_local_extreme — distância ao extremo local (esticado?)
+    f33 wick_density          — densidade de rejeição recente
+    f34 adr_relative          — ADR relativo (volatilidade)
+    f35 retests_at_level      — retestes no nível
+    f36 space_to_opposite     — espaço livre para reversão
+    f37 momentum_long         — momentum 10 velas (contexto amplo)
+    f38 candle_uniformity     — uniformidade (estável vs caótico)
+    f39 time_since_impulse    — tempo desde último impulso forte
 
 TREINAMENTO:
   - Offline: python train_neural_network.py (usa CSVs de candles_5000/ e candles_deep/)
-  - Resultado: ~67K padrões, ~89.7% accuracy nas 3 IAs
-  - Modelo salvo em: ~/.wstrader/reversal_tf_unified.pkl (válido 12h)
-  - Online: _train_ia_from_history() no bot faz retreino se modelo expirado
+  - Modelo salvo em: ~/.wstrader/reversal_tf_{ativo}.pkl (válido 365 dias)
+  - IA 1: XGBoost (300 trees, depth=6, colsample=0.8)
+  - IA 2: LightGBM (300 trees, depth=6, histograma)
+  - IA 3: MLP (128→64→32, relu, adam, early_stopping)
+  - Backward compat: modelos treinados com 26 features continuam funcionando
 
 MÉTODOS PRINCIPAIS:
-  - feed_dt_features(features, result) — alimenta 19 features + Win(1)/Loss(0)
+  - feed_dt_features(features, result) — alimenta 40 features + Win(1)/Loss(0)
   - predict_dt(features) — prediz Win/Loss, retorna {win, prob_win, confidence, votes}
   - train_all() — treina os 3 modelos com dados acumulados
-  - feed_candles(df) — alimenta 32 features genéricas (backward compat, não usado pelo DT)
-  - predict_current(df) — prediz com 32 features genéricas (backward compat)
-
-BACKWARD COMPAT:
-  - FEATURE_NAMES (32 features genéricas) mantido para feed_candles/predict_current
-  - _retrain() auto-detecta: 15 features → DT mode, 32 features → genérico
 """
 
 import os, sys, time, pickle, logging, threading
@@ -146,7 +135,8 @@ FEATURE_NAMES = [
 ]
 
 # ═══════════════════════════════════════════════════════
-#  DT FEATURES  — 26 features reais (extract_features do ws_adaptive_brain)
+#  DT FEATURES  — 40 features (26 originais + 14 contexto/regime)
+#  IA aprende TUDO sozinha — sem filtros hardcoded
 # ═══════════════════════════════════════════════════════
 DT_FEATURE_NAMES = [
     "wick_ratio",            # f0  Rejection wick size                   0–1
@@ -175,6 +165,21 @@ DT_FEATURE_NAMES = [
     "n_pivots_at_level",     # f23 Pivots no nível (2=DT, 3+=desgast)   0–1
     "body_conviction",       # f24 Convicção corpo 5 velas (0=doji,1=forte) 0–1
     "micro_range_ratio",     # f25 Atividade recente vs ATR (0=morto)   0–1
+    # ═══ CONTEXTO/REGIME — IA aprende sozinha o que importa ═══
+    "range_compression",     # f26 Range recente vs range médio          0–1
+    "ema_slope_20",          # f27 Inclinação EMA20 dir-adjusted        -1 to +1
+    "trend_consistency",     # f28 % velas alinhadas com tendência       0–1
+    "market_efficiency",     # f29 Move líquido / move total             0–1
+    "alternation_rate",      # f30 Taxa alternância de cor (ruído)       0–1
+    "body_avg_vs_range",     # f31 Corpo médio vs range médio            0–1
+    "dist_to_local_extreme", # f32 Distância ao extremo local            0–1
+    "wick_density",          # f33 Densidade de rejeição recente         0–1
+    "adr_relative",          # f34 ADR relativo (volatilidade)           0–1
+    "retests_at_level",      # f35 Retestes no nível                     0–1
+    "space_to_opposite",     # f36 Espaço livre para reversão            0–1
+    "momentum_long",         # f37 Momentum 10 velas (contexto amplo)  -1 to +1
+    "candle_uniformity",     # f38 Uniformidade (estável vs caótico)     0–1
+    "time_since_impulse",    # f39 Tempo desde último impulso forte      0–1
 ]
 
 
@@ -1060,9 +1065,19 @@ class ReversalAI:
         self.history = self._train_data    # Alias
 
     def _retrain(self):
-        """Treina IA 1 (GradientBoosting) + IA 2 (LightGBM) com validação temporal."""
+        """Treina IA 1 (XGBoost) + IA 2 (LightGBM) + IA 3 (MLP 128→64→32).
+        IA aprende TUDO sozinha — sem filtros hardcoded.
+        40 features incluem regime/contexto/qualidade."""
         try:
-            from sklearn.ensemble import GradientBoostingClassifier
+            # ── IA 1: XGBoost (melhor que GradientBoosting) ──
+            try:
+                from xgboost import XGBClassifier
+                _xgb_ok = True
+            except ImportError:
+                from sklearn.ensemble import GradientBoostingClassifier
+                _xgb_ok = False
+
+            # ── IA 2: LightGBM ──
             try:
                 from lightgbm import LGBMClassifier
                 _lgbm_ok = True
@@ -1070,11 +1085,22 @@ class ReversalAI:
                 from sklearn.ensemble import ExtraTreesClassifier
                 _lgbm_ok = False
 
-            # Auto-detectar formato: DT (15 features) ou genérico (32)
+            # Auto-detectar formato: DT (40 features) ou genérico (32) ou legacy (26)
             nf_dt = len(DT_FEATURE_NAMES)
             nf_gen = len(FEATURE_NAMES)
             data_dt = [s for s in self._train_data[-TRAINING_WINDOW:]
                        if len(s["f"]) == nf_dt]
+            # Backward compat: aceitar 26 features (legacy) — pad com 0.5 para 40
+            _LEGACY_NF = 26
+            data_legacy = [s for s in self._train_data[-TRAINING_WINDOW:]
+                           if len(s["f"]) == _LEGACY_NF and nf_dt != _LEGACY_NF]
+            if data_legacy and len(data_dt) < MIN_SAMPLES_ML:
+                # Pad legacy 26→40 com valores neutros (0.5)
+                for s in data_legacy:
+                    s["f"] = list(s["f"]) + [0.5] * (nf_dt - _LEGACY_NF)
+                data_dt.extend(data_legacy)
+                log.info(f"  Legacy compat: {len(data_legacy)} amostras 26→{nf_dt} features (padded)")
+
             data_gen = [s for s in self._train_data[-TRAINING_WINDOW:]
                         if len(s["f"]) == nf_gen]
 
@@ -1100,12 +1126,12 @@ class ReversalAI:
             if len(np.unique(y)) < 2:
                 return
 
-            # Subamostrar se dataset muito grande (GradientBoosting é O(n*log(n)))
+            # Subamostrar se dataset muito grande
             MAX_TRAIN = 200_000
             if len(X) > MAX_TRAIN:
                 rng = np.random.RandomState(42)
                 idx = rng.choice(len(X), MAX_TRAIN, replace=False)
-                idx.sort()  # manter ordem temporal
+                idx.sort()
                 X = X[idx]
                 y = y[idx]
                 log.info(f"  Subamostrado: {len(data)} → {MAX_TRAIN} amostras")
@@ -1124,30 +1150,39 @@ class ReversalAI:
             # Peso exponencial (dados recentes valem mais)
             w = np.exp(np.linspace(-2.0, 0.0, len(Xt)))
 
-            # Balanceamento de classes: upweight LOSSes para evitar bias WIN
+            # Balanceamento de classes
             n_pos = int(np.sum(yt == 1))
             n_neg = int(np.sum(yt == 0))
             if n_pos > 0 and n_neg > 0 and n_pos > 2 * n_neg:
                 class_ratio = n_pos / n_neg
                 class_w = np.ones(len(yt))
-                class_w[yt == 0] = min(class_ratio, 6.0)  # LOSSes pesam até 6x mais
+                class_w[yt == 0] = min(class_ratio, 6.0)
                 w = w * class_w
                 log.info(f"  Class balance: {n_pos}W/{n_neg}L → LOSSes ×{min(class_ratio, 6.0):.1f}")
 
-            # ── IA 1: GradientBoosting (Geradora) — 1ª passada ──
-            ai1 = GradientBoostingClassifier(
-                n_estimators=200, max_depth=5, learning_rate=0.06,
-                subsample=0.8, min_samples_leaf=15, random_state=42)
-            ai1.fit(Xt, yt, sample_weight=w)
+            # ── IA 1: XGBoost (melhor regularização, mais rápido, feature importance precisa) ──
+            if _xgb_ok:
+                ai1 = XGBClassifier(
+                    n_estimators=300, max_depth=6, learning_rate=0.05,
+                    subsample=0.8, colsample_bytree=0.8,
+                    min_child_weight=10, gamma=0.1,
+                    reg_alpha=0.1, reg_lambda=1.0,
+                    random_state=42, verbosity=0,
+                    eval_metric='logloss', use_label_encoder=False)
+                ai1.fit(Xt, yt, sample_weight=w)
+                log.info(f"  IA 1: XGBoost (300 trees, depth=6)")
+            else:
+                ai1 = GradientBoostingClassifier(
+                    n_estimators=200, max_depth=5, learning_rate=0.06,
+                    subsample=0.8, min_samples_leaf=15, random_state=42)
+                ai1.fit(Xt, yt, sample_weight=w)
+                log.info(f"  IA 1: GradientBoosting fallback (200 trees)")
 
-            # ── HARD-EXAMPLE MINING: upweight padrões que IA1 erra ──
-            # Padrões borderline (prob ~0.5) e errados pesam 3x mais
-            # Isso força IA2 e IA3 a focar nos casos DIFÍCEIS
+            # ── HARD-EXAMPLE MINING ──
             try:
                 _proba_train = ai1.predict_proba(Xt)[:, 1]
-                _confidence = np.abs(_proba_train - 0.5)  # 0 = borderline, 0.5 = fácil
+                _confidence = np.abs(_proba_train - 0.5)
                 _hard_w = 1.0 + 2.0 * (1.0 - np.clip(_confidence * 2, 0, 1))
-                # Errados pesam 3x extra
                 _pred_train = (_proba_train >= 0.5).astype(int)
                 _wrong = _pred_train != yt
                 _hard_w[_wrong] *= 3.0
@@ -1157,28 +1192,27 @@ class ReversalAI:
             except Exception:
                 w_hard = w
 
-            # ── IA 2: LightGBM / ExtraTrees (Validadora) — com hard weights ──
+            # ── IA 2: LightGBM (diversidade: usa histograma vs exact split) ──
             if _lgbm_ok:
                 ai2 = LGBMClassifier(
-                    n_estimators=200, max_depth=5, learning_rate=0.06,
-                    subsample=0.8, min_child_samples=20,
+                    n_estimators=300, max_depth=6, learning_rate=0.05,
+                    subsample=0.8, colsample_bytree=0.8,
+                    min_child_samples=15, reg_alpha=0.1, reg_lambda=1.0,
                     random_state=99, verbose=-1)
                 ai2.fit(Xt, yt, sample_weight=w_hard)
             else:
                 ai2 = ExtraTreesClassifier(
-                    n_estimators=80, max_depth=6,
+                    n_estimators=100, max_depth=6,
                     min_samples_leaf=10, random_state=99)
                 ai2.fit(Xt, yt, sample_weight=w_hard)
 
-            # ── Validação ──
+            # ── Validação IA1 + IA2 ──
             ai1_ok = True
             ai2_ok = True
             if Xv is not None:
-                # IA 1
                 pred1 = (ai1.predict_proba(Xv)[:, 1] >= 0.5).astype(int)
                 acc1 = float(np.mean(pred1 == yv))
                 self._ai1_val = acc1
-                # IA 2
                 pred2 = (ai2.predict_proba(Xv)[:, 1] >= 0.5).astype(int)
                 acc2 = float(np.mean(pred2 == yv))
                 self._ai2_val = acc2
@@ -1199,7 +1233,7 @@ class ReversalAI:
                 self._ai2 = ai2
                 self._ai2_ready = True
 
-            # ── IA 3: MLP Neural Network (Validadora 2) ──
+            # ── IA 3: MLP 128→64→32 (captura interações não-lineares) ──
             ai3 = None
             ai3_ok = False
             if n >= AI3_MIN_SAMPLES:
@@ -1207,10 +1241,9 @@ class ReversalAI:
                     from sklearn.neural_network import MLPClassifier
                     from sklearn.preprocessing import StandardScaler
 
-                    # MLP precisa de dados normalizados
                     scaler = StandardScaler()
 
-                    # Balancear classes + oversample hard examples para MLP
+                    # Balancear classes
                     _pos_idx = np.where(yt == 1)[0]
                     _neg_idx = np.where(yt == 0)[0]
                     if len(_pos_idx) > 2 * len(_neg_idx) and len(_neg_idx) >= 20:
@@ -1220,7 +1253,7 @@ class ReversalAI:
                     else:
                         _bal_idx = np.arange(len(yt))
 
-                    # Oversample hard examples: duplicar os que IA1 errou
+                    # Oversample hard examples
                     try:
                         _proba_mlp = ai1.predict_proba(Xt)[:, 1]
                         _pred_mlp = (_proba_mlp >= 0.5).astype(int)
@@ -1239,22 +1272,23 @@ class ReversalAI:
                         scaler.fit_transform(Xt_mlp), columns=Xt.columns
                     )
 
+                    # MLP mais profunda: 128→64→32 (captura interações complexas)
                     ai3 = MLPClassifier(
-                        hidden_layer_sizes=(64, 32),
+                        hidden_layer_sizes=(128, 64, 32),
                         activation='relu',
                         solver='adam',
-                        alpha=0.05,           # Regularização L2 moderada
+                        alpha=0.01,
                         learning_rate='adaptive',
                         learning_rate_init=0.001,
-                        max_iter=400,
+                        max_iter=500,
                         early_stopping=True,
                         validation_fraction=0.15,
-                        n_iter_no_change=20,
+                        n_iter_no_change=25,
                         random_state=77,
                         verbose=False,
                     )
                     ai3.fit(Xt_scaled, yt_mlp)
-                    self._ai3_scaler = scaler  # Guardar scaler para predição
+                    self._ai3_scaler = scaler
 
                     if Xv is not None:
                         Xv_scaled = pd.DataFrame(
@@ -1263,7 +1297,7 @@ class ReversalAI:
                         pred3 = (ai3.predict_proba(Xv_scaled)[:, 1] >= 0.5).astype(int)
                         acc3 = float(np.mean(pred3 == yv))
                         self._ai3_val = acc3
-                        log.info(f"  IA 3 (MLP): val={acc3:.1%} | layers=(32,16)")
+                        log.info(f"  IA 3 (MLP): val={acc3:.1%} | layers=(128,64,32)")
                         if acc3 < MIN_VALIDATION_ACC:
                             log.info(f"  ⚠ IA 3 ({acc3:.1%}) < {MIN_VALIDATION_ACC:.0%} → desativada")
                         else:
@@ -1526,23 +1560,28 @@ class ReversalAI:
     # ──────────────────────────────────────────────
 
     def feed_dt_features(self, features, result: int):
-        """Alimenta features DT pré-extraídas (19-float) com resultado Win=1/Loss=0.
+        """Alimenta features DT pré-extraídas (40-float) com resultado Win=1/Loss=0.
 
         As features devem vir de ws_adaptive_brain.extract_features().
-        SEM retreinar. Retorna 1 se adicionou, 0 se falhou.
+        Aceita 26 (legacy) ou 40 features. SEM retreinar.
         """
         if features is None:
             return 0
         feats = list(features) if not isinstance(features, list) else features
-        if len(feats) != len(DT_FEATURE_NAMES):
+        nf_expected = len(DT_FEATURE_NAMES)
+        # Backward compat: aceitar 26 legacy → pad com 0.5
+        if len(feats) == 26 and nf_expected == 40:
+            feats = feats + [0.5] * (nf_expected - 26)
+        if len(feats) != nf_expected:
             return 0
         self._record(feats, result)
         return 1
 
     def predict_dt(self, features) -> dict | None:
-        """Prediz Win/Loss para features DT pré-extraídas (23-float).
+        """Prediz Win/Loss para features DT (40-float).
 
         As features devem vir de ws_adaptive_brain.extract_features().
+        Aceita 26 (legacy) ou 40 features.
         Retorna dict com prob_win, confidence, p1, p2, p3, votes ou None.
         """
         if not (self._ai1_ready and self._ai2_ready):
@@ -1551,11 +1590,22 @@ class ReversalAI:
         if features is None:
             return None
         feats = list(features) if not isinstance(features, list) else features
-        if len(feats) != len(DT_FEATURE_NAMES):
+        nf_expected = len(DT_FEATURE_NAMES)
+        # Backward compat: aceitar 26 legacy → pad com 0.5
+        if len(feats) == 26 and nf_expected == 40:
+            feats = feats + [0.5] * (nf_expected - 26)
+        # Aceitar modelo treinado com 26 features recebendo 40
+        _trained_nf = getattr(self, '_n_features_trained', nf_expected)
+        if _trained_nf == 26 and len(feats) == 40:
+            feats = feats[:26]
+            _feature_names = DT_FEATURE_NAMES[:26]
+        elif len(feats) != nf_expected:
             return None
+        else:
+            _feature_names = DT_FEATURE_NAMES
 
         try:
-            fv = pd.DataFrame([feats], columns=DT_FEATURE_NAMES)
+            fv = pd.DataFrame([feats], columns=_feature_names)
 
             p1 = self._predict_ai1(fv)
             if p1 is None:
@@ -1570,7 +1620,7 @@ class ReversalAI:
                 try:
                     fv_scaled = pd.DataFrame(
                         self._ai3_scaler.transform(fv),
-                        columns=DT_FEATURE_NAMES
+                        columns=_feature_names
                     )
                     p3 = self._predict_ai3(fv_scaled)
                 except Exception:

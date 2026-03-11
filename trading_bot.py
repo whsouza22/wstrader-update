@@ -444,39 +444,41 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
     # Saldo
     saldo_text = ft.Text(
         f"{t['balance']}: R$ {balance:.2f}",
-        size=16,
-        color="#4CAF50",
-        weight=ft.FontWeight.BOLD
+        size=18,
+        color="#00e676",
+        weight=ft.FontWeight.W_700,
+        font_family="Space Grotesk"
     )
 
     # Status (CORES SUAVES - SEM NEGRITO)
     status_text = ft.Text(
         t["stopped"],
-        size=15,
-        weight=ft.FontWeight.NORMAL,  # Sem negrito
-        color="#F87171"  # Vermelho mais claro
+        size=14,
+        weight=ft.FontWeight.W_600,
+        color="#ff3d57"
     )
 
     # Ícone de status (bolinha suave)
-    status_icon = ft.Icon(ft.Icons.CIRCLE, size=12, color="#F87171")
+    status_icon = ft.Icon(ft.Icons.CIRCLE, size=10, color="#ff3d57")
 
     # Seletor de Corretora (MODERNO)
     broker_dropdown = ft.Dropdown(
         label=t["broker"],
-        label_style=ft.TextStyle(color="#9CA3AF", size=12),
+        label_style=ft.TextStyle(color="#6b7280", size=11),
         options=[
             ft.dropdown.Option("IQ Option"),
             ft.dropdown.Option("Bullex"),
             ft.dropdown.Option("CasaTrader"),
         ],
         value=selected_broker,
-        bgcolor="#1f2937",
-        color="#E8EAF6",
-        border_color="#3f4654",
-        focused_border_color="#5B8DEF",
-        border_radius=8,
-        text_size=14,
-        disabled=False
+        bgcolor="#0e1018",
+        color="#e8ecf4",
+        border_color="rgba(255,255,255,0.08)",
+        focused_border_color="#ff6a00",
+        border_radius=10,
+        text_size=13,
+        disabled=False,
+        height=48,
     )
 
     def on_broker_change(e):
@@ -499,17 +501,18 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
 
     account_dropdown = ft.Dropdown(
         label=t["account_type"],
-        label_style=ft.TextStyle(color="#9CA3AF", size=12),
+        label_style=ft.TextStyle(color="#6b7280", size=11),
         options=_account_options,
         value=selected_account,
-        bgcolor="#1f2937",
-        color="#E8EAF6",
-        border_color="#3f4654",
-        focused_border_color="#5B8DEF",
-        border_radius=8,
-        text_size=14,
-        disabled=is_demo_plan,  # Trava no plano DEMO
+        bgcolor="#0e1018",
+        color="#e8ecf4",
+        border_color="rgba(255,255,255,0.08)",
+        focused_border_color="#ff6a00",
+        border_radius=10,
+        text_size=13,
+        disabled=is_demo_plan,
         hint_text="🔒 Somente DEMO" if is_demo_plan else None,
+        height=48,
     )
 
     def on_account_change(e):
@@ -526,9 +529,9 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
         logger.info(f"Conta alterada para: {selected_account}")
         # Muda cor do saldo se for REAL
         if selected_account == "REAL":
-            saldo_text.color = "#FF9800"  # Laranja para alertar
+            saldo_text.color = "#ff6a00"  # Laranja para alertar
         else:
-            saldo_text.color = "#4CAF50"  # Verde para demo
+            saldo_text.color = "#00e676"  # Verde para demo
         page.update()
 
     account_dropdown.on_change = on_account_change
@@ -546,10 +549,10 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             # Inicia o bot
             e.control.text = t["stop"]
             e.control.icon = ft.Icons.STOP_ROUNDED
-            e.control.bgcolor = "#EF4444"  # Vermelho suave
+            e.control.bgcolor = "#ff3d57"
             status_text.value = t["running"]
-            status_text.color = "#34D399"  # Verde mais claro
-            status_icon.color = "#34D399"
+            status_text.color = "#00e676"
+            status_icon.color = "#00e676"
             exit_button.visible = False  # Esconde botão de sair
             bot_running = True
             logger.info(f"IA INICIADA - {selected_broker} - {selected_account}")
@@ -612,9 +615,9 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                                 total_lucro = restored_profit + session_lucro
                                 profit_text.value = f"R$ {total_lucro:.2f}"
                                 if total_lucro > 0:
-                                    profit_text.color = "#10B981"
+                                    profit_text.color = "#00e676"
                                 elif total_lucro < 0:
-                                    profit_text.color = "#EF4444"
+                                    profit_text.color = "#ff3d57"
 
                                 saldo = stats.get('saldo', 0.0)
                                 saldo_text.value = f"{t['balance']}: R$ {saldo:.2f}"
@@ -648,7 +651,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                                     empty_message.visible = False
 
                                 direction_icon = "CALL" if op['direction'] == "CALL" else "PUT"
-                                direction_color = "#10B981" if op['direction'] == "CALL" else "#EF4444"
+                                direction_color = "#00e676" if op['direction'] == "CALL" else "#ff3d57"
 
                                 # Formata data/hora usando datetime do op ou now
                                 time_str = op.get('timestamp', datetime.now()).strftime("%H:%M:%S")
@@ -660,7 +663,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                                         ft.DataCell(ft.Text(f"{direction_icon}", color=direction_color, size=12)),
                                         ft.DataCell(ft.Text(f"R$ {op['stake']:.2f}", size=12)),
                                         ft.DataCell(ft.Text(f"{op.get('payout', 0)}%", size=12)),
-                                        ft.DataCell(ft.Text(t["executing"], color="#F59E0B", size=12)),
+                                        ft.DataCell(ft.Text(t["executing"], color="#ff6a00", size=12)),
                                     ],
                                     data=op.get('order_id')
                                 )
@@ -701,11 +704,11 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                                     if row.data == order_id:
                                         result_cell = row.cells[5]
                                         if result == 'win':
-                                            result_cell.content = ft.Text(f"{t['win']} (+R$ {profit:.2f})", color="#10B981", size=12)
+                                            result_cell.content = ft.Text(f"{t['win']} (+R$ {profit:.2f})", color="#00e676", size=12)
                                         elif result == 'loss':
-                                            result_cell.content = ft.Text(f"{t['loss']} (-R$ {abs(profit):.2f})", color="#EF4444", size=12)
+                                            result_cell.content = ft.Text(f"{t['loss']} (-R$ {abs(profit):.2f})", color="#ff3d57", size=12)
                                         else:
-                                            result_cell.content = ft.Text(f"{t['unavailable']}", color="#9CA3AF", size=12)
+                                            result_cell.content = ft.Text(f"{t['unavailable']}", color="#6b7280", size=12)
 
                                         logger.info(f"Resultado atualizado na UI: {result} | Lucro: R$ {profit:.2f}")
 
@@ -778,9 +781,9 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                                 saldo_text.value = f"{t['balance']}: R$ {saldo_final:.2f}"
                                 profit_text.value = f"R$ {lucro:.2f}"
                                 if lucro > 0:
-                                    profit_text.color = "#10B981"
+                                    profit_text.color = "#00e676"
                                 elif lucro < 0:
-                                    profit_text.color = "#EF4444"
+                                    profit_text.color = "#ff3d57"
 
                                 # Mostra resumo
                                 logger.info(f"📊 Total de operações: {engine.total_trades}")
@@ -830,13 +833,12 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             broker_dropdown.disabled = False
             account_dropdown.disabled = False
 
-            # Para o bot
             e.control.text = t["start"]
             e.control.icon = ft.Icons.PLAY_ARROW_ROUNDED
-            e.control.bgcolor = "#5B8DEF"  # Azul suave
+            e.control.bgcolor = "#ff6a00"
             status_text.value = t["stopped"]
-            status_text.color = "#F87171"  # Vermelho mais claro
-            status_icon.color = "#F87171"
+            status_text.color = "#ff3d57"
+            status_icon.color = "#ff3d57"
             exit_button.visible = True  # Mostra botão de sair
             bot_running = False
             logger.info(f"IA PARADA - {selected_broker}")
@@ -851,14 +853,14 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
         page.update()
 
     start_button = ft.ElevatedButton(
-        content=ft.Text(t["start"]),
+        content=ft.Text(t["start"], weight=ft.FontWeight.W_700, size=14),
         icon=ft.Icons.PLAY_ARROW_ROUNDED,
-        bgcolor="#5B8DEF",
+        bgcolor="#ff6a00",
         color="#FFFFFF",
-        height=45,
+        height=48,
         on_click=toggle_bot,
         style=ft.ButtonStyle(
-            shape=ft.RoundedRectangleBorder(radius=10),
+            shape=ft.RoundedRectangleBorder(radius=12),
             elevation=0
         )
     )
@@ -899,7 +901,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             "bullex":      ["#66BB6A", "#43A047", "#2E7D32", "#1B5E20"],
             "casatrader":  ["#64B5F6", "#42A5F5", "#1E88E5", "#1565C0"],
         }
-        palette = broker_colors.get(broker_key, ["#F59E0B", "#FF9800", "#5B8DEF", "#10B981"])
+        palette = broker_colors.get(broker_key, ["#ff6a00", "#FF9800", "#5B8DEF", "#00e676"])
         if total_exp >= 2000 or model_updates >= 40000:
             return (t["ai_phase_full"], palette[3], 1.0, t["ai_phase_desc_full"])
         elif total_exp >= 500 or model_updates >= 15000:
@@ -920,14 +922,14 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
     ai_total, ai_wr, ai_train, ai_updates = _get_ai_stats()
     ai_phase_name, ai_phase_color, ai_progress, ai_phase_desc = _get_ai_phase(ai_total, ai_wr, ai_updates)
 
-    ai_phase_label = ft.Text(t["ai_learning"], size=11, color="#9CA3AF", weight=ft.FontWeight.W_500)
+    ai_phase_label = ft.Text(t["ai_learning"], size=11, color="#6b7280", weight=ft.FontWeight.W_500)
     ai_phase_text = ft.Text(ai_phase_name, size=13, weight=ft.FontWeight.BOLD, color=ai_phase_color)
-    ai_trades_count = ft.Text(f"WR: {ai_wr:.0f}% | Amostras: {ai_train} | IA WS: ATIVO", size=10, color="#6B7280")
-    ai_phase_description = ft.Text(ai_phase_desc, size=10, color="#6B7280", italic=True)
+    ai_trades_count = ft.Text(f"WR: {ai_wr:.0f}% | Amostras: {ai_train} | IA WS: ATIVO", size=10, color="#6b7280")
+    ai_phase_description = ft.Text(ai_phase_desc, size=10, color="#6b7280", italic=True)
     ai_progress_bar = ft.ProgressBar(
         value=min(1.0, ai_progress),
         color=ai_phase_color,
-        bgcolor="#1f2937",
+        bgcolor="#0e1018",
         bar_height=4,
         border_radius=2,
     )
@@ -945,10 +947,10 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             ],
             spacing=4,
         ),
-        padding=ft.padding.symmetric(horizontal=12, vertical=8),
-        bgcolor="#1a1f2e",
-        border_radius=8,
-        border=ft.border.all(1, "#2a2f3e"),
+        padding=ft.padding.symmetric(horizontal=12, vertical=10),
+        bgcolor="rgba(255,255,255,0.03)",
+        border_radius=10,
+        border=ft.border.all(1, "rgba(255,255,255,0.06)"),
     )
 
     def _update_ai_phase_ui():
@@ -966,19 +968,19 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             pass
 
     # Estatísticas COMPACTAS (cores suaves e modernas) — restaura dados do dia
-    wins_text = ft.Text(str(restored_wins), size=16, weight=ft.FontWeight.BOLD, color="#10B981")
-    losses_text = ft.Text(str(restored_losses), size=16, weight=ft.FontWeight.BOLD, color="#EF4444")
+    wins_text = ft.Text(str(restored_wins), size=16, weight=ft.FontWeight.BOLD, color="#00e676")
+    losses_text = ft.Text(str(restored_losses), size=16, weight=ft.FontWeight.BOLD, color="#ff3d57")
     restored_wr = (restored_wins / (restored_wins + restored_losses) * 100) if (restored_wins + restored_losses) > 0 else 0
-    winrate_text = ft.Text(f"{restored_wr:.0f}%", size=16, weight=ft.FontWeight.BOLD, color="#5B8DEF")
+    winrate_text = ft.Text(f"{restored_wr:.0f}%", size=16, weight=ft.FontWeight.BOLD, color="#ff6a00")
     profit_text = ft.Text(f"R$ {restored_profit:.2f}", size=16, weight=ft.FontWeight.BOLD,
-                          color="#10B981" if restored_profit >= 0 else "#EF4444")
+                          color="#00e676" if restored_profit >= 0 else "#ff3d57")
 
     stats_row = ft.Row(
         controls=[
             # Vitórias
             ft.Row(
                 controls=[
-                    ft.Text(t["wins"], size=12, color="#9CA3AF"),
+                    ft.Text(t["wins"], size=12, color="#6b7280"),
                     wins_text
                 ],
                 spacing=6
@@ -986,7 +988,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             # Derrotas
             ft.Row(
                 controls=[
-                    ft.Text(t["losses"], size=12, color="#9CA3AF"),
+                    ft.Text(t["losses"], size=12, color="#6b7280"),
                     losses_text
                 ],
                 spacing=6
@@ -994,7 +996,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             # Win Rate
             ft.Row(
                 controls=[
-                    ft.Text(t["rate"], size=12, color="#9CA3AF"),
+                    ft.Text(t["rate"], size=12, color="#6b7280"),
                     winrate_text
                 ],
                 spacing=6
@@ -1002,7 +1004,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             # Lucro
             ft.Row(
                 controls=[
-                    ft.Text(t["profit"], size=12, color="#9CA3AF"),
+                    ft.Text(t["profit"], size=12, color="#6b7280"),
                     profit_text
                 ],
                 spacing=6
@@ -1021,17 +1023,17 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             logger.warning("Não é possível sair enquanto o bot está operando")
             page.snack_bar = ft.SnackBar(
                 content=ft.Text(t["stop_bot_first"], color="#FFFFFF"),
-                bgcolor="#F1A8A8"
+                bgcolor="#ff3d57"
             )
             page.snack_bar.open = True
             page.update()
 
     exit_button = ft.IconButton(
         icon=ft.Icons.LOGOUT_ROUNDED,
-        icon_color="#F1E8E8",
+        icon_color="#6b7280",
         tooltip=t["exit"],
         on_click=go_back_to_home,
-        visible=True  # Controlaremos visibilidade dinamicamente
+        visible=True
     )
 
     # ===================== PAINEL DE RELATÓRIO =====================
@@ -1039,7 +1041,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
         """Gráfico de barras usando Containers (compatível Flet 0.80)"""
         brokers_info = [
             ("IQ Option", "iq_option", "#FF9800"),
-            ("Bullex", "bullex", "#10B981"),
+            ("Bullex", "bullex", "#00e676"),
             ("CasaTrader", "casatrader", "#5B8DEF"),
         ]
         values = []
@@ -1054,7 +1056,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
         for i, (display_name, bkey, color) in enumerate(brokers_info):
             val = values[i]
             h = max(4, int(abs(val) / max_val * bar_max_h)) if val != 0 else 4
-            bar_color = color if val >= 0 else "#EF4444"
+            bar_color = color if val >= 0 else "#ff3d57"
             bar_cols.append(
                 ft.Column([
                     ft.Text(f"R$ {val:.2f}", size=11, color=bar_color, weight=ft.FontWeight.W_600,
@@ -1062,7 +1064,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                     ft.Container(width=55, height=h, bgcolor=bar_color,
                                  border_radius=ft.border_radius.only(top_left=4, top_right=4),
                                  animate=ft.Animation(400, ft.AnimationCurve.EASE_IN_OUT)),
-                    ft.Text(display_name, size=10, color="#9CA3AF", text_align=ft.TextAlign.CENTER),
+                    ft.Text(display_name, size=10, color="#6b7280", text_align=ft.TextAlign.CENTER),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4,
                    alignment=ft.MainAxisAlignment.END)
             )
@@ -1079,13 +1081,13 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
         today = datetime.now().date()
         days = [(today - timedelta(days=i)) for i in range(6, -1, -1)]
 
-        colors = {"iq_option": "#FF9800", "bullex": "#10B981", "casatrader": "#5B8DEF"}
+        colors = {"iq_option": "#FF9800", "bullex": "#00e676", "casatrader": "#5B8DEF"}
         names = {"iq_option": "IQ Option", "bullex": "Bullex", "casatrader": "CasaTrader"}
 
         # Cabeçalho com dias
-        header_cells = [ft.Text("", size=10, color="#9CA3AF", width=80)]
+        header_cells = [ft.Text("", size=10, color="#6b7280", width=80)]
         for d in days:
-            header_cells.append(ft.Text(d.strftime("%d/%m"), size=10, color="#9CA3AF",
+            header_cells.append(ft.Text(d.strftime("%d/%m"), size=10, color="#6b7280",
                                         text_align=ft.TextAlign.CENTER, width=65))
 
         rows = [ft.Row(header_cells, spacing=4)]
@@ -1101,16 +1103,16 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             for d in days:
                 date_str = d.strftime("%Y-%m-%d")
                 val = date_map.get(date_str, 0.0)
-                cell_color = "#10B981" if val > 0 else "#EF4444" if val < 0 else "#555555"
+                cell_color = "#00e676" if val > 0 else "#ff3d57" if val < 0 else "#555555"
                 row_cells.append(
                     ft.Container(
                         content=ft.Text(f"{val:.0f}" if val != 0 else "-", size=10,
                                         color=cell_color, text_align=ft.TextAlign.CENTER),
                         width=65, height=30,
-                        bgcolor="#1a2332" if val != 0 else "#1f2937",
+                        bgcolor="#0e1018" if val != 0 else "rgba(255,255,255,0.03)",
                         border_radius=4,
                         alignment=ft.Alignment(0, 0),
-                        border=ft.border.all(1, "#2a2f3e"),
+                        border=ft.border.all(1, "rgba(255,255,255,0.06)"),
                     )
                 )
             rows.append(ft.Row(row_cells, spacing=4))
@@ -1123,9 +1125,9 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
     # Legenda do gráfico de linha
     line_chart_legend = ft.Row(
         controls=[
-            ft.Row([ft.Icon(ft.Icons.CIRCLE, size=8, color="#FF9800"), ft.Text("IQ Option", size=10, color="#9CA3AF")], spacing=4),
-            ft.Row([ft.Icon(ft.Icons.CIRCLE, size=8, color="#10B981"), ft.Text("Bullex", size=10, color="#9CA3AF")], spacing=4),
-            ft.Row([ft.Icon(ft.Icons.CIRCLE, size=8, color="#5B8DEF"), ft.Text("CasaTrader", size=10, color="#9CA3AF")], spacing=4),
+            ft.Row([ft.Icon(ft.Icons.CIRCLE, size=8, color="#FF9800"), ft.Text("IQ Option", size=10, color="#6b7280")], spacing=4),
+            ft.Row([ft.Icon(ft.Icons.CIRCLE, size=8, color="#00e676"), ft.Text("Bullex", size=10, color="#6b7280")], spacing=4),
+            ft.Row([ft.Icon(ft.Icons.CIRCLE, size=8, color="#5B8DEF"), ft.Text("CasaTrader", size=10, color="#6b7280")], spacing=4),
         ],
         spacing=16,
         alignment=ft.MainAxisAlignment.CENTER,
@@ -1138,9 +1140,9 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
     report_panel = ft.Container(
         content=ft.Column(
             controls=[
-                ft.Text(t["accumulated"], size=14, weight=ft.FontWeight.W_600, color="#FF9800"),
+                ft.Text(t["accumulated"], size=14, weight=ft.FontWeight.W_600, color="#ff6a00"),
                 report_bar_container,
-                ft.Divider(color="#3f4654", height=1),
+                ft.Divider(color="rgba(255,255,255,0.06)", height=1),
                 ft.Text(t["weekly"], size=14, weight=ft.FontWeight.W_600, color="#5B8DEF"),
                 line_chart_legend,
                 report_line_container,
@@ -1148,9 +1150,9 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             spacing=8,
         ),
         padding=16,
-        bgcolor="#1a1f2e",
+        bgcolor="#0e1018",
         border_radius=12,
-        border=ft.border.all(1, "#3f4654"),
+        border=ft.border.all(1, "rgba(255,255,255,0.06)"),
         visible=False,
         animate=ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT),
     )
@@ -1166,7 +1168,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
 
     report_button = ft.IconButton(
         icon=ft.Icons.BAR_CHART_ROUNDED,
-        icon_color="#FF9800",
+        icon_color="#ff6a00",
         tooltip=t["report"],
         on_click=toggle_report,
         icon_size=24,
@@ -1178,12 +1180,12 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             controls=[
                 ft.Row(
                     controls=[
-                        ft.Icon(ft.Icons.CANDLESTICK_CHART, size=32, color="#5B8DEF"),
+                        ft.Icon(ft.Icons.CANDLESTICK_CHART, size=32, color="#ff6a00"),
                         ft.Text(
                             "WS Trader",
                             size=26,
                             weight=ft.FontWeight.BOLD,
-                            color="#E8EAF6"
+                            color="#e8ecf4"
                         ),
                     ],
                     spacing=12
@@ -1215,9 +1217,9 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                     spacing=8,
                     alignment=ft.MainAxisAlignment.CENTER
                 ),
-                ft.Divider(color="#3f4654", height=1),
+                ft.Divider(color="rgba(255,255,255,0.06)", height=1),
                 # Configurações
-                ft.Text(t["settings"], size=13, weight=ft.FontWeight.W_500, color="#E8EAF6"),
+                ft.Text(t["settings"], size=13, weight=ft.FontWeight.W_500, color="#e8ecf4"),
                 ft.Container(height=5),
                 broker_dropdown,
                 ft.Container(height=10),
@@ -1233,55 +1235,53 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH
         ),
         padding=20,
-        bgcolor="#2a2f3e",
+        bgcolor="#0e1018",
         border_radius=12,
-        border=ft.border.all(1, "#3f4654"),
+        border=ft.border.all(1, "rgba(255,255,255,0.06)"),
         width=280,
-        height=350,  # Altura mínima para garantir que apareça
+        height=350,
         alignment=ft.alignment.top_center
     )
 
     # Tabela de Histórico MODERNA (compacta e espaçosa)
     operations_table = ft.DataTable(
         columns=[
-            ft.DataColumn(ft.Text(t["datetime"], size=12, weight=ft.FontWeight.W_600, color="#9CA3AF")),
-            ft.DataColumn(ft.Text(t["pair"], size=12, weight=ft.FontWeight.W_600, color="#9CA3AF")),
-            ft.DataColumn(ft.Text(t["direction"], size=12, weight=ft.FontWeight.W_600, color="#9CA3AF")),
-            ft.DataColumn(ft.Text(t["value"], size=12, weight=ft.FontWeight.W_600, color="#9CA3AF")),
-            ft.DataColumn(ft.Text(t["payout"], size=12, weight=ft.FontWeight.W_600, color="#9CA3AF")),
-            ft.DataColumn(ft.Text(t["result"], size=12, weight=ft.FontWeight.W_600, color="#9CA3AF")),
+            ft.DataColumn(ft.Text(t["datetime"], size=12, weight=ft.FontWeight.W_600, color="#6b7280")),
+            ft.DataColumn(ft.Text(t["pair"], size=12, weight=ft.FontWeight.W_600, color="#6b7280")),
+            ft.DataColumn(ft.Text(t["direction"], size=12, weight=ft.FontWeight.W_600, color="#6b7280")),
+            ft.DataColumn(ft.Text(t["value"], size=12, weight=ft.FontWeight.W_600, color="#6b7280")),
+            ft.DataColumn(ft.Text(t["payout"], size=12, weight=ft.FontWeight.W_600, color="#6b7280")),
+            ft.DataColumn(ft.Text(t["result"], size=12, weight=ft.FontWeight.W_600, color="#6b7280")),
         ],
-        rows=[
-            # Será preenchido dinamicamente
-        ],
-        border=ft.border.all(1, "#3f4654"),
-        border_radius=8,
-        heading_row_color="#1f2937",
+        rows=[],
+        border=ft.border.all(1, "rgba(255,255,255,0.06)"),
+        border_radius=10,
+        heading_row_color="#0e1018",
         heading_row_height=40,
         data_row_max_height=45,
         data_row_min_height=45,
         column_spacing=80,
         horizontal_margin=40,
-        data_text_style=ft.TextStyle(size=12, color="#D1D5DB"),
-        expand=True  # Expande a tabela para ocupar todo o espaço disponível
+        data_text_style=ft.TextStyle(size=12, color="#e8ecf4"),
+        expand=True
     )
 
     # ===================== RESTAURAR OPERAÇÕES DO DIA =====================
     if restored_ops:
         for op in restored_ops:
             direction_icon = "CALL" if op.get('direction') == "CALL" else "PUT"
-            direction_color = "#10B981" if op.get('direction') == "CALL" else "#EF4444"
+            direction_color = "#00e676" if op.get('direction') == "CALL" else "#ff3d57"
             time_str = op.get('time', '--:--:--')
             res = op.get('result', 'pending')
             profit_val = op.get('profit', 0)
             if res == 'win':
-                result_content = ft.Text(f"{t['win']} (+R$ {profit_val:.2f})", color="#10B981", size=12)
+                result_content = ft.Text(f"{t['win']} (+R$ {profit_val:.2f})", color="#00e676", size=12)
             elif res == 'loss':
-                result_content = ft.Text(f"{t['loss']} (-R$ {abs(profit_val):.2f})", color="#EF4444", size=12)
+                result_content = ft.Text(f"{t['loss']} (-R$ {abs(profit_val):.2f})", color="#ff3d57", size=12)
             elif res == 'pending':
-                result_content = ft.Text(t["executing"], color="#F59E0B", size=12)
+                result_content = ft.Text(t["executing"], color="#ff6a00", size=12)
             else:
-                result_content = ft.Text(t["unavailable"], color="#9CA3AF", size=12)
+                result_content = ft.Text(t["unavailable"], color="#6b7280", size=12)
 
             operations_table.rows.append(ft.DataRow(
                 cells=[
@@ -1300,7 +1300,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
     empty_message = ft.Container(
         content=ft.Text(
             t["empty"],
-            color="#64748B",
+            color="#6b7280",
             text_align=ft.TextAlign.CENTER,
             size=13
         ),
@@ -1313,8 +1313,8 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
     # ===================== CARDS DAS CORRETORAS =====================
     def _broker_card(name, icon_name, color, is_active=False):
         """Cria um card visual de corretora"""
-        border_color = color if is_active else "#3f4654"
-        bg = "#1a2332" if is_active else "#1f2937"
+        border_color = color if is_active else "rgba(255,255,255,0.06)"
+        bg = "#0e1018" if is_active else "rgba(255,255,255,0.03)"
         badge_text = "ATIVO" if is_active else ""
         return ft.Container(
             content=ft.Column(
@@ -1322,7 +1322,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                     ft.Row(
                         controls=[
                             ft.Icon(icon_name, size=20, color=color),
-                            ft.Text(name, size=13, weight=ft.FontWeight.W_600, color="#E8EAF6"),
+                            ft.Text(name, size=13, weight=ft.FontWeight.W_600, color="#e8ecf4"),
                         ],
                         spacing=8,
                     ),
@@ -1342,7 +1342,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
     broker_cards_row = ft.Row(
         controls=[
             _broker_card("IQ Option", ft.Icons.SHOW_CHART, "#FF9800", is_active=("iq" in broker_key)),
-            _broker_card("Bullex", ft.Icons.BOLT, "#10B981", is_active=("bullex" in broker_key)),
+            _broker_card("Bullex", ft.Icons.BOLT, "#00e676", is_active=("bullex" in broker_key)),
             _broker_card("CasaTrader", ft.Icons.HOME_WORK, "#5B8DEF", is_active=("casa" in broker_key)),
         ],
         spacing=12,
@@ -1372,7 +1372,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                                 t["history"],
                                 size=14,
                                 weight=ft.FontWeight.BOLD,
-                                color="#E8EAF6"
+                                color="#e8ecf4"
                             ),
                             ft.Container(height=10),
                             # Mostra tabela E mensagem vazia (controlados por visibilidade)
@@ -1443,7 +1443,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
         gradient=ft.LinearGradient(
             begin=ft.Alignment(-1, -1),
             end=ft.Alignment(1, 1),
-            colors=["#0E1114", "#111417"]
+            colors=["#050508", "#0a0c14"]
         )
     )
 
@@ -1472,7 +1472,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
         content=ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, size=64, color="#FF9800"),
+                    ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, size=64, color="#ff6a00"),
                     ft.Container(height=16),
                     ft.Text(
                         t.get("license_expired_title", "Assinatura Não Encontrada"),
@@ -1485,13 +1485,13 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                     ft.Text(
                         t.get("license_expired_msg", "Sua assinatura expirou ou não foi encontrada.\nPara continuar usando o WS Trader, renove sua assinatura."),
                         size=14,
-                        color="#D1D5DB",
+                        color="#e8ecf4",
                         text_align=ft.TextAlign.CENTER,
                     ),
                     ft.Container(height=24),
                     ft.ElevatedButton(
                         content=ft.Text(t.get("license_renew", "Renovar Assinatura"), weight=ft.FontWeight.BOLD),
-                        bgcolor="#FF681A",
+                        bgcolor="#ff6a00",
                         color="#FFFFFF",
                         height=48,
                         width=260,
@@ -1500,7 +1500,7 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
                     ),
                     ft.Container(height=10),
                     ft.TextButton(
-                        content=ft.Text(t.get("license_exit", "Sair"), color="#9CA3AF", size=13),
+                        content=ft.Text(t.get("license_exit", "Sair"), color="#6b7280", size=13),
                         on_click=_exit_app,
                     ),
                 ],
@@ -1510,9 +1510,9 @@ def bot_dashboard(page: ft.Page, broker: str, email: str, password: str, balance
             ),
             width=420,
             padding=40,
-            bgcolor="#1a1f2e",
+            bgcolor="#0e1018",
             border_radius=16,
-            border=ft.border.all(2, "#FF9800"),
+            border=ft.border.all(2, "#ff6a00"),
             shadow=[ft.BoxShadow(spread_radius=8, blur_radius=40, color=ft.Colors.with_opacity(0.3, "#000000"))],
         ),
         alignment=ft.Alignment(0, 0),

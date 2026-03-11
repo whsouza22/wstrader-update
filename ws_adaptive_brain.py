@@ -416,14 +416,188 @@ def extract_features(pat: dict, H, L, C_arr, O, n: int, atr: float,
         _mr_avg = _mr_sum / _mr_w
         micro_range_ratio = np.clip(_mr_avg / atr, 0, 3.0) / 3.0
 
+    # ══════════════════════════════════════════════════════════════
+    # FEATURES DE CONTEXTO/REGIME (f26-f39)
+    # A IA recebe TUDO e aprende sozinha o que importa.
+    # Sem filtros hardcoded — a NN decide.
+    # ══════════════════════════════════════════════════════════════
+
+    # ── f26: range_compression — range recente vs range médio (mercado morto?) ──
+    range_compression = 0.5
+    if rs_idx >= 30 and atr > 1e-10:
+        _rc_recent = [float(H[k]) - float(L[k]) for k in range(max(0, rs_idx - 5), rs_idx + 1)]
+        _rc_long = [float(H[k]) - float(L[k]) for k in range(max(0, rs_idx - 30), rs_idx + 1)]
+        _rc_r = sum(_rc_recent) / len(_rc_recent) if _rc_recent else atr
+        _rc_l = sum(_rc_long) / len(_rc_long) if _rc_long else atr
+        if _rc_l > 1e-10:
+            range_compression = np.clip(_rc_r / _rc_l, 0, 3.0) / 3.0
+
+    # ── f27: ema_slope_20 — inclinação da EMA20 (tendência curta) ──
+    ema_slope_20 = 0.0
+    _ema20_end = rs_idx + 1
+    _ema20_closes = [float(C_arr[i]) for i in range(max(0, _ema20_end - 30), _ema20_end)]
+    _ema20_now = _ema(_ema20_closes, 20)
+    _ema20_5ago = _ema(_ema20_closes[:-5], 20) if len(_ema20_closes) > 5 else _ema20_now
+    if _ema20_now is not None and _ema20_5ago is not None and atr > 1e-10:
+        _slope_raw = (_ema20_now - _ema20_5ago) / atr
+        if direction == "PUT":
+            ema_slope_20 = np.clip(-_slope_raw / 3.0, -1, 1)
+        else:
+            ema_slope_20 = np.clip(_slope_raw / 3.0, -1, 1)
+
+    # ── f28: trend_consistency — % velas alinhadas com a macro tendência ──
+    trend_consistency = 0.5
+    _tc_w = min(20, rs_idx)
+    if _tc_w >= 5:
+        # Determinar direção macro (close[0] vs close[-1])
+        _tc_start = rs_idx - _tc_w
+        _tc_dir = float(C_arr[rs_idx]) - float(C_arr[_tc_start])
+        _tc_aligned = 0
+        for _tci in range(_tc_start, rs_idx):
+            _tc_body = float(C_arr[_tci]) - float(O[_tci])
+            if (_tc_dir >= 0 and _tc_body >= 0) or (_tc_dir < 0 and _tc_body < 0):
+                _tc_aligned += 1
+        trend_consistency = _tc_aligned / _tc_w
+
+    # ── f29: market_efficiency — move líquido / move total (direcional vs ruído) ──
+    market_efficiency = 0.5
+    _me_w = min(15, rs_idx)
+    if _me_w >= 3:
+        _me_net = abs(float(C_arr[rs_idx]) - float(C_arr[rs_idx - _me_w]))
+        _me_total = 0.0
+        for _mei in range(rs_idx - _me_w, rs_idx):
+            _me_total += abs(float(C_arr[_mei + 1]) - float(C_arr[_mei]))
+        if _me_total > 1e-10:
+            market_efficiency = np.clip(_me_net / _me_total, 0, 1)
+
+    # ── f30: alternation_rate — taxa de alternância de cor (ruído?) ──
+    alternation_rate = 0.5
+    _ar_w = min(15, rs_idx)
+    if _ar_w >= 4:
+        _ar_changes = 0
+        for _ari in range(rs_idx - _ar_w + 1, rs_idx):
+            _prev_bull = float(C_arr[_ari - 1]) >= float(O[_ari - 1])
+            _curr_bull = float(C_arr[_ari]) >= float(O[_ari])
+            if _prev_bull != _curr_bull:
+                _ar_changes += 1
+        alternation_rate = _ar_changes / (_ar_w - 1)
+
+    # ── f31: body_avg_vs_range — corpo médio vs range médio (convicção geral) ──
+    body_avg_vs_range = 0.5
+    _bvr_w = min(10, rs_idx)
+    if _bvr_w >= 3:
+        _bvr_body_sum = 0.0
+        _bvr_range_sum = 0.0
+        for _bvri in range(rs_idx - _bvr_w, rs_idx):
+            _bvr_body_sum += abs(float(C_arr[_bvri]) - float(O[_bvri]))
+            _bvr_range_sum += float(H[_bvri]) - float(L[_bvri])
+        if _bvr_range_sum > 1e-10:
+            body_avg_vs_range = np.clip(_bvr_body_sum / _bvr_range_sum, 0, 1)
+
+    # ── f32: distance_to_local_extreme — distância ao extremo recente (esticado?) ──
+    dist_to_local_extreme = 0.5
+    _dle_w = min(30, rs_idx)
+    if _dle_w >= 5 and atr > 1e-10:
+        _dle_h = max(float(H[k]) for k in range(rs_idx - _dle_w, rs_idx + 1))
+        _dle_l = min(float(L[k]) for k in range(rs_idx - _dle_w, rs_idx + 1))
+        _dle_range = _dle_h - _dle_l
+        if direction == "PUT":
+            # PUT em topo: distância do close ao máximo local
+            _dle_dist = _dle_h - float(C_arr[rs_idx])
+        else:
+            # CALL em fundo: distância do close ao mínimo local
+            _dle_dist = float(C_arr[rs_idx]) - _dle_l
+        if _dle_range > 1e-10:
+            dist_to_local_extreme = np.clip(_dle_dist / _dle_range, 0, 1)
+
+    # ── f33: wick_density — densidade de pavios de rejeição recentes ──
+    wick_density = 0.5
+    _wd_w = min(10, rs_idx)
+    if _wd_w >= 3:
+        _wd_count = 0
+        for _wdi in range(rs_idx - _wd_w, rs_idx + 1):
+            _wd_range = float(H[_wdi]) - float(L[_wdi])
+            if _wd_range < 1e-10:
+                continue
+            if direction == "PUT":
+                _wd_wick = float(H[_wdi]) - max(float(C_arr[_wdi]), float(O[_wdi]))
+            else:
+                _wd_wick = min(float(C_arr[_wdi]), float(O[_wdi])) - float(L[_wdi])
+            if _wd_wick / _wd_range > 0.30:
+                _wd_count += 1
+        wick_density = _wd_count / (_wd_w + 1)
+
+    # ── f34: adr_relative — ADR relativo (amplitude diária relativa) ──
+    adr_relative = 0.5
+    if rs_idx >= 50 and atr > 1e-10:
+        _adr_r = [float(H[k]) - float(L[k]) for k in range(max(0, rs_idx - 10), rs_idx + 1)]
+        _adr_l = [float(H[k]) - float(L[k]) for k in range(max(0, rs_idx - 50), rs_idx + 1)]
+        _adr_recent = sum(_adr_r) / len(_adr_r) if _adr_r else atr
+        _adr_long = sum(_adr_l) / len(_adr_l) if _adr_l else atr
+        if _adr_long > 1e-10:
+            adr_relative = np.clip(_adr_recent / _adr_long, 0.2, 3.0) / 3.0
+
+    # ── f35: retests_at_level — retestes do nível (quantos toques além do DT) ──
+    retests_at_level = 0.0
+    _rt_tol = atr * 0.3
+    _rt_scan = min(80, rs_idx)
+    _rt_count = 0
+    for _rti in range(rs_idx - _rt_scan, rs_idx + 1):
+        if _rti < 0:
+            continue
+        if direction == "PUT" and abs(float(H[_rti]) - rs_price) <= _rt_tol:
+            _rt_count += 1
+        elif direction == "CALL" and abs(float(L[_rti]) - rs_price) <= _rt_tol:
+            _rt_count += 1
+    retests_at_level = min(_rt_count, 10) / 10.0
+
+    # ── f36: space_to_opposite — espaço livre para reversão vs range local ──
+    space_to_opposite = 0.5
+    if atr > 1e-10 and neckline > 0 and rs_price > 0:
+        _sto_dist = abs(rs_price - neckline)
+        space_to_opposite = np.clip(_sto_dist / (atr * 5.0), 0, 1)
+
+    # ── f37: momentum_long — momentum de 10 velas (contexto mais amplo) ──
+    momentum_long = 0.0
+    _ml_n = min(10, rs_idx)
+    if _ml_n >= 3 and atr > 1e-10:
+        for _mli in range(rs_idx - _ml_n, rs_idx):
+            _ml_body = (float(C_arr[_mli]) - float(O[_mli])) / atr
+            if direction == "PUT":
+                momentum_long -= _ml_body
+            else:
+                momentum_long += _ml_body
+        momentum_long = np.clip(momentum_long / _ml_n, -1, 1)
+
+    # ── f38: candle_uniformity — uniformidade de tamanho (estável vs caótico) ──
+    candle_uniformity = 0.5
+    _cu_w = min(10, rs_idx)
+    if _cu_w >= 3:
+        _cu_ranges = [float(H[k]) - float(L[k]) for k in range(rs_idx - _cu_w, rs_idx)]
+        _cu_mean = sum(_cu_ranges) / len(_cu_ranges) if _cu_ranges else 1
+        if _cu_mean > 1e-10:
+            _cu_std = (sum((r - _cu_mean) ** 2 for r in _cu_ranges) / len(_cu_ranges)) ** 0.5
+            _cu_cv = _cu_std / _cu_mean  # coeficiente de variação
+            candle_uniformity = np.clip(1.0 - _cu_cv, 0, 1)  # 1 = uniforme, 0 = caótico
+
+    # ── f39: time_since_impulse — velas desde o último impulso forte (>1.5 ATR) ──
+    time_since_impulse = 1.0
+    _tsi_max = min(20, rs_idx)
+    for _tsi_i in range(rs_idx, max(rs_idx - _tsi_max, -1), -1):
+        _tsi_range = float(H[_tsi_i]) - float(L[_tsi_i])
+        if _tsi_range > atr * 1.5:
+            _tsi_dist = rs_idx - _tsi_i
+            time_since_impulse = np.clip(_tsi_dist / 20.0, 0, 1)
+            break
+
     features = np.array([
         wick_ratio,                # f0  — wick de rejeição no RS
         close_position,            # f1  — posição do close na vela RS
-        macro_against_pct,         # f2  — % velas contra trade (15 velas) [ERA candles_ago]
+        macro_against_pct,         # f2  — % velas contra trade (15 velas)
         depth_ratio_norm,          # f3  — profundidade / ATR
         symmetry,                  # f4  — simetria temporal
         span_norm,                 # f5  — largura do padrão
-        macro_body_avg,            # f6  — corpo médio 10 velas / ATR [ERA shoulder_ratio]
+        macro_body_avg,            # f6  — corpo médio 10 velas / ATR
         progress_pct,              # f7  — % do caminho RS→Neck
         ema_score,                 # f8  — tendência ATÉ o RS (sem futuro)
         momentum,                  # f9  — momentum 5 velas ANTES do RS
@@ -440,9 +614,24 @@ def extract_features(pat: dict, H, L, C_arr, O, n: int, atr: float,
         rsi_dir_adjusted,          # f20 — RSI(14) ajustado pela direção
         candle_range_ratio,        # f21 — tamanho da vela RS / ATR
         acceleration,              # f22 — aceleração do momentum
-        n_pivots_norm,             # f23 — pivots no nível (2=DT normal, 3+=desgastado)
+        n_pivots_norm,             # f23 — pivots no nível (2=DT, 3+=desgastado)
         body_conviction,           # f24 — convicção do corpo (0=doji, 1=forte)
-        micro_range_ratio,         # f25 — atividade recente vs ATR (0=morto, 1=ativo)
+        micro_range_ratio,         # f25 — atividade recente vs ATR (0=morto)
+        # ═══ NOVAS: contexto/regime — IA aprende sozinha ═══
+        range_compression,         # f26 — compressão de range (mercado morto?)
+        ema_slope_20,              # f27 — inclinação EMA20 (tendência curta)
+        trend_consistency,         # f28 — % velas alinhadas com tendência
+        market_efficiency,         # f29 — direcional vs ruído
+        alternation_rate,          # f30 — alternância de cor (choppy?)
+        body_avg_vs_range,         # f31 — corpo médio vs range médio
+        dist_to_local_extreme,     # f32 — distância ao extremo local
+        wick_density,              # f33 — densidade de rejeição recente
+        adr_relative,              # f34 — ADR relativo (volatilidade)
+        retests_at_level,          # f35 — retestes no nível
+        space_to_opposite,         # f36 — espaço livre para reversão
+        momentum_long,             # f37 — momentum 10 velas (contexto amplo)
+        candle_uniformity,         # f38 — uniformidade (estável vs caótico)
+        time_since_impulse,        # f39 — tempo desde último impulso forte
     ], dtype=np.float64)
 
     return features

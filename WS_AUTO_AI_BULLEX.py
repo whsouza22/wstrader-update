@@ -109,6 +109,9 @@ else:  # bullex (padrão)
 from ws_reversal_ai import ReversalAI, FEATURE_NAMES, MIN_SAMPLES_ML
 from ws_adaptive_brain import extract_features
 
+# ═══ IA 4 — GUARD GENERATIVA (GPT) ═══
+from ws_generative_guard import gpt_guard_check
+
 # ===================== CONFIG =====================
 if BROKER_TYPE == "casatrader":
     EMAIL = os.getenv("CASATRADER_EMAIL", "")
@@ -180,6 +183,10 @@ USE_DYNAMIC_STAKE = (os.getenv("WS_DYNAMIC_STAKE", "1").strip() == "1")
 
 # ── MODO IA: Guards 1-5 desativados — somente as 3 NNs decidem (treinadas com 63K+ samples) ──
 _GUARDS_DISABLED = True  # Guards 1-5 OFF — as 3 IAs (89.7% acc) já sabem filtrar
+
+# ── WS Trader 2.0: DESATIVADO — NN com 40 features é a única decisão ──
+_DECISION_ENGINE_ENABLED = False  # Desativado: regime/quality/risk são features f26-f39 no NN
+_recent_trade_results = []        # mantido para log/estatísticas
 
 # ── Reversal AI config ──
 CONFIDENCE_MIN = float(os.getenv('WS_CONF_MIN', "40.0"))       # Confiança mínima da IA para entrar
@@ -1949,16 +1956,10 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict, early_on
             if best_any is None or score > best_any[0]:
                 best_any = (score, ativo, setup, atr)
 
-            # Filtro: IA bloqueia se prob muito baixa
-            # DT também precisa de prob mínima para evitar entradas aleatórias.
-            _dt_min_prob = 0.65  # DT: mínimo 65% (mais rigoroso que antes)
-            _min_check = _dt_min_prob if mode == "double_touch" else AI_MIN_PROB
-            if ia_prob < _min_check and ia_prob != 0.5:
-                log.info(paint(
-                    f"  🚫 IA PROB BAIXA: {ativo} {direction} prob={ia_prob:.2f} < {_min_check}",
-                    C.Y
-                ))
-                continue
+            # ═══ REGIME/QUALITY/RISK → features f26-f39 no NN ═══
+            # A IA aprende sozinha o que importa — sem filtros hardcoded.
+            # O NN com 40 features já contém: range_compression, ema_slope,
+            # trend_consistency, market_efficiency, etc.
 
             if best_trade is None or score > best_trade[0]:
                 best_trade = (score, ativo, setup, atr)
@@ -3182,15 +3183,13 @@ def _main_inner():
 
             _is_dt_mode = setup.get("mode") == "double_touch"
 
-            # ── IA GEOMÉTRICA: aprende perfil dos WINs (IGUAL dashboard) ──
+            # ── IA GEOMÉTRICA: apenas LOG (geometria já é feature no NN) ──
             _pq, _pq_motivos = ia_pattern_quality(pat_data, atr_val, hs_stats)
-            _ia_prob_orig = ia_prob
-            if _pq < 1.0:
-                ia_prob = round(ia_prob * _pq, 4)
+            # NÃO multiplica ia_prob — a NN já tem geometria como features f0-f25
 
             log.info(paint(
-                f"  🧠 IA H&S: {ativo} | prob={_ia_prob_orig:.2f}→{ia_prob:.2f} | "
-                f"geom={_pq:.2f} | amostras={ia_samples} | modo={'DT' if _is_dt_mode else 'HS'}",
+                f"  🧠 IA H&S: {ativo} | prob={ia_prob:.2f} | "
+                f"geom={_pq:.2f} (log only) | amostras={ia_samples} | modo={'DT' if _is_dt_mode else 'HS'}",
                 C.B
             ))
 
@@ -3365,6 +3364,50 @@ def _main_inner():
                         f"  🚫 NN: Dados insuficientes (<50 candles) — BLOQUEADO",
                         C.R
                     ))
+
+                # ═══ IA 4 — GUARD GENERATIVA (GPT) ═══
+                # Última camada: GPT analisa 100 velas + geometria + scores NN
+                # Se NN aprovou → GPT valida. Se GPT rejeitar → bloqueia.
+                if _nn_approved and _guard_df is not None:
+                    try:
+                        _gpt_result = gpt_guard_check(
+                            ativo=ativo,
+                            direcao=direcao,
+                            pat_data=pat_data,
+                            H=_g_H, L=_g_L, C=_g_C, O=_g_O, n=_g_n,
+                            atr_val=atr_val,
+                            nn_pred=_nn_pred,
+                            cur_price=float(_cur) if _cur else 0,
+                        )
+                        _gpt_approved = _gpt_result["approved"]
+                        _gpt_conf = _gpt_result["confidence"]
+                        _gpt_reason = _gpt_result["reason"]
+                        _gpt_source = _gpt_result["source"]
+                        _gpt_ms = _gpt_result["latency_ms"]
+
+                        if _gpt_approved:
+                            log.info(paint(
+                                f"  ✅ IA4 GPT APROVOU: conf={_gpt_conf}% | "
+                                f"{_gpt_reason} ({_gpt_source}, {_gpt_ms}ms)",
+                                C.G
+                            ))
+                        else:
+                            _nn_approved = False
+                            log.info(paint(
+                                f"  🚫 IA4 GPT REJEITOU: conf={_gpt_conf}% | "
+                                f"{_gpt_reason} ({_gpt_source}, {_gpt_ms}ms)",
+                                C.R
+                            ))
+                            print(
+                                f">>> IA4 GPT REJEITOU {ativo} {direcao}: "
+                                f"{_gpt_reason}",
+                                flush=True
+                            )
+                    except Exception as _gpt_err:
+                        log.warning(paint(
+                            f"  ⚠️ IA4 GPT erro: {_gpt_err} — mantendo decisão NN",
+                            C.Y
+                        ))
 
                 if not _nn_approved:
                     _all_guards_ok = False
@@ -3558,6 +3601,12 @@ def _main_inner():
 
             # ── IA: aprender com o resultado ──
             ai_update(ativo, setup, res, hs_stats)
+
+            # ── Resultado: tracking ──
+            _trade_result_01 = 1 if res > 0 else 0
+            _recent_trade_results.append(_trade_result_01)
+            if len(_recent_trade_results) > 50:
+                _recent_trade_results = _recent_trade_results[-50:]
             _arm_key_res = f"{ativo}_{pat_type}_{setup.get('mode', 'classic')}"
             _n_arm = hs_stats.get("arms", {}).get(_arm_key_res, {}).get("total", 0)
             log.info(paint(

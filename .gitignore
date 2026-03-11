@@ -55,6 +55,9 @@
 !ws_auto_ai_engine.py
 !ia_autonomous_brain.py
 !final_entry_guard.py
+!ws_adaptive_brain.py
+!ws_generative_guard.py
+!train_neural_network.py
 !config_keys.py
 !license_manager.py
 !license_activation_screen.py

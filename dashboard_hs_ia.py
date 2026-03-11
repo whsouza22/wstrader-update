@@ -984,17 +984,17 @@ def _need_retrain():
 def _get_ia_level(n_total: int) -> dict:
     """Retorna nível da IA baseado no total de amostras."""
     if n_total == 0:
-        return {"num": 1, "nome": "Iniciante", "emoji": "🌱", "cor": "#94a3b8"}
+        return {"num": 1, "nome": "Iniciante", "emoji": "🌱", "cor": "#6b7280"}
     elif n_total <= 10:
-        return {"num": 2, "nome": "Aprendendo", "emoji": "📚", "cor": "#f59e0b"}
+        return {"num": 2, "nome": "Aprendendo", "emoji": "📚", "cor": "#ff6a00"}
     elif n_total <= 30:
-        return {"num": 3, "nome": "Calibrando", "emoji": "⚙️", "cor": "#3b82f6"}
+        return {"num": 3, "nome": "Calibrando", "emoji": "⚙️", "cor": "#ff6a00"}
     elif n_total <= 80:
-        return {"num": 4, "nome": "Experiente", "emoji": "🧠", "cor": "#8b5cf6"}
+        return {"num": 4, "nome": "Experiente", "emoji": "🧠", "cor": "#a855f7"}
     elif n_total <= 200:
-        return {"num": 5, "nome": "Avançada", "emoji": "🎯", "cor": "#10b981"}
+        return {"num": 5, "nome": "Avançada", "emoji": "🎯", "cor": "#00e676"}
     else:
-        return {"num": 6, "nome": "Expert", "emoji": "🏆", "cor": "#10b981"}
+        return {"num": 6, "nome": "Expert", "emoji": "🏆", "cor": "#00e676"}
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1845,24 +1845,24 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg-primary:#0b0f19;--bg-secondary:#111827;--bg-card:#1a2035;--bg-hover:#1e2a45;
-  --border:#1e293b;--border-light:#334155;
-  --text-primary:#f1f5f9;--text-secondary:#94a3b8;--text-muted:#64748b;
-  --accent:#3b82f6;--accent-glow:rgba(59,130,246,0.25);
-  --green:#10b981;--green-bg:rgba(16,185,129,0.12);--green-glow:rgba(16,185,129,0.3);
-  --red:#ef4444;--red-bg:rgba(239,68,68,0.12);--red-glow:rgba(239,68,68,0.3);
-  --orange:#f59e0b;--orange-bg:rgba(245,158,11,0.12);--orange-glow:rgba(245,158,11,0.3);
-  --purple:#8b5cf6;--purple-bg:rgba(139,92,246,0.12);
-  --glass:rgba(30,41,59,0.5);
+  --bg-primary:#050508;--bg-secondary:#0a0c14;--bg-card:#0e1018;--bg-hover:#12151f;
+  --border:rgba(255,255,255,0.06);--border-light:rgba(255,255,255,0.10);
+  --text-primary:#e8ecf4;--text-secondary:#8b92a5;--text-muted:#6b7280;
+  --accent:#ff6a00;--accent-glow:rgba(255,106,0,0.20);
+  --green:#00e676;--green-bg:rgba(0,230,118,0.10);--green-glow:rgba(0,230,118,0.25);
+  --red:#ff3d57;--red-bg:rgba(255,61,87,0.10);--red-glow:rgba(255,61,87,0.25);
+  --orange:#ff6a00;--orange-bg:rgba(255,106,0,0.10);--orange-glow:rgba(255,106,0,0.25);
+  --purple:#a855f7;--purple-bg:rgba(168,85,247,0.12);
+  --glass:rgba(14,16,24,0.6);
   --radius:12px;--radius-sm:8px;--radius-full:9999px;
 }
 body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',system-ui,sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column}
 .icon-svg{display:inline-block;vertical-align:middle;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* ── HEADER ── */
-.top-bar{background:linear-gradient(135deg,#111827 0%,#0f172a 100%);padding:12px 24px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--border);flex-shrink:0;backdrop-filter:blur(12px)}
+.top-bar{background:linear-gradient(135deg,#0a0c14 0%,#0e1018 100%);padding:12px 24px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--border);flex-shrink:0;backdrop-filter:blur(12px)}
 .logo{display:flex;align-items:center;gap:10px}
-.logo-icon{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;box-shadow:0 4px 15px rgba(59,130,246,0.3)}
+.logo-icon{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#ff6a00,#ff8c33);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;box-shadow:0 4px 15px rgba(255,106,0,0.3)}
 .logo h1{font-size:15px;font-weight:700;color:var(--text-primary);letter-spacing:-0.3px}
 .logo .sub{font-size:10px;color:var(--text-muted);font-weight:400;letter-spacing:0.5px}
 .top-badges{display:flex;gap:8px;margin-left:20px}
@@ -1888,7 +1888,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 .stats-row{display:flex;gap:10px;padding:10px 24px;background:var(--bg-secondary);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
 .st{display:flex;flex-direction:column;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 16px;min-width:100px;position:relative;overflow:hidden}
 .st::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
-.st.blue::before{background:linear-gradient(90deg,var(--accent),var(--purple))}
+.st.blue::before{background:linear-gradient(90deg,var(--accent),#ff8c33)}
 .st.green::before{background:var(--green)}
 .st.red::before{background:var(--red)}
 .st.yellow::before{background:var(--orange)}
@@ -1942,7 +1942,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 .ct-dir.call{background:var(--green-bg);color:var(--green)}
 .ct-right{display:flex;align-items:center;gap:12px}
 .ct-info{font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px}
-.ia-entry-icon{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;padding:6px 14px;border-radius:var(--radius-full);font-size:12px;font-weight:700;box-shadow:0 4px 15px rgba(139,92,246,0.3)}
+.ia-entry-icon{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#ff6a00,#ff8c33);color:#fff;padding:6px 14px;border-radius:var(--radius-full);font-size:12px;font-weight:700;box-shadow:0 4px 15px rgba(255,106,0,0.3)}
 #main-chart-box{flex:1;min-height:0;position:relative}
 .pat-footer{padding:8px 20px;background:var(--bg-card);border-top:1px solid var(--border);max-height:120px;overflow-y:auto;font-size:11px;flex-shrink:0}
 .pat-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)}
@@ -1975,7 +1975,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 .signal-card .sc-type{font-size:10px;color:var(--text-muted)}
 .signal-card .sc-prob{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--purple)}
 .prob-bar{width:40px;height:4px;border-radius:2px;background:var(--bg-primary);overflow:hidden}
-.prob-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--purple),var(--accent))}
+.prob-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent),#ff8c33)}
 .result-row{display:flex;align-items:center;padding:8px 10px;border-radius:var(--radius-sm);margin:3px 0;font-size:11px;background:var(--bg-card);border:1px solid var(--border);gap:8px}
 .result-row .rr-ativo{flex:1;font-weight:600;color:var(--text-primary)}
 .result-row .rr-dir{font-size:10px;font-weight:700}
@@ -2109,7 +2109,7 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:'Inter',
 
 </div>
 
-<div class="footer"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> WS Trader v5.3 — IA Double Touch — Velas ao vivo a cada 1s</div>
+<div class="footer"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> WS Trader v5.6 — IA Double Touch — Velas ao vivo a cada 1s</div>
 
 <script>
 let mainChart = null, mainSeries = null, selectedAtivo = null, latestData = null, candleData = [], allAtivos = [];
@@ -2160,15 +2160,15 @@ function initChart() {
   document.getElementById('empty-state').style.display = 'none';
   mainChart = LightweightCharts.createChart(el, {
     width: el.clientWidth, height: el.clientHeight,
-    layout: { background: { color: '#0b0f19' }, textColor: '#64748b', fontFamily: 'Inter, system-ui, sans-serif' },
-    grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
-    crosshair: { mode: 0, vertLine: { color: 'rgba(59,130,246,0.3)', width: 1 }, horzLine: { color: 'rgba(59,130,246,0.3)', width: 1 } },
-    timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#1e293b' },
-    rightPriceScale: { borderColor: '#1e293b' },
+    layout: { background: { color: '#050508' }, textColor: '#6b7280', fontFamily: 'Inter, system-ui, sans-serif' },
+    grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
+    crosshair: { mode: 0, vertLine: { color: 'rgba(255,106,0,0.3)', width: 1 }, horzLine: { color: 'rgba(255,106,0,0.3)', width: 1 } },
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: 'rgba(255,255,255,0.06)' },
+    rightPriceScale: { borderColor: 'rgba(255,255,255,0.06)' },
   });
   mainSeries = mainChart.addCandlestickSeries({
-    upColor: '#10b981', downColor: '#ef4444',
-    wickUpColor: '#10b981', wickDownColor: '#ef4444',
+    upColor: '#00e676', downColor: '#ff3d57',
+    wickUpColor: '#00e676', wickDownColor: '#ff3d57',
     borderVisible: false,
   });
   mainChart.timeScale().subscribeVisibleTimeRangeChange(function() { requestAnimationFrame(drawHSOverlay); });
@@ -2307,16 +2307,16 @@ function drawHSOverlay() {
     var isLive = !pat.backtest;
     var mainC, mainCa;
     if (isDT && isLive && nnApproved === true) {
-      mainC = '#10b981'; mainCa = 'rgba(16,185,129,0.18)';  // verde = NN aprovou
+      mainC = '#00e676'; mainCa = 'rgba(0,230,118,0.18)';  // verde = NN aprovou
     } else if (isDT && isLive && nnApproved === false) {
-      mainC = '#ef4444'; mainCa = 'rgba(239,68,68,0.12)';   // vermelho = NN rejeitou
+      mainC = '#ff3d57'; mainCa = 'rgba(255,61,87,0.12)';   // vermelho = NN rejeitou
     } else if (isDT && isLive) {
       mainC = '#6b7280'; mainCa = 'rgba(107,114,128,0.12)';  // cinza = sem modelo
     } else if (isDT) {
       mainC = '#a855f7'; mainCa = 'rgba(168,85,247,0.15)';   // roxo = histórico
     } else {
-      mainC = isBear ? '#ef4444' : '#10b981';
-      mainCa = isBear ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)';
+      mainC = isBear ? '#ff3d57' : '#00e676';
+      mainCa = isBear ? 'rgba(255,61,87,0.15)' : 'rgba(0,230,118,0.15)';
     }
 
     // ── Fill area (shoulder-to-shoulder shape) ──
@@ -2420,8 +2420,8 @@ function drawHSOverlay() {
     // ── NN Label (badge) para padrões live ──
     if (isDT && isLive) {
       var nnLabel, nnColor;
-      if (nnApproved === true) { nnLabel = '\u2705 NN ' + ((pat.nn_score||0)*100).toFixed(0) + '%'; nnColor = '#10b981'; }
-      else if (nnApproved === false) { nnLabel = '\u274C NN ' + ((pat.nn_score||0)*100).toFixed(0) + '%'; nnColor = '#ef4444'; }
+      if (nnApproved === true) { nnLabel = '\u2705 NN ' + ((pat.nn_score||0)*100).toFixed(0) + '%'; nnColor = '#00e676'; }
+      else if (nnApproved === false) { nnLabel = '\u274C NN ' + ((pat.nn_score||0)*100).toFixed(0) + '%'; nnColor = '#ff3d57'; }
       else { nnLabel = '\u2754 SEM MODELO'; nnColor = '#6b7280'; }
       var nnY = isBear ? hdy - oU - 14 : hdy + oU + 18;
       ctx.font = 'bold 10px Inter, sans-serif'; ctx.textAlign = 'center';
@@ -2451,13 +2451,13 @@ function drawHSOverlay() {
         var esleft = gx(Math.max(0, rsi - 2));
         var esright = gx(Math.min(candleData.length - 1, entryChartIdx + 12));
         if (esleft && esright) {
-          ctx.setLineDash([5, 3]); ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 3]); ctx.strokeStyle = '#ff6a00'; ctx.lineWidth = 1.5;
           ctx.beginPath(); ctx.moveTo(esleft, ey); ctx.lineTo(esright, ey); ctx.stroke(); ctx.setLineDash([]);
         }
         // Modern entry icon (circle with arrow) — deslocado 1 vela à direita para não sobrepor Ombro D
         var entryDrawX = gx(Math.min(candleData.length - 1, entryChartIdx + 1)) || ex;
-        ctx.shadowColor = '#f59e0b'; ctx.shadowBlur = 10;
-        ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(entryDrawX, ey, 10, 0, Math.PI*2); ctx.fill();
+        ctx.shadowColor = '#ff6a00'; ctx.shadowBlur = 10;
+        ctx.fillStyle = '#ff6a00'; ctx.beginPath(); ctx.arc(entryDrawX, ey, 10, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(entryDrawX, ey, 10, 0, Math.PI*2); ctx.stroke();
         // Arrow inside circle
@@ -2465,7 +2465,7 @@ function drawHSOverlay() {
         ctx.fillText(isBear ? '\u25BC' : '\u25B2', entryDrawX, ey);
         ctx.textBaseline = 'alphabetic';
         // ENTRADA label com preço
-        ctx.fillStyle = '#f59e0b'; ctx.font = '700 10px Inter, sans-serif'; ctx.textAlign = 'left';
+        ctx.fillStyle = '#ff6a00'; ctx.font = '700 10px Inter, sans-serif'; ctx.textAlign = 'left';
         ctx.fillText('ENTRADA ' + entryPrice.toFixed(5), entryDrawX + 16, ey + 4);
       }
     }
@@ -2476,9 +2476,9 @@ function drawHSOverlay() {
       if (stopY !== null && !isNaN(stopY)) {
         var sL = gx(Math.max(0, rsi - 1)), sR = gx(Math.min(candleData.length - 1, rsi + 12));
         if (sL && sR) {
-          ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(239,68,68,0.6)'; ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(255,61,87,0.6)'; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(sL, stopY); ctx.lineTo(sR, stopY); ctx.stroke(); ctx.setLineDash([]);
-          ctx.fillStyle = 'rgba(239,68,68,0.7)'; ctx.font = '600 9px Inter, sans-serif'; ctx.textAlign = 'left';
+          ctx.fillStyle = 'rgba(255,61,87,0.7)'; ctx.font = '600 9px Inter, sans-serif'; ctx.textAlign = 'left';
           ctx.fillText('STOP', rsx + 14, stopY + (isBear ? -6 : 14));
         }
       }
@@ -2490,9 +2490,9 @@ function drawHSOverlay() {
       if (targetY !== null && !isNaN(targetY)) {
         var tL = gx(Math.max(0, rsi - 1)), tR = gx(Math.min(candleData.length - 1, rsi + 12));
         if (tL && tR) {
-          ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(16,185,129,0.6)'; ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(0,230,118,0.6)'; ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(tL, targetY); ctx.lineTo(tR, targetY); ctx.stroke(); ctx.setLineDash([]);
-          ctx.fillStyle = 'rgba(16,185,129,0.7)'; ctx.font = '600 9px Inter, sans-serif'; ctx.textAlign = 'left';
+          ctx.fillStyle = 'rgba(0,230,118,0.7)'; ctx.font = '600 9px Inter, sans-serif'; ctx.textAlign = 'left';
           ctx.fillText('META', rsx + 14, targetY + (isBear ? 14 : -6));
         }
       }
@@ -2500,20 +2500,20 @@ function drawHSOverlay() {
 
     // ── Direction arrow + label ──
     var arrowOff = oU * 2;
-    ctx.fillStyle = isBear ? '#ef4444' : '#10b981';
+    ctx.fillStyle = isBear ? '#ff3d57' : '#00e676';
     ctx.beginPath();
     if (isBear) { ctx.moveTo(rsx, rsy + arrowOff); ctx.lineTo(rsx - 7, rsy + arrowOff - 10); ctx.lineTo(rsx + 7, rsy + arrowOff - 10); }
     else { ctx.moveTo(rsx, rsy - arrowOff); ctx.lineTo(rsx - 7, rsy - arrowOff + 10); ctx.lineTo(rsx + 7, rsy - arrowOff + 10); }
     ctx.closePath(); ctx.fill();
     ctx.font = '800 11px Inter, sans-serif'; ctx.textAlign = 'left';
-    if (isBear) { ctx.fillStyle = '#ef4444'; ctx.fillText('PUT', rsx + 12, rsy + arrowOff - 1); }
-    else { ctx.fillStyle = '#10b981'; ctx.fillText('CALL', rsx + 12, rsy - arrowOff + 5); }
+    if (isBear) { ctx.fillStyle = '#ff3d57'; ctx.fillText('PUT', rsx + 12, rsy + arrowOff - 1); }
+    else { ctx.fillStyle = '#00e676'; ctx.fillText('CALL', rsx + 12, rsy - arrowOff + 5); }
 
     // ── Result badge ──
-    var bt = pat.backtest, btxt = 'LIVE', bcol = '#f59e0b', bbg = 'rgba(245,158,11,0.2)';
+    var bt = pat.backtest, btxt = 'LIVE', bcol = '#ff6a00', bbg = 'rgba(255,106,0,0.2)';
     if (bt) {
-      if (bt.result === 'win') { btxt = 'WIN'; bcol = '#10b981'; bbg = 'rgba(16,185,129,0.2)'; }
-      else if (bt.result === 'loss') { btxt = 'LOSS'; bcol = '#ef4444'; bbg = 'rgba(239,68,68,0.2)'; }
+      if (bt.result === 'win') { btxt = 'WIN'; bcol = '#00e676'; bbg = 'rgba(0,230,118,0.2)'; }
+      else if (bt.result === 'loss') { btxt = 'LOSS'; bcol = '#ff3d57'; bbg = 'rgba(255,61,87,0.2)'; }
     }
     var bw = ctx.measureText(btxt).width + 16;
     var bx = hdx - bw/2, by = isBear ? hdy - oU*2 - 4 : hdy + oU*2;
@@ -2590,8 +2590,8 @@ function buildLivePanel(data) {
     var prob = ((sig.ia_prob||0.5)*100).toFixed(0);
     var dirIcon = sig.direction === 'PUT' ? '#i-arrow-down' : '#i-arrow-up';
     var nnBadge = '';
-    if (sig.nn_approved === true) { nnBadge = '<span style="color:#10b981;font-size:10px;font-weight:700"> \u2705 NN ' + ((sig.nn_score||0)*100).toFixed(0) + '%</span>'; }
-    else if (sig.nn_approved === false) { nnBadge = '<span style="color:#ef4444;font-size:10px;font-weight:700"> \u274C NN ' + ((sig.nn_score||0)*100).toFixed(0) + '%</span>'; }
+    if (sig.nn_approved === true) { nnBadge = '<span style="color:#00e676;font-size:10px;font-weight:700"> \u2705 NN ' + ((sig.nn_score||0)*100).toFixed(0) + '%</span>'; }
+    else if (sig.nn_approved === false) { nnBadge = '<span style="color:#ff3d57;font-size:10px;font-weight:700"> \u274C NN ' + ((sig.nn_score||0)*100).toFixed(0) + '%</span>'; }
     else { nnBadge = '<span style="color:#6b7280;font-size:10px"> \u2754</span>'; }
     return '<div class="signal-card" onclick="selectAsset(\'' + sig.ativo + '\')">' +
       '<div class="sc-top"><span class="sc-name">' + sig.ativo + nnBadge + '</span><span class="sc-dir ' + cls + '"><svg class="icon-svg" style="width:10px;height:10px"><use href="' + dirIcon + '"/></svg> ' + sig.direction + '</span></div>' +
@@ -2672,14 +2672,14 @@ function updateDashboard(data) {
   }
   if (nnReady > 0) {
     iaLvlEl.textContent = '\ud83c\udfc6 NN ' + nnReady + '/' + nnTotal + ' ativos';
-    iaLvlEl.style.color = '#10b981';
-    iaLvlBox.style.borderColor = '#10b981';
+    iaLvlEl.style.color = '#00e676';
+    iaLvlBox.style.borderColor = '#00e676';
   } else if (nnTotal > 0) {
     iaLvlEl.textContent = '\u26a0\ufe0f NN carregando...';
-    iaLvlEl.style.color = '#f59e0b';
-    iaLvlBox.style.borderColor = '#f59e0b';
+    iaLvlEl.style.color = '#ff6a00';
+    iaLvlBox.style.borderColor = '#ff6a00';
   } else {
-    var lvl = s.ia_level || {num:1, nome:'Iniciante', emoji:'\ud83c\udf31', cor:'#94a3b8'};
+    var lvl = s.ia_level || {num:1, nome:'Iniciante', emoji:'\ud83c\udf31', cor:'#6b7280'};
     iaLvlEl.textContent = lvl.emoji + ' ' + lvl.num + ' - ' + lvl.nome;
     iaLvlEl.style.color = lvl.cor;
     iaLvlBox.style.borderColor = lvl.cor;
