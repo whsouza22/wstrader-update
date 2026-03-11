@@ -1,71 +1,16 @@
 ﻿# ==============================================
-# IGNORAR TUDO - Repositório apenas para releases
+# REPOSITORIO PUBLICO - NAO SUBIR CODIGO FONTE
+# Apenas modelos NN e metadados permitidos
 # ==============================================
 
-# Ignorar tudo por padrão
+# Ignorar tudo por padrao
 *
 
-# Permitir APENAS estes arquivos:
+# Permitir APENAS:
 !.gitignore
 !README.md
 !version.json
 
-# Pastas de API
-!bullexapi/
-!bullexapi/**
-!casatraderapi/
-!casatraderapi/**
-!iqoptionapi/
-!iqoptionapi/**
-
-# Modelos NN treinados
+# Modelos NN treinados (usados para download automatico)
 !models/
 !models/**
-
-# Imagens
-!Img/
-!Img/**
-
-# Backend
-!backend/
-!backend/**
-
-# Arquivos essenciais do bot
-!WS_AUTO_AI_BULLEX.py
-!ws_reversal_ai.py
-!ws_adaptive_brain.py
-!ws_generative_guard.py
-!train_neural_network.py
-
-# Interface / UI
-!TelaPrincipal.py
-!Login_Screen.py
-!trading_bot.py
-!chat_screen_new.py
-!tutorial_screen.py
-!dashboard_hs_ia.py
-!operations_manager.py
-
-# Infraestrutura
-!backend_server.py
-!license_manager.py
-!launch_bot.py
-!build_release.py
-!retrain_and_push.py
-!runtime_hook_ssl.py
-!installer.nsi
-!"WS Trader.spec"
-!dashboard.html
-
-# Ignorar cache, build e credenciais
-__pycache__/
-*.pyc
-build/
-dist/
-*.egg-info/
-.env
-**/credentials.json
-credentials.json
-pyarmor-regcode*
-config_keys.py
-pyarmor_runtime_009928/
