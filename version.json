@@ -1,5 +1,5 @@
 {
-  "version": "5.6",
-  "changelog": "v5.6 - NN v7 24 features, sem guards, IA decide tudo",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v5.6/WsTrader_Setup_5.6.exe"
+  "version": "6.0",
+  "changelog": "v6.0 - GPT EXP dinâmico (1/2/4min), consolidação guard, dashboard limpo",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.0/WsTrader_Setup_6.0.exe"
 }
