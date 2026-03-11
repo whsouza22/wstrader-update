@@ -226,7 +226,7 @@ logger = logging.getLogger(__name__)
 WINDOW_ICON_FILENAME = "ws_ai_trader_corrigido.ico"
 
 # Versão padrão do aplicativo
-CURRENT_VERSION = "5.5" # NN 17 features (trend context) + modelos retreinados
+CURRENT_VERSION = "5.6" # NN v8.1: 26 features, 37 modelos, sem filtros — IA aprende tudo
 
 # URL do JSON para verificação de atualizações
 VERSION_URL = "https://whsouza22.github.io/wstrader-update/version.json"
@@ -316,6 +316,8 @@ async def check_for_update(page: ft.Page, lang: str = "PT", status_column: ft.Co
         temp_dir = os.path.join(tempfile.gettempdir(), "wstrader_update")
         os.makedirs(temp_dir, exist_ok=True)
         installer_path = os.path.join(temp_dir, "WsTrader_Update.exe")
+
+        30
         install_dir = os.environ.get('PROGRAMFILES', 'C:\\Program Files') + '\\WsTrader'
         app_exe = os.path.join(install_dir, 'WsTrader.exe')
 
