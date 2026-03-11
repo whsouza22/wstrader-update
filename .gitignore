@@ -9,11 +9,6 @@
 !.gitignore
 !README.md
 !version.json
-!pricing.html
-
-# Protected build (código distribuído)
-!protected_build/
-!protected_build/**
 
 # Pastas de API
 !bullexapi/
@@ -22,10 +17,6 @@
 !casatraderapi/**
 !iqoptionapi/
 !iqoptionapi/**
-
-# Agents
-!agents/
-!agents/**
 
 # Modelos NN treinados
 !models/
@@ -39,40 +30,34 @@
 !backend/
 !backend/**
 
-# Arquivos essenciais
-!dashboard_hs_ia.py
+# Arquivos essenciais do bot
 !WS_AUTO_AI_BULLEX.py
-!TelaPrincipal.py
-!Login_Screen.py
-!trading_bot.py
-!operations_manager.py
 !ws_reversal_ai.py
-!ws_structure_map.py
-!ws_structure_patterns.py
-!ws_confluence_brain.py
-!ws_candle_color_ai.py
-!ws_data_manager.py
-!ws_auto_ai_engine.py
-!ia_autonomous_brain.py
-!final_entry_guard.py
 !ws_adaptive_brain.py
 !ws_generative_guard.py
 !train_neural_network.py
-!config_keys.py
-!license_manager.py
-!license_activation_screen.py
-!backend_server.py
-!backend_license_endpoint.py
+
+# Interface / UI
+!TelaPrincipal.py
+!Login_Screen.py
+!trading_bot.py
 !chat_screen_new.py
 !tutorial_screen.py
-!simple_sr_strategy.py
-!tutorial.html
-!index.html
-!version_info.txt
+!dashboard_hs_ia.py
+!operations_manager.py
+
+# Infraestrutura
+!backend_server.py
+!license_manager.py
+!launch_bot.py
+!build_release.py
+!retrain_and_push.py
+!runtime_hook_ssl.py
 !installer.nsi
 !"WS Trader.spec"
+!dashboard.html
 
-# Ignorar cache e build
+# Ignorar cache, build e credenciais
 __pycache__/
 *.pyc
 build/
@@ -84,4 +69,3 @@ credentials.json
 pyarmor-regcode*
 config_keys.py
 pyarmor_runtime_009928/
-protected_build/pyarmor_runtime_009928/

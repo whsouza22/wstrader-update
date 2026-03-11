@@ -1437,8 +1437,8 @@ class ReversalAI:
             ia3_str = f", IA3={self._ai3_val:.1%}" if self._ai3_ready else ""
             log.info(f"✓ Modelo carregado ({n} amostras, "
                      f"IA1={self._ai1_val:.1%}, IA2={self._ai2_val:.1%}{ia3_str})")
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"⚠️ Erro ao carregar modelo {self.broker}: {e}")
 
     def force_retrain(self):
         """Forçar retreino."""

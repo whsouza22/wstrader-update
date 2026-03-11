@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>WS Trader — Dashboard</title>
+  <link rel="icon" href="img/logo.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #050508;
+      --bg2: #0a0c14;
+      --bg3: #0e1018;
+      --surface: rgba(255,255,255,.04);
+      --surface2: rgba(255,255,255,.07);
+      --surface3: rgba(255,255,255,.10);
+      --line: rgba(255,255,255,.08);
+      --line2: rgba(255,255,255,.14);
+      --text: #e8ecf4;
+      --muted: rgba(232,236,244,.55);
+      --brand: #ff6a00;
+      --brand2: #ff9d2b;
+      --brand3: #ffb84d;
+      --green: #00e676;
+      --green2: rgba(0,230,118,.15);
+      --red: #ff3d57;
+      --red2: rgba(255,61,87,.15);
+      --cyan: #00d4ff;
+      --cyan2: rgba(0,212,255,.12);
+      --purple: #8b5cf6;
+      --radius: 14px;
+      --radius-sm: 8px;
+      --shadow: 0 8px 32px rgba(0,0,0,.4);
+      --sidebar-w: 72px;
+      --sidebar-exp: 220px;
+      --topbar-h: 56px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      display: flex;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── SCROLLBAR ─── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--line2); }
+
+    /* ─── SIDEBAR ─── */
+    .sidebar {
+      width: var(--sidebar-w);
+      height: 100vh;
+      background: var(--bg2);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 0;
+      gap: 6px;
+      z-index: 100;
+      transition: width .25s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .sidebar:hover { width: var(--sidebar-exp); }
+    .sidebar .logo {
+      width: 40px; height: 40px;
+      margin-bottom: 20px;
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+    .sidebar .logo img { width: 100%; height: 100%; border-radius: 10px; }
+    .sidebar .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+      padding: 10px 22px;
+      border-radius: 0;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+      color: var(--muted);
+      white-space: nowrap;
+      text-decoration: none;
+    }
+    .sidebar .nav-item:hover { background: var(--surface); color: var(--text); }
+    .sidebar .nav-item.active {
+      background: linear-gradient(90deg, rgba(255,106,0,.15) 0%, transparent 100%);
+      color: var(--brand);
+      border-left: 3px solid var(--brand);
+    }
+    .sidebar .nav-item svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .sidebar .nav-item span { font-size: 13px; font-weight: 500; }
+    .sidebar .spacer { flex: 1; }
+
+    /* ─── MAIN AREA ─── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      height: 100vh;
+      background: var(--bg);
+    }
+
+    /* ─── TOPBAR ─── */
+    .topbar {
+      height: var(--topbar-h);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--line);
+      background: var(--bg2);
+      flex-shrink: 0;
+    }
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .topbar-left h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .topbar-left .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background: var(--green2);
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .topbar-left .badge.real {
+      background: var(--red2);
+      color: var(--red);
+    }
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* ─── BALANCE DISPLAY ─── */
+    .balance-display {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--surface);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line);
+    }
+    .balance-display .label { font-size: 11px; color: var(--muted); }
+    .balance-display .amount {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--green);
+    }
+    .balance-display .amount.negative { color: var(--red); }
+
+    /* ─── BUTTONS ─── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      border: none;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+      outline: none;
+    }
+    .btn svg { width: 16px; height: 16px; }
+    .btn-brand {
+      background: var(--brand);
+      color: #000;
+    }
+    .btn-brand:hover { background: var(--brand2); transform: translateY(-1px); }
+    .btn-danger {
+      background: var(--red);
+      color: #fff;
+    }
+    .btn-danger:hover { opacity: .85; }
+    .btn-ghost {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    .btn-ghost:hover { background: var(--surface2); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+    /* ─── SELECT ─── */
+    .select-wrap {
+      position: relative;
+    }
+    .select-wrap select {
+      appearance: none;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      color: var(--text);
+      padding: 7px 30px 7px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+    }
+    .select-wrap select:focus { border-color: var(--brand); }
+    .select-wrap::after {
+      content: '▾';
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      pointer-events: none;
+      font-size: 10px;
+    }
+
+    /* ─── CONTENT AREA ─── */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* ─── STATS ROW ─── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+    }
+    .stat-card {
+      background: var(--bg2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color .2s, transform .2s;
+    }
+    .stat-card:hover {
+      border-color: var(--line2);
+      transform: translateY(-2px);
+    }
+    .stat-card .stat-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .stat-card .stat-value {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .stat-card .stat-sub {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .stat-card .stat-value.green { color: var(--green); }
+    .stat-card .stat-value.red { color: var(--red); }
+    .stat-card .stat-value.brand { color: var(--brand); }
+    .stat-card .stat-value.cyan { color: var(--cyan); }
+    .stat-card .stat-change {
+      font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 3px;
+    }
+    .stat-card .stat-change.up { color: var(--green); }
+    .stat-card .stat-change.down { color: var(--red); }
+
+    /* ─── MAIN GRID (Chart + Panel) ─── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 16px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ─── CHART CARD ─── */
+    .chart-card {
+      background: var(--bg2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 400px;
+    }
+    .chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .chart-header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .chart-header .asset-name {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .chart-header .asset-price {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 13px;
+      color: var(--green);
+    }
+    .chart-header .timeframe-btns {
+      display: flex; gap: 4px;
+    }
+    .chart-header .tf-btn {
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .chart-header .tf-btn:hover { background: var(--surface); color: var(--text); }
+    .chart-header .tf-btn.active {
+      background: var(--brand);
+      color: #000;
+      border-color: var(--brand);
+    }
+    .chart-body {
+      flex: 1;
+      min-height: 350px;
+    }
+    .chart-body iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* ─── RIGHT PANEL ─── */
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    /* ─── AI STATUS CARD ─── */
+    .ai-card {
+      background: var(--bg2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .ai-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .ai-card-header h3 {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .ai-status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s infinite;
+    }
+    .ai-status-dot.inactive {
+      background: var(--muted);
+      box-shadow: none;
+      animation: none;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .4; }
+    }
+    .ai-phase-bar {
+      display: flex;
+      gap: 3px;
+      margin-bottom: 10px;
+    }
+    .ai-phase-step {
+      flex: 1;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--surface2);
+      transition: background .3s;
+    }
+    .ai-phase-step.filled { background: var(--brand); }
+    .ai-phase-label {
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* ─── CONTROLS CARD ─── */
+    .controls-card {
+      background: var(--bg2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .controls-card h3 {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+    .controls-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .controls-row .select-wrap { flex: 1; }
+    .controls-row .select-wrap select { width: 100%; }
+
+    .start-btn {
+      width: 100%;
+      padding: 12px;
+      border-radius: var(--radius-sm);
+      border: none;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .start-btn.go {
+      background: linear-gradient(135deg, var(--brand), var(--brand2));
+      color: #000;
+    }
+    .start-btn.go:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(255,106,0,.3); }
+    .start-btn.stop {
+      background: var(--red);
+      color: #fff;
+    }
+    .start-btn.stop:hover { opacity: .85; }
+    .start-btn svg { width: 18px; height: 18px; }
+
+    /* ─── OPERATIONS TABLE ─── */
+    .ops-card {
+      background: var(--bg2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .ops-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .ops-header h3 { font-size: 13px; font-weight: 700; }
+    .ops-header .ops-count {
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface);
+      padding: 3px 8px;
+      border-radius: 12px;
+    }
+    .ops-table-wrap {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .ops-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .ops-table th {
+      position: sticky;
+      top: 0;
+      background: var(--bg3);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+    }
+    .ops-table td {
+      font-size: 12px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .ops-table tr:hover td { background: var(--surface); }
+    .ops-table .dir-call {
+      color: var(--green);
+      font-weight: 600;
+    }
+    .ops-table .dir-put {
+      color: var(--red);
+      font-weight: 600;
+    }
+    .result-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .result-badge.win { background: var(--green2); color: var(--green); }
+    .result-badge.loss { background: var(--red2); color: var(--red); }
+    .result-badge.pending { background: var(--surface2); color: var(--muted); }
+
+    /* ─── EMPTY STATE ─── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      gap: 8px;
+    }
+    .empty-state svg { width: 40px; height: 40px; opacity: .3; }
+    .empty-state p { font-size: 13px; }
+
+    /* ─── PAGES ─── */
+    .page { display: none; flex-direction: column; height: 100%; }
+    .page.active { display: flex; }
+
+    /* ─── LOGIN PAGE ─── */
+    .login-page {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      background: var(--bg);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-page.active { display: flex; }
+    .login-card {
+      background: var(--bg2);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 40px;
+      width: 400px;
+      max-width: 90%;
+    }
+    .login-card h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+    .login-card .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .form-group input:focus { border-color: var(--brand); }
+    .form-group input::placeholder { color: var(--muted); }
+    .login-btn {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, var(--brand), var(--brand2));
+      color: #000;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: all .2s;
+    }
+    .login-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(255,106,0,.3); }
+    .login-btn:disabled { opacity: .5; cursor: default; transform: none; }
+    .login-error {
+      margin-top: 12px;
+      padding: 10px;
+      background: var(--red2);
+      color: var(--red);
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      display: none;
+    }
+    .login-logo {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 20px;
+      border-radius: 16px;
+    }
+
+    /* ─── CHAT PAGE ─── */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .chat-msg {
+      max-width: 75%;
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .chat-msg.user {
+      align-self: flex-end;
+      background: var(--brand);
+      color: #000;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-msg.ai {
+      align-self: flex-start;
+      background: var(--bg3);
+      border: 1px solid var(--line);
+      border-bottom-left-radius: 4px;
+    }
+    .chat-input-area {
+      padding: 12px 20px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 8px;
+    }
+    .chat-input-area input {
+      flex: 1;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+    .chat-input-area input:focus { border-color: var(--brand); }
+
+    /* ─── NOTIFY TOAST ─── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--bg3);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 12px 20px;
+      font-size: 13px;
+      color: var(--text);
+      z-index: 9999;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all .3s;
+      max-width: 350px;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error { border-left: 3px solid var(--red); }
+    .toast.info { border-left: 3px solid var(--brand); }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 1100px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .stats-row { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ╔══════════════════════════════════════════╗ -->
+<!-- ║            LOGIN PAGE                     ║ -->
+<!-- ╚══════════════════════════════════════════╝ -->
+<div class="login-page" id="loginPage">
+  <img src="img/Wstrader_bot.png" alt="WS Trader" class="login-logo" onerror="this.style.display='none'"/>
+  <div class="login-card">
+    <h2>WS Trader <span style="color:var(--brand)">AI</span></h2>
+    <p class="subtitle">Inteligência Artificial para Trading</p>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"/>
+    </div>
+    <div class="form-group">
+      <label>Senha</label>
+      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password"/>
+    </div>
+    <div class="form-group">
+      <label>Corretora</label>
+      <select id="loginBroker" style="width:100%;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--text);font-size:14px;outline:none;">
+        <option value="iq_option">IQ Option</option>
+        <option value="bullex">Bullex</option>
+        <option value="casatrader">CasaTrader</option>
+      </select>
+    </div>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">Entrar</button>
+    <div class="login-error" id="loginError"></div>
+    <p style="text-align:center;margin-top:16px;font-size:12px;color:var(--muted)">
+      Não tem conta? <a href="https://wstrader.io/pricing.html" target="_blank" style="color:var(--brand);font-weight:600;">Assine agora</a>
+    </p>
+  </div>
+  <p style="margin-top:24px;font-size:11px;color:var(--muted)">v5.6 — NN v8.1</p>
+</div>
+
+<!-- ╔══════════════════════════════════════════╗ -->
+<!-- ║            SIDEBAR                        ║ -->
+<!-- ╚══════════════════════════════════════════╝ -->
+<aside class="sidebar" id="sidebar">
+  <div class="logo">
+    <img src="img/logo.png" alt="WS" onerror="this.parentElement.innerHTML='<div style=&quot;width:40px;height:40px;background:var(--brand);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;color:#000&quot;>WS</div>'"/>
+  </div>
+
+  <a class="nav-item active" data-page="dashboard" onclick="showPage('dashboard')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <span>Dashboard</span>
+  </a>
+  <a class="nav-item" data-page="chart" onclick="showPage('chart')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    <span>Gráfico</span>
+  </a>
+  <a class="nav-item" data-page="operations" onclick="showPage('operations')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    <span>Operações</span>
+  </a>
+  <a class="nav-item" data-page="chat" onclick="showPage('chat')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <span>Chat IA</span>
+  </a>
+
+  <div class="spacer"></div>
+
+  <a class="nav-item" onclick="doLogout()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    <span>Sair</span>
+  </a>
+</aside>
+
+<!-- ╔══════════════════════════════════════════╗ -->
+<!-- ║            MAIN CONTENT                   ║ -->
+<!-- ╚══════════════════════════════════════════╝ -->
+<div class="main" id="mainArea" style="display:flex">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <h1>WS Trader <span style="color:var(--brand)">AI</span></h1>
+      <span class="badge" id="accountBadge">DEMO</span>
+      <span id="brokerLabel" style="font-size:12px;color:var(--muted)">IQ Option</span>
+    </div>
+    <div class="topbar-right">
+      <div class="balance-display">
+        <span class="label">Saldo</span>
+        <span class="amount" id="balanceAmount">R$ 0,00</span>
+      </div>
+      <div class="balance-display">
+        <span class="label">Lucro Hoje</span>
+        <span class="amount" id="profitToday">R$ 0,00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ DASHBOARD PAGE ═══════ -->
+  <div class="page active" id="page-dashboard">
+    <div class="content">
+      <!-- Stats Row -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <span class="stat-label">Wins</span>
+          <span class="stat-value green" id="statWins">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Losses</span>
+          <span class="stat-value red" id="statLosses">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Win Rate</span>
+          <span class="stat-value brand" id="statWinRate">0%</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Lucro</span>
+          <span class="stat-value green" id="statProfit">R$ 0,00</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Total Ops</span>
+          <span class="stat-value cyan" id="statTotal">0</span>
+        </div>
+      </div>
+
+      <!-- Main Grid: Chart + Right Panel -->
+      <div class="main-grid">
+        <!-- TradingView Chart -->
+        <div class="chart-card">
+          <div class="chart-header">
+            <div class="chart-header-left">
+              <div class="select-wrap">
+                <select id="chartAsset" onchange="changeChartAsset()">
+                  <option value="EURUSD">EUR/USD</option>
+                  <option value="GBPUSD">GBP/USD</option>
+                  <option value="USDJPY">USD/JPY</option>
+                  <option value="AUDUSD">AUD/USD</option>
+                  <option value="EURGBP">EUR/GBP</option>
+                  <option value="EURJPY">EUR/JPY</option>
+                  <option value="GBPJPY">GBP/JPY</option>
+                  <option value="USDCHF">USD/CHF</option>
+                  <option value="USDCAD">USD/CAD</option>
+                  <option value="NZDUSD">NZD/USD</option>
+                </select>
+              </div>
+            </div>
+            <div class="timeframe-btns">
+              <button class="tf-btn" onclick="changeInterval('1',this)">1m</button>
+              <button class="tf-btn active" onclick="changeInterval('5',this)">5m</button>
+              <button class="tf-btn" onclick="changeInterval('15',this)">15m</button>
+              <button class="tf-btn" onclick="changeInterval('60',this)">1h</button>
+            </div>
+          </div>
+          <div class="chart-body" id="chartBody">
+            <!-- TradingView Widget -->
+          </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="right-panel">
+          <!-- AI Status -->
+          <div class="ai-card">
+            <div class="ai-card-header">
+              <h3>🧠 IA Neural Network</h3>
+              <div class="ai-status-dot inactive" id="aiDot"></div>
+            </div>
+            <div class="ai-phase-bar">
+              <div class="ai-phase-step filled"></div>
+              <div class="ai-phase-step filled"></div>
+              <div class="ai-phase-step filled"></div>
+              <div class="ai-phase-step filled"></div>
+            </div>
+            <div class="ai-phase-label">
+              <span>Expert • 3 NNs • 26 Features</span>
+              <span id="aiSamples">37 modelos</span>
+            </div>
+            <div style="margin-top:10px;padding:8px 10px;background:var(--surface);border-radius:6px;font-size:11px;color:var(--muted)">
+              <span id="aiInfo">GradientBoosting + LightGBM + MLP | Confiança ≥ 40%</span>
+            </div>
+          </div>
+
+          <!-- Controls -->
+          <div class="controls-card">
+            <h3>⚡ Controles</h3>
+            <div class="controls-row">
+              <div class="select-wrap">
+                <select id="brokerSelect" onchange="changeBroker()">
+                  <option value="iq_option">IQ Option</option>
+                  <option value="bullex">Bullex</option>
+                  <option value="casatrader">CasaTrader</option>
+                </select>
+              </div>
+              <div class="select-wrap">
+                <select id="accountSelect" onchange="changeAccount()">
+                  <option value="DEMO">DEMO</option>
+                  <option value="REAL">REAL</option>
+                </select>
+              </div>
+            </div>
+            <button class="start-btn go" id="startBtn" onclick="toggleBot()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Iniciar IA
+            </button>
+          </div>
+
+          <!-- Recent Operations (mini) -->
+          <div class="ops-card" style="max-height:250px">
+            <div class="ops-header">
+              <h3>Operações Recentes</h3>
+              <span class="ops-count" id="opsCount">0</span>
+            </div>
+            <div class="ops-table-wrap">
+              <table class="ops-table">
+                <thead>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Par</th>
+                    <th>Dir</th>
+                    <th>Resultado</th>
+                  </tr>
+                </thead>
+                <tbody id="opsBody">
+                </tbody>
+              </table>
+              <div class="empty-state" id="opsEmpty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <p>Nenhuma operação ainda</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ CHART FULL PAGE ═══════ -->
+  <div class="page" id="page-chart">
+    <div class="content" style="padding:0;height:100%">
+      <div class="chart-card" style="height:100%;border-radius:0;border:none">
+        <div class="chart-header">
+          <div class="chart-header-left">
+            <div class="select-wrap">
+              <select id="chartAssetFull" onchange="changeChartAssetFull()">
+                <option value="EURUSD">EUR/USD</option>
+                <option value="GBPUSD">GBP/USD</option>
+                <option value="USDJPY">USD/JPY</option>
+                <option value="AUDUSD">AUD/USD</option>
+                <option value="EURGBP">EUR/GBP</option>
+                <option value="EURJPY">EUR/JPY</option>
+                <option value="GBPJPY">GBP/JPY</option>
+                <option value="USDCHF">USD/CHF</option>
+                <option value="USDCAD">USD/CAD</option>
+                <option value="NZDUSD">NZD/USD</option>
+              </select>
+            </div>
+          </div>
+          <div class="timeframe-btns">
+            <button class="tf-btn" onclick="changeIntervalFull('1',this)">1m</button>
+            <button class="tf-btn active" onclick="changeIntervalFull('5',this)">5m</button>
+            <button class="tf-btn" onclick="changeIntervalFull('15',this)">15m</button>
+            <button class="tf-btn" onclick="changeIntervalFull('60',this)">1h</button>
+            <button class="tf-btn" onclick="changeIntervalFull('D',this)">1D</button>
+          </div>
+        </div>
+        <div class="chart-body" id="chartBodyFull" style="min-height:0;flex:1">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ OPERATIONS PAGE ═══════ -->
+  <div class="page" id="page-operations">
+    <div class="content">
+      <div class="ops-card" style="flex:1">
+        <div class="ops-header">
+          <h3>📋 Histórico de Operações</h3>
+          <span class="ops-count" id="opsCountFull">0</span>
+        </div>
+        <div class="ops-table-wrap">
+          <table class="ops-table">
+            <thead>
+              <tr>
+                <th>Hora</th>
+                <th>Par</th>
+                <th>Direção</th>
+                <th>Valor</th>
+                <th>Payout</th>
+                <th>Resultado</th>
+                <th>Lucro</th>
+              </tr>
+            </thead>
+            <tbody id="opsBodyFull">
+            </tbody>
+          </table>
+          <div class="empty-state" id="opsEmptyFull">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <p>Nenhuma operação registrada hoje</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ CHAT PAGE ═══════ -->
+  <div class="page" id="page-chat">
+    <div class="chat-container">
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-msg ai">Olá! Sou a IA do WS Trader. Como posso ajudar? 🤖<br><br>Comandos disponíveis:<br>• <b>status</b> — ver estado da IA<br>• <b>ajuda</b> — listar comandos<br>• <b>conectar iq option</b> — conectar broker</div>
+      </div>
+      <div class="chat-input-area">
+        <input type="text" id="chatInput" placeholder="Digite sua mensagem..." onkeydown="if(event.key==='Enter')sendChat()"/>
+        <button class="btn btn-brand" onclick="sendChat()">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ╔══════════════════════════════════════════╗ -->
+<!-- ║            JAVASCRIPT                     ║ -->
+<!-- ╚══════════════════════════════════════════╝ -->
+<script>
+  // ─── STATE ───
+  const API = 'http://127.0.0.1:8000';
+  let state = {
+    loggedIn: false,
+    email: '',
+    password: '',
+    broker: 'iq_option',
+    account: 'DEMO',
+    botRunning: false,
+    wins: 0,
+    losses: 0,
+    profit: 0,
+    balance: 0,
+    operations: [],
+    chartAsset: 'EURUSD',
+    chartInterval: '5',
+  };
+
+  // ─── TOAST ───
+  function showToast(msg, type='info') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type + ' show';
+    setTimeout(() => t.classList.remove('show'), 3500);
+  }
+
+  // ─── LOGIN ───
+  async function doLogin() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const broker = document.getElementById('loginBroker').value;
+    const errEl = document.getElementById('loginError');
+    const btn = document.getElementById('loginBtn');
+
+    if (!email || !password) {
+      errEl.textContent = 'Preencha email e senha.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Conectando...';
+    errEl.style.display = 'none';
+
+    try {
+      const resp = await fetch(API + '/api/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email, password, broker})
+      });
+      const data = await resp.json();
+
+      if (data.success) {
+        state.loggedIn = true;
+        state.email = email;
+        state.password = password;
+        state.broker = broker;
+        state.balance = data.balance || 0;
+
+        document.getElementById('loginPage').classList.remove('active');
+        document.getElementById('mainArea').style.display = 'flex';
+        document.getElementById('sidebar').style.display = 'flex';
+        document.getElementById('brokerSelect').value = broker;
+        document.getElementById('loginBroker').value = broker;
+
+        updateBrokerLabel();
+        updateBalance();
+        loadTradingViewWidget('chartBody', state.chartAsset, state.chartInterval);
+        loadTradingViewWidget('chartBodyFull', state.chartAsset, state.chartInterval);
+        startPolling();
+        showToast('Login realizado com sucesso!', 'success');
+      } else {
+        errEl.textContent = data.message || 'Credenciais inválidas.';
+        errEl.style.display = 'block';
+      }
+    } catch(e) {
+      errEl.textContent = 'Erro de conexão. Verifique se o backend está rodando.';
+      errEl.style.display = 'block';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Entrar';
+  }
+
+  function doLogout() {
+    if (state.botRunning) {
+      showToast('Pare a IA antes de sair.', 'error');
+      return;
+    }
+    state.loggedIn = false;
+    window.location.reload();
+  }
+
+  // ─── NAVIGATION ───
+  function showPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    document.querySelector(`.nav-item[data-page="${name}"]`).classList.add('active');
+
+    if (name === 'chart') {
+      loadTradingViewWidget('chartBodyFull', document.getElementById('chartAssetFull').value, state.chartInterval);
+    }
+  }
+
+  // ─── BOT CONTROL ───
+  async function toggleBot() {
+    const btn = document.getElementById('startBtn');
+
+    if (!state.botRunning) {
+      btn.disabled = true;
+      try {
+        const resp = await fetch(API + '/api/bot/start', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            broker: state.broker,
+            account: state.account,
+            email: state.email,
+            password: state.password
+          })
+        });
+        const data = await resp.json();
+        if (data.success) {
+          state.botRunning = true;
+          btn.className = 'start-btn stop';
+          btn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Parar IA';
+          document.getElementById('aiDot').classList.remove('inactive');
+          showToast('IA iniciada! Operando...', 'success');
+        } else {
+          showToast(data.message || 'Erro ao iniciar IA.', 'error');
+        }
+      } catch(e) {
+        showToast('Erro de conexão com backend.', 'error');
+      }
+      btn.disabled = false;
+    } else {
+      btn.disabled = true;
+      try {
+        await fetch(API + '/api/bot/stop', { method: 'POST' });
+        state.botRunning = false;
+        btn.className = 'start-btn go';
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Iniciar IA';
+        document.getElementById('aiDot').classList.add('inactive');
+        showToast('IA parada.', 'info');
+      } catch(e) {
+        showToast('Erro ao parar IA.', 'error');
+      }
+      btn.disabled = false;
+    }
+  }
+
+  // ─── BROKER/ACCOUNT ───
+  function changeBroker() {
+    state.broker = document.getElementById('brokerSelect').value;
+    updateBrokerLabel();
+    loadDayStats();
+  }
+  function changeAccount() {
+    state.account = document.getElementById('accountSelect').value;
+    const badge = document.getElementById('accountBadge');
+    badge.textContent = state.account;
+    badge.className = 'badge' + (state.account === 'REAL' ? ' real' : '');
+    loadDayStats();
+  }
+  function updateBrokerLabel() {
+    const map = { iq_option: 'IQ Option', bullex: 'Bullex', casatrader: 'CasaTrader' };
+    document.getElementById('brokerLabel').textContent = map[state.broker] || state.broker;
+  }
+
+  // ─── CHART ───
+  function loadTradingViewWidget(containerId, symbol, interval) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const tvSymbol = 'FX:' + symbol;
+    container.innerHTML = '';
+
+    const widgetDiv = document.createElement('div');
+    widgetDiv.className = 'tradingview-widget-container';
+    widgetDiv.style.height = '100%';
+    widgetDiv.style.width = '100%';
+    widgetDiv.innerHTML = `
+      <div class="tradingview-widget-container__widget" style="height:100%;width:100%"></div>
+    `;
+    container.appendChild(widgetDiv);
+
+    const script = document.createElement('script');
+    script.type = 'text/javascript';
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+    script.async = true;
+    script.textContent = JSON.stringify({
+      "autosize": true,
+      "symbol": tvSymbol,
+      "interval": interval,
+      "timezone": "America/Sao_Paulo",
+      "theme": "dark",
+      "style": "1",
+      "locale": "br",
+      "backgroundColor": "rgba(10, 12, 20, 1)",
+      "gridColor": "rgba(255, 255, 255, 0.04)",
+      "hide_top_toolbar": false,
+      "hide_legend": false,
+      "allow_symbol_change": true,
+      "save_image": false,
+      "calendar": false,
+      "hide_volume": false,
+      "support_host": "https://www.tradingview.com"
+    });
+    widgetDiv.appendChild(script);
+  }
+
+  function changeChartAsset() {
+    const asset = document.getElementById('chartAsset').value;
+    state.chartAsset = asset;
+    loadTradingViewWidget('chartBody', asset, state.chartInterval);
+  }
+  function changeChartAssetFull() {
+    const asset = document.getElementById('chartAssetFull').value;
+    loadTradingViewWidget('chartBodyFull', asset, state.chartInterval);
+  }
+  function changeInterval(interval, btn) {
+    state.chartInterval = interval;
+    btn.parentElement.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadTradingViewWidget('chartBody', state.chartAsset, interval);
+  }
+  function changeIntervalFull(interval, btn) {
+    btn.parentElement.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadTradingViewWidget('chartBodyFull', document.getElementById('chartAssetFull').value, interval);
+  }
+
+  // ─── UPDATE STATS UI ───
+  function updateStats() {
+    const total = state.wins + state.losses;
+    const wr = total > 0 ? ((state.wins / total) * 100).toFixed(1) : '0';
+
+    document.getElementById('statWins').textContent = state.wins;
+    document.getElementById('statLosses').textContent = state.losses;
+    document.getElementById('statWinRate').textContent = wr + '%';
+    document.getElementById('statProfit').textContent = formatMoney(state.profit);
+    document.getElementById('statTotal').textContent = total;
+
+    const profitEl = document.getElementById('statProfit');
+    profitEl.className = 'stat-value ' + (state.profit >= 0 ? 'green' : 'red');
+
+    document.getElementById('profitToday').textContent = formatMoney(state.profit);
+    const profitTodayEl = document.getElementById('profitToday');
+    profitTodayEl.className = 'amount' + (state.profit < 0 ? ' negative' : '');
+  }
+
+  function updateBalance() {
+    document.getElementById('balanceAmount').textContent = formatMoney(state.balance);
+  }
+
+  function formatMoney(v) {
+    const abs = Math.abs(v).toFixed(2).replace('.', ',');
+    return (v < 0 ? '-' : '') + 'R$ ' + abs;
+  }
+
+  // ─── UPDATE OPERATIONS TABLE ───
+  function updateOperations() {
+    const ops = state.operations;
+    const tbody = document.getElementById('opsBody');
+    const tbodyFull = document.getElementById('opsBodyFull');
+    const empty = document.getElementById('opsEmpty');
+    const emptyFull = document.getElementById('opsEmptyFull');
+    const count = document.getElementById('opsCount');
+    const countFull = document.getElementById('opsCountFull');
+
+    count.textContent = ops.length;
+    countFull.textContent = ops.length;
+
+    if (ops.length === 0) {
+      tbody.innerHTML = '';
+      tbodyFull.innerHTML = '';
+      empty.style.display = 'flex';
+      emptyFull.style.display = 'flex';
+      return;
+    }
+
+    empty.style.display = 'none';
+    emptyFull.style.display = 'none';
+
+    // Mini table (last 10)
+    tbody.innerHTML = ops.slice(0, 10).map(op => `
+      <tr>
+        <td>${op.time || '--'}</td>
+        <td>${op.asset || '--'}</td>
+        <td class="${op.direction === 'CALL' ? 'dir-call' : 'dir-put'}">${op.direction || '--'}</td>
+        <td>${renderResult(op.result, op.profit)}</td>
+      </tr>
+    `).join('');
+
+    // Full table
+    tbodyFull.innerHTML = ops.map(op => `
+      <tr>
+        <td>${op.time || '--'}</td>
+        <td>${op.asset || '--'}</td>
+        <td class="${op.direction === 'CALL' ? 'dir-call' : 'dir-put'}">${op.direction || '--'}</td>
+        <td>R$ ${(op.stake || 0).toFixed(2)}</td>
+        <td>${(op.payout || 0)}%</td>
+        <td>${renderResult(op.result, op.profit)}</td>
+        <td style="color:${(op.profit||0)>=0?'var(--green)':'var(--red)'}">${formatMoney(op.profit || 0)}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderResult(result, profit) {
+    if (!result || result === 'pending') return '<span class="result-badge pending">⏳ Aguardando</span>';
+    if (result === 'win') return '<span class="result-badge win">✓ WIN</span>';
+    return '<span class="result-badge loss">✗ LOSS</span>';
+  }
+
+  // ─── POLLING ───
+  let pollInterval = null;
+
+  function startPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    loadDayStats();
+    pollInterval = setInterval(pollStatus, 2000);
+  }
+
+  async function pollStatus() {
+    try {
+      const resp = await fetch(API + '/api/bot/status');
+      const data = await resp.json();
+
+      if (data.wins !== undefined) state.wins = data.wins;
+      if (data.losses !== undefined) state.losses = data.losses;
+      if (data.profit !== undefined) state.profit = data.profit;
+      if (data.balance !== undefined) {
+        state.balance = data.balance;
+        updateBalance();
+      }
+      if (data.operations) {
+        state.operations = data.operations;
+        updateOperations();
+      }
+      if (data.bot_running !== undefined && data.bot_running !== state.botRunning) {
+        state.botRunning = data.bot_running;
+        const btn = document.getElementById('startBtn');
+        if (state.botRunning) {
+          btn.className = 'start-btn stop';
+          btn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Parar IA';
+          document.getElementById('aiDot').classList.remove('inactive');
+        } else {
+          btn.className = 'start-btn go';
+          btn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Iniciar IA';
+          document.getElementById('aiDot').classList.add('inactive');
+        }
+      }
+
+      updateStats();
+    } catch(e) { /* silent */ }
+  }
+
+  async function loadDayStats() {
+    try {
+      const resp = await fetch(API + '/api/stats?broker=' + state.broker + '&account=' + state.account);
+      const data = await resp.json();
+      if (data) {
+        state.wins = data.wins || 0;
+        state.losses = data.losses || 0;
+        state.profit = data.profit || 0;
+        if (data.operations) state.operations = data.operations;
+        updateStats();
+        updateOperations();
+      }
+    } catch(e) { /* silent */ }
+  }
+
+  // ─── CHAT ───
+  function sendChat() {
+    const input = document.getElementById('chatInput');
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    addChatMessage(msg, 'user');
+    input.value = '';
+
+    // Send to backend
+    fetch(API + '/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: msg, email: state.email, broker: state.broker})
+    }).then(r => r.json()).then(data => {
+      addChatMessage(data.response || 'Sem resposta.', 'ai');
+    }).catch(() => {
+      addChatMessage('Erro de conexão com o servidor.', 'ai');
+    });
+  }
+
+  function addChatMessage(text, type) {
+    const messages = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + type;
+    div.innerHTML = text.replace(/\n/g, '<br>');
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  // ─── INIT ───
+  // Auto-load saved credentials and go straight to dashboard
+  async function initDashboard() {
+    try {
+      const resp = await fetch(API + '/api/auth/saved');
+      const data = await resp.json();
+      if (data.has_credentials) {
+        state.email = data.email || '';
+        state.broker = data.broker || 'iq_option';
+        document.getElementById('brokerSelect').value = state.broker;
+      }
+    } catch(e) { /* ignore */ }
+
+    state.loggedIn = true;
+    updateBrokerLabel();
+    loadTradingViewWidget('chartBody', state.chartAsset, state.chartInterval);
+    loadTradingViewWidget('chartBodyFull', state.chartAsset, state.chartInterval);
+    startPolling();
+  }
+
+  initDashboard();
+</script>
+</body>
+</html>
