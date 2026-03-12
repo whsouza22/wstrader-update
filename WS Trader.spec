@@ -31,6 +31,7 @@ a = Analysis(
     datas=[
         ('Img', 'Img'),
         ('backend', 'backend'),
+        ('ws_ai_base_training.json', '.'),
         ('version_info.txt', '.'),
         # === Broker APIs (pacotes locais completos) ===
         ('iqoptionapi', 'iqoptionapi'),
@@ -70,6 +71,8 @@ a = Analysis(
         'tkinter',
         'sqlalchemy', 'sqlalchemy.ext.declarative', 'sqlalchemy.orm',
         'uvicorn', 'fastapi', 'pydantic',
+        'fastapi.middleware', 'fastapi.middleware.cors', 'fastapi.staticfiles',
+        'starlette.middleware', 'starlette.middleware.cors', 'starlette.staticfiles',
         'stripe',
         # === Broker APIs (todos submodules) ===
         'iqoptionapi', 'iqoptionapi.stable_api', 'iqoptionapi.api',
