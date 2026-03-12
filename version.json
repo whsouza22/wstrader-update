@@ -1,6 +1,6 @@
 {
-  "version": "6.1",
-  "changelog": "v6.1 - fix build com modelos embarcados",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1/WsTrader_Setup_6.1.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1/WsTrader_Setup_6.1.exe"
+  "version": "6.1.6",
+  "changelog": "v6.1.6 - relaxa guard DT standard para destravar entradas live",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.6/WsTrader_Setup_6.1.6.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.6/WsTrader_Setup_6.1.6.exe"
 }
