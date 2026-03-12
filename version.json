@@ -1,5 +1,6 @@
 {
   "version": "6.1",
   "changelog": "v6.1 - entry guards legado restaurados, PKLs atuais publicados, build criptografado e instalador 6.1",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1/WsTrader_Setup_6.1.exe"
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1/WsTrader_Setup_6.1.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1/WsTrader_Setup_6.1.exe"
 }
