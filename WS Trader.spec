@@ -31,6 +31,8 @@ a = Analysis(
     datas=[
         ('Img', 'Img'),
         ('backend', 'backend'),
+        ('models', 'models'),
+        ('models_entry_guard', 'models_entry_guard'),
         ('ws_ai_base_training.json', '.'),
         ('version_info.txt', '.'),
         # === Broker APIs (pacotes locais completos) ===
