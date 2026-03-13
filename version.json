@@ -1,6 +1,6 @@
 {
-  "version": "6.1.3",
-  "changelog": "v6.1.3 - NN consensus scoring fix, AI3 outlier handling, GEO FRACA removida, profile standard, entry guards otimizados",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.3/WsTrader_Setup_6.1.3.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.3/WsTrader_Setup_6.1.3.exe"
+  "version": "6.1.4",
+  "changelog": "v6.1.4 - Deteccao de falso movimento DT, wait-and-recheck antes de entrar, guard de wick extremo, correcao DT ATRASADO grafico",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.4/WsTrader_Setup_6.1.4.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.4/WsTrader_Setup_6.1.4.exe"
 }
