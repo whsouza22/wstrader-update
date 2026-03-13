@@ -1,5 +1,5 @@
 {
-  "version": "2026-03-12-entry-guard-31-legacy-current",
+  "version": "2026-03-13-entry-guard-31-delay-aware-retrained",
   "files": [
     "entry_guard_AUDCAD-OTC.pkl",
     "entry_guard_AUDCHF-OTC.pkl",
