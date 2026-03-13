@@ -1,6 +1,6 @@
 {
-  "version": "6.1.2",
-  "changelog": "v6.1.2 - ajustes live standard para evitar operar por falta de opcao",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.2/WsTrader_Setup_6.1.2.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.2/WsTrader_Setup_6.1.2.exe"
+  "version": "6.1.3",
+  "changelog": "v6.1.3 - NN consensus scoring fix, AI3 outlier handling, GEO FRACA removida, profile standard, entry guards otimizados",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.3/WsTrader_Setup_6.1.3.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.1.3/WsTrader_Setup_6.1.3.exe"
 }
