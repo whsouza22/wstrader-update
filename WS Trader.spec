@@ -75,18 +75,40 @@ def _assert_protected_build_fresh():
 
 _assert_protected_build_fresh()
 
+import sys as _sys
+_python_home = os.path.dirname(_sys.executable)
+# Em venvs, o python3xx.dll fica na instalação base
+_python_base = os.path.dirname(os.path.dirname(_sys.executable))  # venv -> base
+if not os.path.exists(os.path.join(_python_home, 'python313.dll')):
+    # Tentar base do Python (fora do venv)
+    for _candidate in [
+        os.path.join(_python_base, 'python313.dll'),
+        os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs', 'Python', 'Python313', 'python313.dll'),
+        os.path.join(os.environ.get('PROGRAMFILES', ''), 'Python313', 'python313.dll'),
+    ]:
+        if os.path.exists(_candidate):
+            _python_home = os.path.dirname(_candidate)
+            break
+
+_python_dlls = []
+for _dll_name in ['python313.dll', 'python3.dll']:
+    _dll_path = os.path.join(_python_home, _dll_name)
+    if os.path.exists(_dll_path):
+        _python_dlls.append((_dll_path, '.'))
+
 a = Analysis(
     [os.path.join(protected_dir, 'TelaPrincipal.py')],
     pathex=[protected_dir, os.getcwd()],
     binaries=[
         # PyArmor runtime DLL - essencial para código protegido
         (os.path.join(pyarmor_runtime_dir, 'pyarmor_runtime.pyd'), 'pyarmor_runtime_009928'),
-    ] + xgboost_binaries,
+    ] + _python_dlls + xgboost_binaries,
     datas=[
         ('Img', 'Img'),
         ('backend', 'backend'),
         ('models', 'models'),
         ('models_entry_guard', 'models_entry_guard'),
+        ('trade_decisions.html', '.'),
         ('ws_ai_base_training.json', '.'),
         ('version_info.txt', '.'),
         # === Broker APIs (pacotes locais completos) ===
