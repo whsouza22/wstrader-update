@@ -3,6 +3,25 @@ import os
 import importlib
 from PyInstaller.utils.hooks import collect_all
 
+PROJECT_ROOT = os.getcwd()
+SOURCE_FILES = [
+    'TelaPrincipal.py',
+    'WS_AUTO_AI_BULLEX.py',
+    'ws_reversal_ai.py',
+    'ws_adaptive_brain.py',
+    'ws_generative_guard.py',
+    'config_keys.py',
+    'Login_Screen.py',
+    'trading_bot.py',
+    'dashboard_hs_ia.py',
+    'operations_manager.py',
+    'chat_screen_new.py',
+    'tutorial_screen.py',
+    'license_manager.py',
+    'backend_server.py',
+    'train_neural_network.py',
+]
+
 # Localizar flet_desktop automaticamente
 flet_desktop_dir = os.path.dirname(importlib.import_module('flet_desktop').__file__)
 flet_desktop_app = os.path.join(flet_desktop_dir, 'app')
@@ -14,6 +33,7 @@ flet_controls = os.path.join(flet_dir, 'controls')
 # Coletar TODOS os submodules + dados do stripe e certifi
 stripe_datas, stripe_binaries, stripe_hiddenimports = collect_all('stripe')
 certifi_datas, certifi_binaries, certifi_hiddenimports = collect_all('certifi')
+xgboost_datas, xgboost_binaries, xgboost_hiddenimports = collect_all('xgboost')
 
 # === PYARMOR PROTECTION ===
 # Os arquivos .py ofuscados estão em protected_build/
@@ -21,13 +41,47 @@ certifi_datas, certifi_binaries, certifi_hiddenimports = collect_all('certifi')
 protected_dir = os.path.join(os.getcwd(), 'protected_build')
 pyarmor_runtime_dir = os.path.join(protected_dir, 'pyarmor_runtime_009928')
 
+
+def _assert_protected_build_fresh():
+    if os.getenv('WS_SKIP_PROTECTED_FRESHNESS_CHECK', '0').strip() == '1':
+        return
+
+    missing = []
+    stale = []
+    for name in SOURCE_FILES:
+        src = os.path.join(PROJECT_ROOT, name)
+        prot = os.path.join(protected_dir, name)
+        if not os.path.exists(prot):
+            missing.append(name)
+            continue
+        if os.path.exists(src) and os.path.getmtime(prot) < os.path.getmtime(src):
+            stale.append(name)
+
+    runtime_pyd = os.path.join(pyarmor_runtime_dir, 'pyarmor_runtime.pyd')
+    if not os.path.exists(runtime_pyd):
+        missing.append('pyarmor_runtime_009928/pyarmor_runtime.pyd')
+
+    if missing or stale:
+        problems = []
+        if missing:
+            problems.append('faltando: ' + ', '.join(missing))
+        if stale:
+            problems.append('desatualizado: ' + ', '.join(stale))
+        raise RuntimeError(
+            'protected_build não está pronto para compilar (' + '; '.join(problems) + '). '
+            'Rode tools/build_release.py sem --skip-pyarmor ou regenere o PyArmor antes do PyInstaller.'
+        )
+
+
+_assert_protected_build_fresh()
+
 a = Analysis(
     [os.path.join(protected_dir, 'TelaPrincipal.py')],
     pathex=[protected_dir, os.getcwd()],
     binaries=[
         # PyArmor runtime DLL - essencial para código protegido
         (os.path.join(pyarmor_runtime_dir, 'pyarmor_runtime.pyd'), 'pyarmor_runtime_009928'),
-    ],
+    ] + xgboost_binaries,
     datas=[
         ('Img', 'Img'),
         ('backend', 'backend'),
@@ -60,7 +114,7 @@ a = Analysis(
         (os.path.join(protected_dir, 'ws_adaptive_brain.py'), '.'),
         (flet_desktop_app, os.path.join('flet_desktop', 'app')),
         (flet_controls, os.path.join('flet', 'controls')),
-    ] + stripe_datas + certifi_datas,
+    ] + stripe_datas + certifi_datas + xgboost_datas,
     hiddenimports=[
         # === PyArmor Runtime ===
         'pyarmor_runtime_009928',
@@ -69,6 +123,9 @@ a = Analysis(
         'openai', 'anthropic', 'dotenv', 'requests',
         'certifi', 'charset_normalizer', 'urllib3', 'idna',
         'pickle', 'ctypes', 'atexit', 'importlib', 'lightgbm',
+        'xgboost', 'xgboost.core', 'xgboost.sklearn',
+        'sklearn', 'sklearn.neural_network', 'sklearn.preprocessing',
+        'sklearn.ensemble', 'sklearn.utils', 'sklearn.utils._bunch',
         'psutil',
         'tkinter',
         'sqlalchemy', 'sqlalchemy.ext.declarative', 'sqlalchemy.orm',
@@ -113,7 +170,7 @@ a = Analysis(
         'casatraderapi.http.billing', 'casatraderapi.http.resource',
         'casatraderapi.http.appinit', 'casatraderapi.http.getprofile',
         'casatraderapi.http.changebalance', 'casatraderapi.http.buyback',
-    ] + stripe_hiddenimports + certifi_hiddenimports,
+    ] + stripe_hiddenimports + certifi_hiddenimports + xgboost_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=['runtime_hook_ssl.py'],
