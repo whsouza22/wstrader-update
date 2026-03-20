@@ -1,6 +1,6 @@
 {
-  "version": "6.2.8",
-  "changelog": "v6.2.8 - ajustes e melhorias gerais, nova versao estavel",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.2.8/WsTrader_Setup_6.2.8.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.2.8/WsTrader_Setup_6.2.8.exe"
+  "version": "6.2.9",
+  "changelog": "v6.2.9 - fix: numpy_pickle_compat incluido no build, sys.path corrigido para subprocesso",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.2.9/WsTrader_Setup_6.2.9.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.2.9/WsTrader_Setup_6.2.9.exe"
 }

@@ -131,6 +131,8 @@ a = Analysis(
         (os.path.join(protected_dir, 'backend_server.py'), '.'),
 
         (os.path.join(protected_dir, 'ws_reversal_ai.py'), '.'),
+        # numpy_pickle_compat — helper de compatibilidade (não protegido)
+        ('numpy_pickle_compat.py', '.'),
 
         (os.path.join(protected_dir, 'dashboard_hs_ia.py'), '.'),
         (os.path.join(protected_dir, 'ws_adaptive_brain.py'), '.'),
@@ -171,6 +173,7 @@ a = Analysis(
         'operations_manager', 'config_keys',
         'operations_manager',
         'ws_reversal_ai',
+        'numpy_pickle_compat',
         'dashboard_hs_ia', 'ws_adaptive_brain',
         # === Backend / Licença ===
         'backend_server', 'license_manager',
