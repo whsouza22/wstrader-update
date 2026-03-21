@@ -3309,7 +3309,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
     min_spacing = 12
     max_spacing = 60
     _train_mode = bool(training or max_candles_ago >= 9999)
-    min_depth = atr * 1.5 if _train_mode else atr * 2.5  # live exige padrão mais profundo
+    min_depth = atr * 1.5  # alinhado entre treino e live (depth não afeta WR)
     min_candle_range = atr * 0.20
 
     # ═══ DOUBLE TOP (PUT) ═══
@@ -3365,8 +3365,6 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     continue
                 wick_up = h_j - max(c_j, o_j)
                 if wick_up < candle_range * 0.35:
-                    continue
-                if c_j > l_j + candle_range * 0.30:
                     continue
                 v_reg = L[idx1:j + 1]
                 if len(v_reg) < 3:
@@ -3452,8 +3450,6 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                     continue
                 wick_down = min(c_j, o_j) - l_j
                 if wick_down < candle_range * 0.35:
-                    continue
-                if c_j < h_j - candle_range * 0.30:
                     continue
                 p_reg = H[idx1:j + 1]
                 if len(p_reg) < 3:
