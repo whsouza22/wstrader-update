@@ -4268,20 +4268,29 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                 score = max(0.0, min(float(score) + _study_score_boost, 0.9999))
 
             # ═══ PORTÃO DE PERFEIÇÃO — Alinhado ao treino ═══
-            # Guard 1 (classificação de vela) REMOVIDO: a NN foi treinada com
-            # TODOS os tipos de vela (inclusive weak_or_mixed e pin_rejection).
-            # A NN já codifica body_ratio, close_position etc. nas 40 features.
-            # Filtrar manualmente contradiz o treino e bloqueia padrões válidos.
+            # Guard 1: vela fraca com corpo < 40% → BLOQUEIO HARD.
+            # Se corpo >= 40%, a vela tem comprometimento direcional minimo
+            # e a NN decide (treinada com todos os tipos).
             _perf_signal = _study_multifactor.get("signal_candle_class", "unknown")
             _perf_touch = _study_multifactor.get("touch_state", "missing")
+            _perf_body = float(_study_multifactor.get("body_ratio", 0) or 0)
 
             if _perf_signal in ("weak_or_mixed", "doji_indecision", "pin_rejection"):
-                log.info(paint(
-                    f"  ⚠️ VELA ADVISORY: {ativo} {direction} | "
-                    f"signal={_perf_signal} body={_study_multifactor.get('body_ratio', 0):.0%} | "
-                    f"NN decide (treino inclui este tipo)",
-                    C.Y
-                ))
+                if _perf_body < 0.40:
+                    log.info(paint(
+                        f"  ⛔ VELA FRACA — BLOQUEADO: {ativo} {direction} | "
+                        f"signal={_perf_signal} body={_perf_body:.0%} < 40% | "
+                        f"corpo indeciso — sem entrada",
+                        C.R
+                    ))
+                    continue
+                else:
+                    log.info(paint(
+                        f"  ⚠️ VELA ADVISORY: {ativo} {direction} | "
+                        f"signal={_perf_signal} body={_perf_body:.0%} | "
+                        f"NN decide (corpo razoavel, treino inclui este tipo)",
+                        C.Y
+                    ))
 
             # Guard 2: Toque — apenas advisory (no treino, o toque é confirmado pela
             # própria detecção de pivot matching, sem check de continuidade).
@@ -6326,8 +6335,8 @@ def _main_inner():
                                 _train_parts.append(f"ctx={_train_ctx}")
                             if _train_parts:
                                 _train_suffix = " | treino=" + " ".join(_train_parts)
-                        _nn_approved = True  # Bayes decide — NN eh apenas advisory
-                        if _nn_score >= _NN_MIN_PROB:
+                        _nn_approved = bool(_nn_score >= _NN_MIN_PROB)
+                        if _nn_approved:
                             log.info(paint(
                                 f"  ✅ NN APROVADO ({_nn_source}): score={_nn_score:.0%} "
                                 f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
@@ -6336,10 +6345,10 @@ def _main_inner():
                             ))
                         else:
                             log.info(paint(
-                                f"  ⚠️ NN ADVISORY ({_nn_source}): score={_nn_score:.0%} < {_NN_MIN_PROB:.0%} "
+                                f"  ⛔ NN BLOQUEADO ({_nn_source}): score={_nn_score:.0%} < {_NN_MIN_PROB:.0%} "
                                 f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
-                                f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}{_train_suffix} | Bayes decide",
-                                C.Y
+                                f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}{_train_suffix}",
+                                C.R
                             ))
 
                         _timing_hint_live = _build_dt_graph_timing_hint(
