@@ -229,6 +229,7 @@ _GUARDS_DISABLED = True  # Guards 1-5 OFF — as 3 IAs (89.7% acc) já sabem fil
 # ── WS Trader 2.0: DESATIVADO — NN com 40 features é a única decisão ──
 _DECISION_ENGINE_ENABLED = False  # Desativado: regime/quality/risk são features f26-f39 no NN
 _recent_trade_results = []        # mantido para log/estatísticas
+_consecutive_losses = 0           # contador de losses consecutivos para adaptar threshold
 
 # ── Reversal AI config ──
 CONFIDENCE_MIN = float(os.getenv('WS_CONF_MIN', "40.0"))       # Confiança mínima da IA para entrar
@@ -301,7 +302,7 @@ def _normalize_dt_live_profile(value) -> str:
 
 
 DT_LIVE_PROFILE = _normalize_dt_live_profile(os.getenv("WS_DT_LIVE_PROFILE", "standard"))
-DT_NN_MIN_FLOOR = max(0.75, min(0.98, float(os.getenv("WS_DT_NN_MIN_FLOOR", "0.75"))))
+DT_NN_MIN_FLOOR = max(0.30, min(0.98, float(os.getenv("WS_DT_NN_MIN_FLOOR", "0.40"))))
 
 # ── Variáveis para Engine / IA ──
 DECIDIR_ANTES_FECHAR_SEC = int(os.getenv("WS_DECIDIR_ANTES_FECHAR", "12"))
@@ -4294,15 +4295,14 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                     C.Y
                 ))
 
-            # Guard 3: Região de entrada DEVE ser válida (preço não rompeu lado
-            # errado nem ultrapassou neckline)
+            # Guard 3: Região de entrada — ADVISORY (no treino não existe
+            # filtro de distância; a NN já aprendeu a geometria via features).
             if _entry_region is not None and not _entry_region.get("ok"):
                 log.info(paint(
-                    f"  ⛔ PERFEIÇÃO — REGIÃO INVÁLIDA: {ativo} {direction} | "
-                    f"{_entry_region.get('reason')} — BLOQUEADO",
-                    C.R
+                    f"  ⚠️ REGIÃO ADVISORY: {ativo} {direction} | "
+                    f"{_entry_region.get('reason')} — NN decide",
+                    C.Y
                 ))
-                continue
 
             _direction_alignment_2m = ((_entry_guard_pre_pred or {}).get("direction_alignment_2m") or {}) if isinstance(_entry_guard_pre_pred, dict) else {}
             if not _direction_alignment_2m.get("aligned"):
@@ -5878,8 +5878,10 @@ def _main_inner():
         log.warning(f"⚠️ Saldo não obtido: {e}")
         saldo_inicial = 1000.0
 
+    global _consecutive_losses
     total_trades = 0
     total_wins = 0
+    _consecutive_losses = 0
     _current_day = _date_cls.today()
 
     # ── Restaurar contadores W/L do dia (sobrevive a reinícios) ──
@@ -6133,10 +6135,13 @@ def _main_inner():
                     ))
                     continue  # tentar próximo candidato
 
-                # ── CONTRA SINAL: bloqueia direção oposta no mesmo ativo ──
+                # ── CONTRA SINAL: ADVISORY (no treino cada padrão é
+                # avaliado independentemente, sem conceito de direção anterior).
                 if _is_contra_signal(ativo, direcao):
-                    print(f">>> IA: CONTRA SINAL bloqueou {ativo} {direcao}", flush=True)
-                    continue
+                    log.info(paint(
+                        f"  ⚠️ CONTRA SINAL ADVISORY: {ativo} {direcao} — NN decide",
+                        C.Y
+                    ))
 
                 # ═══ ANÁLISE COMPLETA: IA + Geometria + Posição ═══
                 pat_data = setup.get("pattern", setup)
@@ -6326,20 +6331,22 @@ def _main_inner():
                                 _train_parts.append(f"ctx={_train_ctx}")
                             if _train_parts:
                                 _train_suffix = " | treino=" + " ".join(_train_parts)
-                        _nn_approved = True  # Treino nao usa threshold — NN eh informativo
+                        # ═══ IA DECIDE: score >= threshold → APROVADO, senão BLOQUEADO ═══
                         if _nn_score >= _NN_MIN_PROB:
+                            _nn_approved = True
                             log.info(paint(
-                                f"  ✅ NN APROVADO ({_nn_source}): score={_nn_score:.0%} "
+                                f"  ✅ NN APROVADO ({_nn_source}): score={_nn_score:.0%} >= {_NN_MIN_PROB:.0%} "
                                 f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
                                 f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}{_train_suffix}",
                                 C.G
                             ))
                         else:
+                            _nn_approved = False
                             log.info(paint(
-                                f"  ⚠️ NN ADVISORY ({_nn_source}): score={_nn_score:.0%} < {_NN_MIN_PROB:.0%} "
+                                f"  🚫 NN BLOQUEOU ({_nn_source}): score={_nn_score:.0%} < {_NN_MIN_PROB:.0%} "
                                 f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
-                                f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}{_train_suffix} | NN decide",
-                                C.Y
+                                f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}{_train_suffix}",
+                                C.R
                             ))
 
                         _timing_hint_live = _build_dt_graph_timing_hint(
@@ -6560,11 +6567,10 @@ def _main_inner():
 
                         if not _graph_entry_region.get("ok"):
                             log.info(paint(
-                                f"  ⛔ DT GRAFICO — REGIÃO INVÁLIDA: {_graph_entry_region.get('reason', 'regiao invalida')} — BLOQUEADO",
-                                C.R
+                                f"  ⚠️ DT GRAFICO — REGIÃO ADVISORY: {_graph_entry_region.get('reason', 'regiao invalida')} — NN decide",
+                                C.Y
                             ))
-                            _all_guards_ok = False
-                            _guard_block_reason = _graph_entry_region.get("reason", "regiao invalida")
+                            # Advisory — não bloqueia (treino não filtra por região)
                         else:
                             log.info(paint(
                                 f"  ✅ DT GRAFICO: Bayes decide — sem bloqueios de timing/regiao/falso movimento",
@@ -6576,11 +6582,10 @@ def _main_inner():
                         setup["entry_region"] = _entry_region_live
                         if not _entry_region_live.get("ok"):
                             log.info(paint(
-                                f"  ⛔ REGIÃO INVÁLIDA (LIVE): {ativo} {direcao} | {_entry_region_live.get('reason')} — BLOQUEADO",
-                                C.R
+                                f"  ⚠️ REGIÃO ADVISORY (LIVE): {ativo} {direcao} | {_entry_region_live.get('reason')} — NN decide",
+                                C.Y
                             ))
-                            _all_guards_ok = False
-                            _guard_block_reason = _entry_region_live.get("reason", "regiao invalida")
+                            # Advisory — não bloqueia (treino não filtra por região)
 
                     if _all_guards_ok and _nn_approved and _is_dt_mode and not DT_GRAPH_SIGNAL_ENTRY:
                         _win_geometry_alignment = setup.get("win_geometry_alignment")
@@ -6674,14 +6679,18 @@ def _main_inner():
                         f" | latencia_scan={_graph_signal_age_sec:.2f}s"
                         if _graph_signal_age_sec is not None else ""
                     )
-                    if DT_ENTRY_AT_TURN:
+                    # ═══ FIX TIMING: treino usa C[entry_idx] = CLOSE da vela.
+                    # candles_ago=0 → vela ainda não fechou → AGUARDAR :00
+                    # candles_ago>=1 → vela já fechou → entrar direto.
+                    if _candles_ago == 0:
                         log.info(paint(
-                            f"  ⏱️ {_mode_label} MODE: virada :00 sera controlada pelo timing DT (candles_ago={_candles_ago}){_latency_suffix}",
+                            f"  ⏱️ {_mode_label} MODE: candles_ago=0 → aguardando virada :00 (= C[entry_idx] do treino){_latency_suffix}",
                             C.Y
                         ))
+                        wait_candle_open()
                     else:
                         log.info(paint(
-                            f"  ⚡ {_mode_label} MODE: entrada imediata no sinal do grafico (candles_ago={_candles_ago}){_latency_suffix}",
+                            f"  ⚡ {_mode_label} MODE: candles_ago={_candles_ago} → vela fechada, entrada imediata{_latency_suffix}",
                             C.G
                         ))
                 else:
@@ -6692,6 +6701,81 @@ def _main_inner():
                     ))
                     wait_candle_open()
 
+                # ═══ FIX IA: Re-extrair features com vela FECHADA e re-rodar NN ═══
+                # Treino usa velas fechadas. Se candles_ago=0, a predição anterior usou
+                # dados de vela incompleta. Agora que wait_candle_open() garantiu :00,
+                # a vela do RS está fechada → re-extrair features e re-predizer.
+                if _is_dt_mode and _nn_pred is not None and _candles_ago == 0:
+                    try:
+                        _fresh_df = get_candles_df(bx, ativo, TF_M1, 60, min_len=50)
+                        if _fresh_df is None:
+                            _fresh_df = get_last_closed_candles_df(bx, ativo, TF_M1, 60, min_len=50)
+                        if _fresh_df is not None and len(_fresh_df) >= 50 and _is_dt_nn_model_ready(reversal_ai_map, ativo):
+                            _nn2_score, _nn2_pred, _nn2_reason = _estimate_dt_nn_score(
+                                ativo, pat_data, _fresh_df, atr_val, hs_stats,
+                                reversal_ai_map, return_reason=True,
+                            )
+                            if _nn2_pred is not None:
+                                _nn2_s = float(_nn2_score or _nn2_pred.get("nn_score", _nn2_pred.get("prob_win", 0)) or 0)
+                                _nn2_p1 = float(_nn2_pred.get("p1", 0) or 0)
+                                _nn2_p2 = float(_nn2_pred.get("p2", 0) or 0)
+                                _nn2_p3 = _nn2_pred.get("p3")
+                                _nn2_p3s = f" p3={_nn2_p3:.2f}" if _nn2_p3 is not None else ""
+                                _nn2_pen = float(_nn2_pred.get("consensus_penalty", 0) or 0)
+                                log.info(paint(
+                                    f"  🔄 NN RE-CHECK (vela fechada): score={_nn2_s:.0%} "
+                                    f"(anterior={_nn_score:.0%}) | p1={_nn2_p1:.2f} p2={_nn2_p2:.2f}{_nn2_p3s} consenso=-{_nn2_pen:.2f}",
+                                    C.G if _nn2_s >= _NN_MIN_PROB else C.R
+                                ))
+                                # Atualizar predição com dados da vela fechada
+                                _nn_pred = _nn2_pred
+                                _nn_score = _nn2_s
+                                _nn_prob = float(_nn2_pred.get("prob_win", _nn2_s) or 0)
+                                _nn_penalty = _nn2_pen
+                                _nn_p1 = _nn2_p1
+                                _nn_p2 = _nn2_p2
+                                _nn_p3 = _nn2_p3
+                                _nn_source = "recheck"
+                                # Re-avaliar aprovação com novo score
+                                if _nn2_s >= _NN_MIN_PROB:
+                                    _nn_approved = True
+                                    log.info(paint(
+                                        f"  ✅ NN RE-CHECK APROVADO: {_nn2_s:.0%} >= {_NN_MIN_PROB:.0%}",
+                                        C.G
+                                    ))
+                                else:
+                                    _nn_approved = False
+                                    log.info(paint(
+                                        f"  🚫 NN RE-CHECK BLOQUEOU: {_nn2_s:.0%} < {_NN_MIN_PROB:.0%}",
+                                        C.R
+                                    ))
+                                # Atualizar preço atual com dado fresco
+                                _cur = float(_fresh_df["close"].values[-1])
+                            else:
+                                log.info(paint(
+                                    f"  ⚠️ NN RE-CHECK: falhou ({_nn2_reason}) — mantendo predição anterior",
+                                    C.Y
+                                ))
+                    except Exception as _recheck_ex:
+                        log.debug(f"  NN RE-CHECK erro: {_recheck_ex}")
+
+                # ═══ INVERSÃO INTELIGENTE substitui adaptação de sessão ═══
+                # (a lógica de inversão por faixa de NN decide tudo)
+                _session_threshold = _NN_MIN_PROB
+
+                # Re-avaliar aprovação com threshold adaptado
+                if _nn_pred is not None and _nn_score < _session_threshold:
+                    _nn_approved = False
+
+                # ═══ BLOQUEIO FINAL: se NN não aprovou, cancelar entrada ═══
+                if _is_dt_mode and not _nn_approved and _nn_pred is not None:
+                    log.info(paint(
+                        f"  🚫 IA BLOQUEOU ENTRADA: {ativo} {direcao} | NN score={_nn_score:.0%} < {_session_threshold:.0%}",
+                        C.R
+                    ))
+                    print(f">>> IA: NN bloqueou {ativo} {direcao} — score={_nn_score:.0%} (min={_session_threshold:.0%})", flush=True)
+                    continue  # próximo candidato
+
                 if _is_dt and DT_GRAPH_SIGNAL_ENTRY and isinstance(setup.get("timing_hint"), dict) and setup["timing_hint"].get("available"):
                     _timing_hint = setup["timing_hint"]
                     log.info(paint(
@@ -6700,6 +6784,80 @@ def _main_inner():
                     ))
 
                 _live_entry_price = float(_cur) if _cur else float(pat_data.get("entry_price", 0))
+
+                # ═══ VERIFICAÇÃO DE FORÇA DO BOUNCE (Smart Entry) ═══
+                # Verifica se o preço está REALMENTE bounceando na zona antes de entrar.
+                # Se o preço não está se afastando da zona, é sinal fraco.
+                if _is_dt_mode and _live_entry_price and atr_val > 0:
+                    _rs_price_check = float(pat_data.get("right_shoulder", {}).get("price", 0) or 0)
+                    _neck_price = float(pat_data.get("neckline", 0) or 0)
+                    _bounce_ok = True
+                    _bounce_reason = ""
+
+                    if _rs_price_check > 0 and _neck_price > 0:
+                        _dist_to_zone = abs(_live_entry_price - _rs_price_check)
+                        _dist_to_target = abs(_neck_price - _rs_price_check)
+                        _progress = _dist_to_zone / _dist_to_target if _dist_to_target > 0 else 0
+
+                        # Para CALL: preço deve estar ACIMA do RS (bounceando pra cima)
+                        # Para PUT: preço deve estar ABAIXO do RS (bounceando pra baixo)
+                        if direcao == "CALL":
+                            _price_above_zone = _live_entry_price > _rs_price_check
+                            _moving_toward_target = _live_entry_price < _neck_price
+                        else:  # PUT
+                            _price_above_zone = _live_entry_price < _rs_price_check
+                            _moving_toward_target = _live_entry_price > _neck_price
+
+                        # BLOQUEAR: preço está do lado ERRADO da zona (rompeu suporte/resistência)
+                        if not _price_above_zone and _dist_to_zone > atr_val * 0.15:
+                            _bounce_ok = False
+                            _bounce_reason = f"preço rompeu a zona ({_dist_to_zone / atr_val:.2f}ATR do lado errado)"
+
+                        # BLOQUEAR: preço já andou demais em direção ao target (entrada tardia)
+                        if _progress > 0.60:
+                            _bounce_ok = False
+                            _bounce_reason = f"entrada tardia — preço já percorreu {_progress:.0%} do caminho ao target"
+
+                    # Verificar CANDLE actual: última vela deve confirmar a direção
+                    if _bounce_ok and _guard_df is not None and len(_guard_df) >= 3:
+                        _last_c = float(_guard_df["close"].values[-1])
+                        _last_o = float(_guard_df["open"].values[-1])
+                        _last_h = float(_guard_df["high"].values[-1])
+                        _last_l = float(_guard_df["low"].values[-1])
+                        _last_range = _last_h - _last_l
+
+                        if _last_range > 0:
+                            if direcao == "CALL":
+                                # Vela deve mostrar rejeição no fundo: wick inferior forte
+                                _lower_wick = min(_last_o, _last_c) - _last_l
+                                _wick_pct_check = _lower_wick / _last_range
+                                _body_bullish = _last_c >= _last_o  # verde ou doji
+                                # Bloquear se vela é fortemente bearish (vermelha corpuda) = bounce fraco
+                                _body_bearish_pct = max(0, _last_o - _last_c) / _last_range
+                                if _body_bearish_pct > 0.65:
+                                    _bounce_ok = False
+                                    _bounce_reason = f"última vela fortemente bearish ({_body_bearish_pct:.0%} corpo vermelho)"
+                            else:  # PUT
+                                # Vela deve mostrar rejeição no topo: wick superior forte
+                                _upper_wick = _last_h - max(_last_o, _last_c)
+                                _wick_pct_check = _upper_wick / _last_range
+                                _body_bullish_pct = max(0, _last_c - _last_o) / _last_range
+                                if _body_bullish_pct > 0.65:
+                                    _bounce_ok = False
+                                    _bounce_reason = f"última vela fortemente bullish ({_body_bullish_pct:.0%} corpo verde)"
+
+                    if not _bounce_ok:
+                        log.info(paint(
+                            f"  🚫 BOUNCE FRACO: {ativo} {direcao} | {_bounce_reason} → CANCELADO",
+                            C.R
+                        ))
+                        print(f">>> IA: Bounce fraco {ativo} {direcao} — {_bounce_reason}", flush=True)
+                        continue  # próximo candidato
+                    else:
+                        log.info(paint(
+                            f"  ✅ BOUNCE CONFIRMADO: {ativo} {direcao} | preço bounceando corretamente",
+                            C.G
+                        ))
 
                 # Verificar se preço já ultrapassou neckline
                 if not _GUARDS_DISABLED and _neckline > 0 and _live_entry_price and not _is_dt_mode:
@@ -6863,6 +7021,59 @@ def _main_inner():
                     )
                     continue
 
+                # ═══ INVERSÃO INTELIGENTE DE SINAL ═══
+                # Baseado em 123 trades reais:
+                #   NN >= 95% → 65% WR invertido (padrão "perfeito demais" = mercado faz o oposto)
+                #   NN < 80%  → 72% WR normal (padrão "natural" funciona)
+                #   NN 80-95% → ~50/50 zona cinza → NÃO OPERAR
+                _direcao_original = direcao
+                if _nn_score is not None:
+                    _nn_pct = _nn_score * 100
+                    if _nn_pct >= 95:
+                        # Alta confiança = inverter
+                        direcao = "PUT" if direcao == "CALL" else "CALL"
+                        log.info(paint(
+                            f"  🔄 SINAL INVERTIDO: {ativo} {_direcao_original} → {direcao} | NN={_nn_pct:.0f}% (>=95% = inverter)",
+                            C.Y
+                        ))
+                    elif _nn_pct < 80:
+                        # Baixa confiança = manter (funciona melhor)
+                        log.info(paint(
+                            f"  ✅ SINAL MANTIDO: {ativo} {direcao} | NN={_nn_pct:.0f}% (<80% = manter original)",
+                            C.G
+                        ))
+                    else:
+                        # Zona cinza 80-95% = pular
+                        log.info(paint(
+                            f"  ⏸️ ZONA CINZA: {ativo} {direcao} | NN={_nn_pct:.0f}% (80-95% = não operar)",
+                            C.Y
+                        ))
+                        print(f">>> IA: Zona cinza {ativo} {direcao} — NN={_nn_pct:.0f}% (80-95% skip)", flush=True)
+                        continue
+
+                # ═══ ATUALIZAR DASHBOARD COM DIREÇÃO REAL ═══
+                _was_inverted = (direcao != _direcao_original)
+                _decision_payload["direcao"] = direcao
+                _decision_payload["direcao_original"] = _direcao_original
+                _decision_payload["invertido"] = _was_inverted
+                # Atualizar live_signals no cache do dashboard
+                try:
+                    _dash_file = _DASHBOARD_CACHE_FILE
+                    if os.path.exists(_dash_file):
+                        with open(_dash_file, "r", encoding="utf-8") as _df:
+                            _dash_data = json.load(_df)
+                        _modified = False
+                        for _sig in _dash_data.get("live_signals", []):
+                            if isinstance(_sig, dict) and _sig.get("ativo") == ativo:
+                                _sig["direction"] = direcao
+                                _sig["original_direction"] = _direcao_original
+                                _sig["inverted"] = _was_inverted
+                                _modified = True
+                        if _modified:
+                            _safe_save_json(_dash_file, _dash_data)
+                except Exception:
+                    pass
+
                 op = enviar_ordem(bx, ativo, direcao, stake, exp=_use_exp)
                 if not op:
                     log.warning(paint(f"  ❌ Falha na ordem: {ativo}", C.R))
@@ -6908,11 +7119,13 @@ def _main_inner():
                 if res > 0:
                     total_wins += 1
                     _live_status = "win"
+                    _consecutive_losses = 0  # reset na sequência de losses
                     log.info(paint(f"  ✅ WIN +{res:.2f}$", C.G))
                     print(f">>> RESULTADO: WIN {ativo} {direcao} +{res:.2f}", flush=True)
                 elif res < 0:
                     _live_status = "loss"
-                    log.info(paint(f"  ❌ LOSS {res:.2f}$", C.R))
+                    _consecutive_losses += 1
+                    log.info(paint(f"  ❌ LOSS {res:.2f}$ (consecutivos: {_consecutive_losses})", C.R))
                     print(f">>> RESULTADO: LOSS {ativo} {direcao} {res:.2f}", flush=True)
                 else:
                     _live_status = "tie"
