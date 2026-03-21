@@ -566,7 +566,11 @@ def _build_ai_cotrader_consensus(mode: str,
     bayes_prob = float(ia_prob or 0.0)
     bayes_min = DT_BAYES_FINAL_MIN if mode_name == "double_touch" else AI_MIN_PROB
     bayes_known = bayes_prob > 0 and abs(bayes_prob - 0.5) > 1e-9
-    bayes_ok = True if not bayes_known else bayes_prob >= bayes_min
+    # DT: IA neural (entry_guard) já decide — Bayes não bloqueia
+    if mode_name == "double_touch":
+        bayes_ok = True
+    else:
+        bayes_ok = True if not bayes_known else bayes_prob >= bayes_min
 
     nn_available = isinstance(nn_pred, dict)
     nn_score = None
