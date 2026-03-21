@@ -4267,24 +4267,21 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
             if _study_score_boost > 0:
                 score = max(0.0, min(float(score) + _study_score_boost, 0.9999))
 
-            # ═══ PORTÃO DE PERFEIÇÃO — Hard blocks para precisão absoluta ═══
-            # A IA só pode entrar nos MESMOS pontos do padrão detectado.
-            # Exige: (1) vela CONFIRME direção com corpo, (2) toque CONFIRMADO,
-            # (3) preço na região correta do padrão. Sem atalhos.
+            # ═══ PORTÃO DE PERFEIÇÃO — Alinhado ao treino ═══
+            # Guard 1 (classificação de vela) REMOVIDO: a NN foi treinada com
+            # TODOS os tipos de vela (inclusive weak_or_mixed e pin_rejection).
+            # A NN já codifica body_ratio, close_position etc. nas 40 features.
+            # Filtrar manualmente contradiz o treino e bloqueia padrões válidos.
             _perf_signal = _study_multifactor.get("signal_candle_class", "unknown")
             _perf_touch = _study_multifactor.get("touch_state", "missing")
 
-            # Guard 1: Vela DEVE confirmar a direção com corpo visível
-            # Apenas full_body_confirm, body_confirm e wick_rejection_confirm passam.
-            # weak_or_mixed (66% WR), doji_indecision (82% WR) e pin_rejection (77% WR) = BLOCK
             if _perf_signal in ("weak_or_mixed", "doji_indecision", "pin_rejection"):
                 log.info(paint(
-                    f"  ⛔ PERFEIÇÃO — VELA SEM CONFIRMAÇÃO: {ativo} {direction} | "
+                    f"  ⚠️ VELA ADVISORY: {ativo} {direction} | "
                     f"signal={_perf_signal} body={_study_multifactor.get('body_ratio', 0):.0%} | "
-                    f"Vela não confirmou movimento na direção — BLOQUEADO",
-                    C.R
+                    f"NN decide (treino inclui este tipo)",
+                    C.Y
                 ))
-                continue
 
             # Guard 2: Toque DEVE ser confirmado (matched) — preço TEM que ter
             # tocado o nível do padrão e mostrado reação visível
