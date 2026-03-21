@@ -1030,23 +1030,33 @@ def _validate_dt_entry_region(pat: dict, current_price: float, atr_val: float) -
         ideal = True
         reason = f"regiao ok | touch={dist_touch_atr:.2f}ATR | progress={progress_pct:.0%}"
 
-        if progress_pct > _DT_ENTRY_PROGRESS_MAX:
-            ideal = False
-            reason = (
-                f"fora da zona ideal ({progress_pct:.0%} > {_DT_ENTRY_PROGRESS_MAX:.0%}) "
-                f"- entry_guard vai decidir"
-            )
-
         if dist_touch_atr > _DT_ENTRY_TOUCH_BAND_ATR:
-            ideal = False
-            reason = (
-                f"longe do 2o toque ({dist_touch_atr:.2f}ATR > {_DT_ENTRY_TOUCH_BAND_ATR:.2f}) "
-                f"- entry_guard vai decidir"
-            )
+            return {
+                "ok": False,
+                "ideal": False,
+                "reason": (
+                    f"longe do 2o toque ({dist_touch_atr:.2f}ATR > {_DT_ENTRY_TOUCH_BAND_ATR:.2f})"
+                ),
+                "dist_touch_atr": round(float(dist_touch_atr), 4),
+                "progress_pct": round(float(progress_pct), 4),
+                "overshoot_neck_atr": round(float(overshoot_neck_atr), 4),
+            }
+
+        if progress_pct > _DT_ENTRY_PROGRESS_MAX:
+            return {
+                "ok": False,
+                "ideal": False,
+                "reason": (
+                    f"fora da zona ideal ({progress_pct:.0%} > {_DT_ENTRY_PROGRESS_MAX:.0%})"
+                ),
+                "dist_touch_atr": round(float(dist_touch_atr), 4),
+                "progress_pct": round(float(progress_pct), 4),
+                "overshoot_neck_atr": round(float(overshoot_neck_atr), 4),
+            }
 
         return {
             "ok": True,
-            "ideal": ideal,
+            "ideal": True,
             "reason": reason,
             "dist_touch_atr": round(float(dist_touch_atr), 4),
             "progress_pct": round(float(progress_pct), 4),
@@ -6552,23 +6562,27 @@ def _main_inner():
 
                         if not _graph_entry_region.get("ok"):
                             log.info(paint(
-                                f"  ⚠️ DT GRAFICO ADVISORY: regiao={_graph_entry_region.get('reason', 'regiao invalida')} | Bayes decide",
-                                C.Y
+                                f"  ⛔ DT GRAFICO — REGIÃO INVÁLIDA: {_graph_entry_region.get('reason', 'regiao invalida')} — BLOQUEADO",
+                                C.R
                             ))
-
-                        log.info(paint(
-                            f"  ✅ DT GRAFICO: Bayes decide — sem bloqueios de timing/regiao/falso movimento",
-                            C.G
-                        ))
+                            _all_guards_ok = False
+                            _guard_block_reason = _graph_entry_region.get("reason", "regiao invalida")
+                        else:
+                            log.info(paint(
+                                f"  ✅ DT GRAFICO: Bayes decide — sem bloqueios de timing/regiao/falso movimento",
+                                C.G
+                            ))
 
                     if _all_guards_ok and _is_dt_mode and _cur is not None and not DT_GRAPH_SIGNAL_ENTRY:
                         _entry_region_live = _validate_dt_entry_region(pat_data, float(_cur), atr_val)
                         setup["entry_region"] = _entry_region_live
                         if not _entry_region_live.get("ok"):
                             log.info(paint(
-                                f"  ⚠️ REGIAO DE ENTRADA ADVISORY: {ativo} {direcao} | {_entry_region_live.get('reason')} | Bayes decide",
-                                C.Y
+                                f"  ⛔ REGIÃO INVÁLIDA (LIVE): {ativo} {direcao} | {_entry_region_live.get('reason')} — BLOQUEADO",
+                                C.R
                             ))
+                            _all_guards_ok = False
+                            _guard_block_reason = _entry_region_live.get("reason", "regiao invalida")
 
                     if _all_guards_ok and _nn_approved and _is_dt_mode and not DT_GRAPH_SIGNAL_ENTRY:
                         _win_geometry_alignment = setup.get("win_geometry_alignment")
