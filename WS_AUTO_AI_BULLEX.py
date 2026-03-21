@@ -4283,15 +4283,16 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                     C.Y
                 ))
 
-            # Guard 2: Toque DEVE ser confirmado (matched) — preço TEM que ter
-            # tocado o nível do padrão e mostrado reação visível
+            # Guard 2: Toque — apenas advisory (no treino, o toque é confirmado pela
+            # própria detecção de pivot matching, sem check de continuidade).
+            # A NN recebe f1:close_position, f13:rejection_quality, f24:body_conviction
+            # que já codificam a qualidade do toque.
             if _perf_touch == "missing":
                 log.info(paint(
-                    f"  ⛔ PERFEIÇÃO — TOQUE NÃO CONFIRMADO: {ativo} {direction} | "
-                    f"touch={_perf_touch} | Preço não confirmou toque no nível do padrão — BLOQUEADO",
-                    C.R
+                    f"  ⚠️ TOQUE ADVISORY: {ativo} {direction} | "
+                    f"touch={_perf_touch} | Continuidade não confirmada — NN decide",
+                    C.Y
                 ))
-                continue
 
             # Guard 3: Região de entrada DEVE ser válida (preço não rompeu lado
             # errado nem ultrapassou neckline)
