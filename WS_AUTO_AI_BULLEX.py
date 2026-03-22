@@ -445,7 +445,7 @@ def _snapshot_pattern_point(point: Optional[dict], df_index) -> Optional[dict]:
     idx = snap["idx"]
     if 0 <= idx < len(df_index):
         try:
-            snap["ts"] = int(df_index[idx].timestamp())
+            snap["ts"] = int(df_index[idx].value // 10**9)
         except Exception:
             snap["ts"] = 0
     return snap
@@ -489,7 +489,7 @@ def _serialize_dashboard_pattern(ativo: str, pat: dict, df, ia_prob: float,
     entry_idx = snap["entry_idx"]
     if 0 <= entry_idx < len(df_index):
         try:
-            snap["entry_ts"] = int(df_index[entry_idx].timestamp())
+            snap["entry_ts"] = int(df_index[entry_idx].value // 10**9)
         except Exception:
             snap["entry_ts"] = 0
 
@@ -543,12 +543,12 @@ def _serialize_dashboard_pattern(ativo: str, pat: dict, df, ia_prob: float,
         }
         if 0 <= bt["entry_idx"] < len(df_index):
             try:
-                bt["entry_ts"] = int(df_index[bt["entry_idx"]].timestamp())
+                bt["entry_ts"] = int(df_index[bt["entry_idx"]].value // 10**9)
             except Exception:
                 bt["entry_ts"] = 0
         if 0 <= bt["exit_idx"] < len(df_index):
             try:
-                bt["exit_ts"] = int(df_index[bt["exit_idx"]].timestamp())
+                bt["exit_ts"] = int(df_index[bt["exit_idx"]].value // 10**9)
             except Exception:
                 bt["exit_ts"] = 0
         snap["backtest"] = bt
@@ -738,7 +738,7 @@ def _build_shadow_dt_library_comparison(pat: dict, df: Optional[pd.DataFrame], a
             else:
                 continue
             try:
-                ts_val = int(df.index[bar_idx].timestamp())
+                ts_val = int(df.index[bar_idx].value // 10**9)
             except Exception:
                 ts_val = 0
             candidates.append({

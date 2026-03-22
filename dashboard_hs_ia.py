@@ -1560,9 +1560,9 @@ def _signal_scan_thread():
                         for _sk in ("left_shoulder", "head", "right_shoulder", "valley1", "valley2"):
                             _sp = pat.get(_sk)
                             if _sp and "idx" in _sp and 0 <= _sp["idx"] < _sig_df_len:
-                                _sp["ts"] = int(_sig_df_index[_sp["idx"]].timestamp()) if hasattr(_sig_df_index[_sp["idx"]], 'timestamp') else 0
+                                _sp["ts"] = int(_sig_df_index[_sp["idx"]].value // 10**9) if hasattr(_sig_df_index[_sp["idx"]], 'value') else 0
                         if "entry_idx" in pat and 0 <= pat["entry_idx"] < _sig_df_len:
-                            pat["entry_ts"] = int(_sig_df_index[pat["entry_idx"]].timestamp()) if hasattr(_sig_df_index[pat["entry_idx"]], 'timestamp') else 0
+                            pat["entry_ts"] = int(_sig_df_index[pat["entry_idx"]].value // 10**9) if hasattr(_sig_df_index[pat["entry_idx"]], 'value') else 0
                         # 100% IA: só mostra sinais aprovados pela rede neural
                         if pat.get("nn_approved") is True:
                             fresh_signals.append(pat)
@@ -1749,17 +1749,17 @@ def _update_thread():
                         if _pt and "idx" in _pt:
                             _pi = _pt["idx"]
                             if 0 <= _pi < _df_len:
-                                _pt["ts"] = int(_df_index[_pi].timestamp()) if hasattr(_df_index[_pi], 'timestamp') else 0
+                                _pt["ts"] = int(_df_index[_pi].value // 10**9) if hasattr(_df_index[_pi], 'value') else 0
                     if "entry_idx" in _pr:
                         _ei = _pr["entry_idx"]
                         if 0 <= _ei < _df_len:
-                            _pr["entry_ts"] = int(_df_index[_ei].timestamp()) if hasattr(_df_index[_ei], 'timestamp') else 0
+                            _pr["entry_ts"] = int(_df_index[_ei].value // 10**9) if hasattr(_df_index[_ei], 'value') else 0
                     _bt = _pr.get("backtest")
                     if _bt:
                         for _bk in ("entry_idx", "exit_idx"):
                             _bi = _bt.get(_bk, -1)
                             if 0 <= _bi < _df_len:
-                                _bt[_bk.replace("idx", "ts")] = int(_df_index[_bi].timestamp()) if hasattr(_df_index[_bi], 'timestamp') else 0
+                                _bt[_bk.replace("idx", "ts")] = int(_df_index[_bi].value // 10**9) if hasattr(_df_index[_bi], 'value') else 0
 
                 if patterns_with_results:
                     assets_patterns[ativo] = patterns_with_results
@@ -1888,7 +1888,7 @@ def build_api_data():
                     # Comparar: live usa int epoch, cache usa ISO string
                     if isinstance(_ct, str) and _ct:
                         try:
-                            _ct_epoch = int(pd.Timestamp(_ct).timestamp())
+                            _ct_epoch = int(pd.Timestamp(_ct).value // 10**9)
                         except Exception:
                             continue
                     else:
@@ -1905,7 +1905,7 @@ def build_api_data():
             _ct = candles[_ci]["t"]
             if isinstance(_ct, str):
                 try:
-                    candles[_ci]["t"] = int(pd.Timestamp(_ct).timestamp())
+                    candles[_ci]["t"] = int(pd.Timestamp(_ct).value // 10**9)
                 except Exception:
                     pass
             elif isinstance(_ct, float):
@@ -2828,21 +2828,6 @@ function drawHSOverlay() {
       var v2ic = Math.max(0, Math.min(v2i, candleData.length - 1));
       v1x = gx(v1ic); v1y = gy(v1.price); v2x = gx(v2ic); v2y = gy(v2.price);
       if ([v1x,v1y,v2x,v2y].some(function(v){return v===null||isNaN(v)})) hasV = false;
-
-            // ── FIX: Garantir que V1 (pico/vale) fique ENTRE T1 e T2 visualmente ──
-            // Se o pico detectado está na borda (mesma posição de T1 ou fora),
-            // reposicionar para o ponto médio entre T1 e T2 para desenho correto (W/M).
-            if (isDT && hasV) {
-                var minVx = Math.min(lsx, rsx);
-                var maxVx = Math.max(lsx, rsx);
-                var margin = Math.max(10, (maxVx - minVx) * 0.15);
-                if (v1x <= minVx + margin || v1x >= maxVx - margin) {
-                    v1x = (lsx + rsx) / 2;  // Centralizar para forma W/M correta
-                }
-                if (v2x <= minVx + margin || v2x >= maxVx - margin) {
-                    v2x = (lsx + rsx) / 2;
-                }
-            }
 
             if (isDT && hasV) {
                 dtPivotX = v1x;
