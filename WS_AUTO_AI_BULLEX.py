@@ -3248,29 +3248,9 @@ def _safe_save_json(filepath, data):
 
 # ═══════════════════════════════════════════════════════════════
 # CONTROLE DE TREINO — MEMÓRIA PERMANENTE (NUNCA RESETA)
-# A IA ACUMULA conhecimento para sempre. Cada vez que liga,
-# carrega do disco e treina APENAS ativos que ainda não têm dados.
+# Stats acumulam WR por ativo para feature f11 (arm_wr).
+# Modelos NN são PRÉ-TREINADOS offline (PKL imutáveis).
 # ═══════════════════════════════════════════════════════════════
-_TRAIN_CONTROL_FILE = os.path.join(os.path.expanduser("~"), ".wstrader", "hs_bot_train_control.json")
-
-
-def _need_retrain_bot():
-    """Retorna sempre False — IA NUNCA reseta. Memória permanente."""
-    return False
-
-
-def _save_retrain_control():
-    """Salva timestamp do último treino (apenas informativo)."""
-    try:
-        os.makedirs(os.path.dirname(_TRAIN_CONTROL_FILE), exist_ok=True)
-        now = datetime.now()
-        iso = now.isocalendar()
-        with open(_TRAIN_CONTROL_FILE, "w") as f:
-            json.dump({"iso_year": iso[0], "iso_week": iso[1], "date": now.isoformat(),
-                       "mode": "permanent_memory"}, f)
-        log.info(paint(f"[TREINO] Controle salvo: {now.strftime('%d/%m/%Y %H:%M')}", C.G))
-    except Exception:
-        pass
 
 
 def _get_ia_level(n_total: int) -> tuple:
@@ -3949,7 +3929,6 @@ def _train_ia_from_history(bx, hs_stats: dict) -> dict:
 
     # Salvar no disco — PERMANENTE
     _safe_save_json(AI_STATS_FILE, hs_stats)
-    _save_retrain_control()
 
     return hs_stats
 
@@ -7208,14 +7187,11 @@ def _main_inner():
                 _arm_key_res = f"{ativo}_{pat_type}_{setup.get('mode', 'classic')}"
                 _n_arm = hs_stats.get("arms", {}).get(_arm_key_res, {}).get("total", 0)
                 log.info(paint(
-                    f"  🤖 IA atualizada: {ativo} | resultado={'WIN' if res > 0 else 'LOSS' if res < 0 else 'EMPATE'} | "
-                    f"prob_antes={ia_prob:.2f} | amostras_ativo={_n_arm}",
+                    f"  📊 Resultado registrado: {ativo} | {'WIN' if res > 0 else 'LOSS' if res < 0 else 'EMPATE'} | "
+                    f"prob={ia_prob:.2f} | trades_ativo={_n_arm}",
                     C.B
                 ))
                 _safe_save_json(AI_STATS_FILE, hs_stats)
-                # Salvar controle de retrain SOMENTE quando IA tem amostras reais
-                if _n_arm > 0:
-                    _save_retrain_control()
 
                 # ── Estatísticas ──
                 wr = (total_wins / max(1, total_trades)) * 100
