@@ -5801,6 +5801,21 @@ def _main_inner():
     # NUNCA treinar NN online — só usar os modelos pré-treinados
     reversal_ai_map = {}  # {ativo: ReversalAI} — preenchido após selecionar ativos
 
+    # ── Carregar mapa de inversão per-asset (gerado offline) ──
+    _INVERSION_MAP_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "ws_inversion_map.json")
+    _inversion_map = {}
+    if os.path.exists(_INVERSION_MAP_FILE):
+        try:
+            with open(_INVERSION_MAP_FILE, "r", encoding="utf-8") as _imf:
+                _inversion_map = json.load(_imf)
+            log.info(paint(f"📊 Mapa de inversão carregado: {len(_inversion_map)} ativos", C.G))
+            _n_keep = sum(1 for v in _inversion_map.values() if v.get("action") == "keep")
+            _n_inv = sum(1 for v in _inversion_map.values() if v.get("action") == "invert")
+            _n_skip = sum(1 for v in _inversion_map.values() if v.get("action") == "skip")
+            log.info(paint(f"   MANTER={_n_keep} | INVERTER={_n_inv} | PULAR={_n_skip}", C.B))
+        except Exception as _ime:
+            log.warning(paint(f"⚠️ Erro ao carregar mapa de inversão: {_ime}", C.Y))
+
     # ── Carregar / Treinar IA — MEMÓRIA PERMANENTE ──
     # A IA NUNCA perde memória. Carrega do disco e ACUMULA.
     log.info(paint("🧠 Carregando memória da IA DT...", C.B))
@@ -6701,6 +6716,9 @@ def _main_inner():
                     ))
                     wait_candle_open()
 
+                # ═══ SALVAR NN DO SCAN (antes do RE-CHECK poder sobrescrever) ═══
+                _scan_nn_score = _nn_score  # Guardar score original do scan
+
                 # ═══ FIX IA: Re-extrair features com vela FECHADA e re-rodar NN ═══
                 # Treino usa velas fechadas. Se candles_ago=0, a predição anterior usou
                 # dados de vela incompleta. Agora que wait_candle_open() garantiu :00,
@@ -7021,23 +7039,50 @@ def _main_inner():
                     )
                     continue
 
-                # ═══ INVERSÃO INTELIGENTE DE SINAL ═══
-                # Baseado em 123 trades reais:
-                #   NN >= 95% → 65% WR invertido (padrão "perfeito demais" = mercado faz o oposto)
-                #   NN < 80%  → 72% WR normal (padrão "natural" funciona)
-                #   NN 80-95% → ~50/50 zona cinza → NÃO OPERAR
+                # ═══ INVERSÃO ADAPTATIVA PER-ASSET ═══
+                # Usa mapa pré-computado (models/ws_inversion_map.json) gerado pela
+                # análise offline de milhares de padrões históricos por ativo.
+                # Para decidir zona (>=95 / 80-95 / <80) usa MAX(scan, recheck)
+                # para evitar escape via RE-CHECK que diminui o score.
                 _direcao_original = direcao
                 if _nn_score is not None:
-                    _nn_pct = _nn_score * 100
-                    if _nn_pct >= 95:
-                        # Alta confiança = inverter
-                        direcao = "PUT" if direcao == "CALL" else "CALL"
-                        log.info(paint(
-                            f"  🔄 SINAL INVERTIDO: {ativo} {_direcao_original} → {direcao} | NN={_nn_pct:.0f}% (>=95% = inverter)",
-                            C.Y
-                        ))
-                    elif _nn_pct < 80:
-                        # Baixa confiança = manter (funciona melhor)
+                    # FIX: usar MAX do scan e recheck para classificar a ZONA
+                    _nn_zone_score = max(_scan_nn_score, _nn_score)
+                    _nn_zone_pct = _nn_zone_score * 100
+                    _nn_pct = _nn_score * 100  # score real (recheck se disponível)
+
+                    if _nn_zone_pct >= 95:
+                        # Faixa alta: consultar mapa de inversão per-asset
+                        _inv_profile = _inversion_map.get(ativo, {})
+                        _inv_action = _inv_profile.get("action", "skip")  # default: skip se sem dados
+                        _inv_wr = _inv_profile.get("high_nn", {}).get("original_wr", 0.5)
+                        _inv_n = _inv_profile.get("high_nn", {}).get("samples", 0)
+
+                        if _inv_action == "invert":
+                            direcao = "PUT" if direcao == "CALL" else "CALL"
+                            log.info(paint(
+                                f"  🔄 INVERTIDO (perfil): {ativo} {_direcao_original} → {direcao} | "
+                                f"NN={_nn_pct:.0f}% | WR_orig={_inv_wr:.0%} n={_inv_n} → inverter",
+                                C.Y
+                            ))
+                        elif _inv_action == "keep":
+                            log.info(paint(
+                                f"  ✅ MANTIDO (perfil): {ativo} {direcao} | "
+                                f"NN={_nn_pct:.0f}% | WR_orig={_inv_wr:.0%} n={_inv_n} → manter",
+                                C.G
+                            ))
+                        else:
+                            # skip: sem dados suficientes ou zona incerta
+                            log.info(paint(
+                                f"  ⏸️ SKIP (perfil): {ativo} {direcao} | "
+                                f"NN={_nn_pct:.0f}% | WR_orig={_inv_wr:.0%} n={_inv_n} → pular",
+                                C.Y
+                            ))
+                            print(f">>> IA: Skip {ativo} {direcao} — NN={_nn_pct:.0f}% perfil incerto (n={_inv_n})", flush=True)
+                            continue
+
+                    elif _nn_zone_pct < 80:
+                        # Baixa confiança = manter (72% WR comprovado)
                         log.info(paint(
                             f"  ✅ SINAL MANTIDO: {ativo} {direcao} | NN={_nn_pct:.0f}% (<80% = manter original)",
                             C.G
@@ -7045,7 +7090,7 @@ def _main_inner():
                     else:
                         # Zona cinza 80-95% = pular
                         log.info(paint(
-                            f"  ⏸️ ZONA CINZA: {ativo} {direcao} | NN={_nn_pct:.0f}% (80-95% = não operar)",
+                            f"  ⏸️ ZONA CINZA: {ativo} {direcao} | NN={_nn_pct:.0f}% (zona={_nn_zone_pct:.0f}% 80-95% = não operar)",
                             C.Y
                         ))
                         print(f">>> IA: Zona cinza {ativo} {direcao} — NN={_nn_pct:.0f}% (80-95% skip)", flush=True)
