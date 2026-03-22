@@ -126,11 +126,8 @@ from ws_reversal_ai import (
 )
 from ws_adaptive_brain import extract_features
 
-# ═══ IA 4 — GUARD GENERATIVA (IA WS Generativa) ═══
-from ws_generative_guard import gpt_guard_check
-
-# ═══ IA 5 — MEMÓRIA RAG (contexto de trades anteriores similares) ═══
-from ws_trade_memory import save_trade as rag_save_trade, retrieve_similar as rag_retrieve_similar, format_memory_for_prompt as rag_format_memory, rag_should_block
+# ═══ IA 4 — FILTRO DE CONTEXTO (tabela pré-computada do backtest) ═══
+from ws_context_filter import context_lookup, format_context_log
 
 try:
     from tradingpatterns import tradingpatterns as _shadow_patterns_lib
@@ -244,8 +241,7 @@ MAX_ENTRY_DELAY_SEC = float(os.getenv("WS_MAX_ENTRY_DELAY_SEC", "6.0"))
 MAX_LIVE_SIGNAL_CANDLES = max(1, int(os.getenv("WS_MAX_LIVE_SIGNAL_CANDLES", "1")))
 DT_LATE_PROGRESS_PCT = float(os.getenv("WS_DT_LATE_PROGRESS_PCT", "60.0"))
 DT_LATE_MIN_TARGET_ATR = float(os.getenv("WS_DT_LATE_MIN_TARGET_ATR", "3.5"))
-ENABLE_GPT_DT_ADVISORY = False   # IA generativa removida
-ENABLE_GPT_DT_COTRADER = False   # IA generativa removida
+ENABLE_CONTEXT_FILTER = True    # Filtro de contexto baseado em backtest
 DT_ENTRY_AT_TURN = (os.getenv("WS_DT_ENTRY_AT_TURN", "1").strip() == "1")
 DT_GRAPH_SIGNAL_ENTRY = (os.getenv("WS_DT_GRAPH_SIGNAL_ENTRY", "1").strip() == "1")
 DT_GRAPH_NN_ONLY_TEST = (os.getenv("WS_DT_GRAPH_NN_ONLY_TEST", "1").strip() == "1")
@@ -315,8 +311,6 @@ AI_MIN_SAMPLES = 5
 AI_CONF_MIN = 0.3
 AI_MIN_PROB = 0.55  # CORRIGIDO: era 0.40 (permitia entradas com 40% prob = moeda)
 DT_BAYES_FINAL_MIN = max(0.75, min(0.95, float(os.getenv("WS_DT_BAYES_FINAL_MIN", "0.75"))))
-GPT_COTRADER_BLOCK_CONF = max(50.0, min(100.0, float(os.getenv("WS_GPT_COTRADER_BLOCK_CONF", "75.0"))))
-GPT_COTRADER_STRONG_BAYES = max(DT_BAYES_FINAL_MIN, min(0.99, float(os.getenv("WS_GPT_COTRADER_STRONG_BAYES", "0.86"))))
 HORARIO_INICIO_MIN = 90    # 1h30 da manhã (1*60 + 30)
 HORARIO_FIM_MIN    = 1080  # 18h00 (18*60)
 MAX_DIST_OMBRO_ATR = 0.5  # CORRIGIDO: era 1.0 (muito longe do ombro D = entrada ruim)
@@ -600,15 +594,8 @@ def _build_ai_cotrader_consensus(mode: str,
     if shadow_available and shadow_pattern_lib.get("agreement") is not None:
         shadow_agreement = bool(shadow_pattern_lib.get("agreement"))
 
-    gpt_blocks = bool(
-        mode_name == "double_touch"
-        and ENABLE_GPT_DT_COTRADER
-        and gpt_available
-        and gpt_ok is False
-        and (gpt_conf or 0.0) >= GPT_COTRADER_BLOCK_CONF
-        and bayes_prob < GPT_COTRADER_STRONG_BAYES
-    )
-    final_ok = bool(bayes_ok and not gpt_blocks)
+    gpt_blocks = False  # Context filter bloqueia diretamente via _all_guards_ok
+    final_ok = bool(bayes_ok)
 
     if not bayes_ok:
         reason = f"Bayes abaixo do piso ({bayes_prob:.0%} < {bayes_min:.0%})"
@@ -4446,78 +4433,44 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                 "stage": "scan",
             }
             if mode == "double_touch":
-                if _nn_pre_pred is not None and bool(_nn_pre_pred.get("approved", False)) and (ENABLE_GPT_DT_COTRADER or ENABLE_GPT_DT_ADVISORY):
+                if _nn_pre_pred is not None and bool(_nn_pre_pred.get("approved", False)) and ENABLE_CONTEXT_FILTER:
                     try:
-                        # ── RAG: buscar trades similares para contexto ──
-                        _rag_rs = pat.get("right_shoulder", {}).get("price", 0)
-                        _rag_neck = pat.get("neckline", 0)
-                        _rag_depth = pat.get("depth", 0)
-                        _rag_dr = (_rag_depth / atr) if atr > 0 else 0
-                        _rag_iL = pat.get("left_shoulder", {}).get("idx", 0)
-                        _rag_iH = pat.get("head", {}).get("idx", 0)
-                        _rag_iR = pat.get("right_shoulder", {}).get("idx", 0)
-                        _rag_span = _rag_iR - _rag_iL
-                        _rag_d_left = _rag_iH - _rag_iL
-                        _rag_d_right = _rag_iR - _rag_iH
-                        _rag_sym = min(_rag_d_left, _rag_d_right) / max(_rag_d_left, _rag_d_right) if max(_rag_d_left, _rag_d_right) > 0 else 0
-                        _last_5_start = max(0, n - 5)
-                        _rag_bodies = [abs(float(C_arr[_bi]) - float(O[_bi])) for _bi in range(_last_5_start, n)]
-                        _rag_avg_body = sum(_rag_bodies) / len(_rag_bodies) if _rag_bodies else 0
-                        _rag_consol = (_rag_avg_body / atr * 100) < 40 if atr > 0 else False
+                        # ── CONTEXT TABLE: consultar WR histórico do backtest ──
+                        _ctx_geo = _extract_geometry(pat, atr)
                         import datetime as _dt_mod
-                        _rag_hour = _dt_mod.datetime.utcnow().hour
-                        _rag_similar = rag_retrieve_similar(
+                        _ctx_hour = _dt_mod.datetime.utcnow().hour
+                        _ctx_result = context_lookup(
                             ativo=ativo, direcao=direction,
-                            rs_price=_rag_rs, atr_val=atr,
-                            consolidacao=_rag_consol,
-                            depth_ratio=_rag_dr, symmetry=_rag_sym,
-                            span=_rag_span, hour=_rag_hour,
+                            hour=_ctx_hour,
+                            depth_ratio=_ctx_geo["depth_ratio"] if _ctx_geo else 0,
+                            symmetry=_ctx_geo["symmetry"] if _ctx_geo else 0,
                         )
-                        _rag_text = rag_format_memory(_rag_similar) if _rag_similar else ""
-                        if _rag_similar:
-                            log.info(paint(
-                                f"  🧠 RAG: {len(_rag_similar)} trades similares encontrados para {ativo} {direction}",
-                                C.B
-                            ))
+                        _ctx_log = format_context_log(_ctx_result)
+                        log.info(paint(f"  {_ctx_log}", C.B))
 
-                        _gpt_scan_raw = gpt_guard_check(
-                            ativo=ativo,
-                            direcao=direction,
-                            pat_data=pat,
-                            H=H,
-                            L=L,
-                            C=C_arr,
-                            O=O,
-                            n=n,
-                            atr_val=atr,
-                            nn_pred=_nn_pre_pred,
-                            cur_price=float(C_arr[-1]) if len(C_arr) else 0.0,
-                            rag_context=_rag_text,
-                        )
-                        _gpt_scan_is_authoritative = str(_gpt_scan_raw.get("source", "")).lower() in {"gpt", "cache"}
                         _gpt_scan_result = {
-                            "available": _gpt_scan_is_authoritative,
-                            "approved": _gpt_scan_raw.get("approved"),
-                            "confidence": _gpt_scan_raw.get("confidence"),
-                            "reason": _gpt_scan_raw.get("reason"),
-                            "source": _gpt_scan_raw.get("source"),
-                            "exp_minutes": _gpt_scan_raw.get("exp_minutes"),
-                            "latency_ms": _gpt_scan_raw.get("latency_ms"),
+                            "available": True,
+                            "approved": _ctx_result["action"] != "block",
+                            "confidence": _ctx_result["wr"],
+                            "reason": _ctx_result["reason"],
+                            "source": f"ctx_L{_ctx_result['level']}",
+                            "exp_minutes": None,
+                            "latency_ms": 0,
                             "stage": "scan",
                         }
-                    except Exception as _gpt_scan_err:
+                    except Exception as _ctx_scan_err:
                         _gpt_scan_result = {
                             "available": False,
                             "approved": None,
                             "confidence": None,
-                            "reason": f"erro no scan: {_gpt_scan_err}",
+                            "reason": f"erro context scan: {_ctx_scan_err}",
                             "source": None,
                             "exp_minutes": None,
                             "latency_ms": None,
                             "stage": "scan",
                         }
                         log.info(paint(
-                            f"  ⚠️ IA Gen. scan indisponivel: {ativo} {direction} | {_gpt_scan_err}",
+                            f"  ⚠️ Context scan erro: {ativo} {direction} | {_ctx_scan_err}",
                             C.Y
                         ))
                 elif _nn_pre_pred is None:
@@ -4525,7 +4478,7 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                 elif not bool(_nn_pre_pred.get("approved", False)):
                     _gpt_scan_result["reason"] = "NN do scan nao aprovou"
                 else:
-                    _gpt_scan_result["reason"] = "IA generativa desativada no DT"
+                    _gpt_scan_result["reason"] = "Context filter desativado"
 
             _ai_consensus = _build_ai_cotrader_consensus(
                 mode,
@@ -6996,126 +6949,53 @@ def _main_inner():
                             C.Y
                         ))
 
-                    # ═══ IA 4 — GUARD GENERATIVA (IA WS Generativa) ═══
-                    # Camada consultiva: analisa 30 velas + geometria + scores NN
-                    # DT: Bayes segura o piso final e a generativa atua como co-trader.
-                    if _nn_approved and _guard_df is not None and (not _is_dt_mode or ENABLE_GPT_DT_COTRADER or ENABLE_GPT_DT_ADVISORY):
+                    # ═══ IA 4 — FILTRO DE CONTEXTO (tabela backtest) ═══
+                    # Consulta WR histórico do backtest por geometria/ativo/hora
+                    if _nn_approved and _guard_df is not None and ENABLE_CONTEXT_FILTER:
                         try:
-                            # ── RAG LIVE: buscar trades similares ──
-                            _rag_live_rs = pat_data.get("right_shoulder", {}).get("price", 0)
-                            _rag_live_depth = pat_data.get("depth", 0)
-                            _rag_live_dr = (_rag_live_depth / atr_val) if atr_val > 0 else 0
-                            _rag_live_iL = pat_data.get("left_shoulder", {}).get("idx", 0)
-                            _rag_live_iH = pat_data.get("head", {}).get("idx", 0)
-                            _rag_live_iR = pat_data.get("right_shoulder", {}).get("idx", 0)
-                            _rag_live_span = _rag_live_iR - _rag_live_iL
-                            _rag_live_dl = _rag_live_iH - _rag_live_iL
-                            _rag_live_dr2 = _rag_live_iR - _rag_live_iH
-                            _rag_live_sym = min(_rag_live_dl, _rag_live_dr2) / max(_rag_live_dl, _rag_live_dr2) if max(_rag_live_dl, _rag_live_dr2) > 0 else 0
-                            _rag_live_bodies = [abs(float(_g_C[_bi]) - float(_g_O[_bi])) for _bi in range(max(0, _g_n - 5), _g_n)]
-                            _rag_live_avg = sum(_rag_live_bodies) / len(_rag_live_bodies) if _rag_live_bodies else 0
-                            _rag_live_consol = (_rag_live_avg / atr_val * 100) < 40 if atr_val > 0 else False
+                            _ctx_live_geo = _extract_geometry(pat_data, atr_val)
                             import datetime as _dt_mod
-                            _rag_live_hour = _dt_mod.datetime.utcnow().hour
-                            _rag_live_similar = rag_retrieve_similar(
+                            _ctx_live_hour = _dt_mod.datetime.utcnow().hour
+                            _ctx_live = context_lookup(
                                 ativo=ativo, direcao=direcao,
-                                rs_price=_rag_live_rs, atr_val=atr_val,
-                                consolidacao=_rag_live_consol,
-                                depth_ratio=_rag_live_dr, symmetry=_rag_live_sym,
-                                span=_rag_live_span, hour=_rag_live_hour,
+                                hour=_ctx_live_hour,
+                                depth_ratio=_ctx_live_geo["depth_ratio"] if _ctx_live_geo else 0,
+                                symmetry=_ctx_live_geo["symmetry"] if _ctx_live_geo else 0,
                             )
-                            _rag_live_text = rag_format_memory(_rag_live_similar) if _rag_live_similar else ""
-                            if _rag_live_similar:
-                                log.info(paint(
-                                    f"  🧠 RAG LIVE: {len(_rag_live_similar)} trades similares para {ativo} {direcao}",
-                                    C.B
-                                ))
+                            _ctx_live_log = format_context_log(_ctx_live)
+                            log.info(paint(f"  {_ctx_live_log}", C.B))
 
-                            # ── RAG BLOQUEIO AUTÔNOMO: WR < 35% com 3+ trades → bloqueia ──
-                            _rag_block = rag_should_block(_rag_live_similar)
-                            if _rag_block.get("block"):
-                                _guard_block_reason = _rag_block["reason"]
+                            if _ctx_live["action"] == "block":
+                                _guard_block_reason = _ctx_live["reason"]
                                 _all_guards_ok = False
                                 log.info(paint(
-                                    f"  ⛔ {_rag_block['reason']}",
+                                    f"  ⛔ Context BLOQUEOU: {_ctx_live['reason']}",
                                     C.R
                                 ))
 
-                            if _all_guards_ok:
-                                _gpt_live_result = gpt_guard_check(
-                                    ativo=ativo,
-                                    direcao=direcao,
-                                    pat_data=pat_data,
-                                    H=_g_H, L=_g_L, C=_g_C, O=_g_O, n=_g_n,
-                                    atr_val=atr_val,
-                                    nn_pred=_nn_pred,
-                                    cur_price=float(_cur) if _cur else 0,
-                                    rag_context=_rag_live_text,
-                                )
-                                _gpt_is_authoritative = str(_gpt_live_result.get("source", "")).lower() in {"gpt", "cache"}
-                                _gpt_result_payload = {
-                                    "available": _gpt_is_authoritative,
-                                    "approved": _gpt_live_result.get("approved"),
-                                    "confidence": _gpt_live_result.get("confidence"),
-                                    "reason": _gpt_live_result.get("reason"),
-                                    "source": _gpt_live_result.get("source"),
-                                    "exp_minutes": _gpt_live_result.get("exp_minutes"),
-                                    "latency_ms": _gpt_live_result.get("latency_ms"),
-                                    "stage": "live",
-                                }
-                                _gpt_approved = _gpt_result_payload["approved"]
-                                _gpt_conf = _gpt_result_payload["confidence"]
-                                _gpt_reason = _gpt_result_payload["reason"]
-                                _gpt_source = _gpt_result_payload["source"]
-                                _gpt_ms = _gpt_result_payload["latency_ms"]
-
-                                _gpt_exp = _gpt_result_payload.get("exp_minutes", _smart_exp)
-                                if _gpt_result_payload.get("available") and _gpt_approved:
-                                    _smart_exp = _gpt_exp
-                                    log.info(paint(
-                                        f"  ✅ IA Gen. APROVOU: conf={_gpt_conf}% | EXP={_gpt_exp}min | "
-                                        f"{_gpt_reason} ({_gpt_source}, {_gpt_ms}ms)",
-                                        C.G
-                                    ))
-                                elif _gpt_result_payload.get("available"):
-                                    # ADVISORY: apenas loga, NÃO bloqueia — NN já aprovou
-                                    log.info(paint(
-                                        f"  ⚠️ IA Gen. discorda: conf={_gpt_conf}% | "
-                                        f"{_gpt_reason} ({_gpt_source}, {_gpt_ms}ms) "
-                                        f"— ENTRADA MANTIDA (NN={_fmt_pct(_nn_score)})",
-                                        C.Y
-                                    ))
-                                    print(
-                                        f">>> IA Gen. discorda {ativo} {direcao}: "
-                                        f"{_gpt_reason} — ENTRADA MANTIDA (NN aprovado)",
-                                        flush=True
-                                    )
-                                else:
-                                    log.info(paint(
-                                        f"  ⚪ IA Gen. indisponivel: {_gpt_reason} ({_gpt_source}, {_gpt_ms}ms) — seguindo sem confirmacao generativa",
-                                        C.B
-                                    ))
-                            else:
-                                # RAG bloqueou — preenche payload vazio para não crashar
-                                _gpt_result_payload = {
-                                    "available": False, "approved": None,
-                                    "confidence": None, "reason": _guard_block_reason,
-                                    "source": "rag_block", "exp_minutes": _smart_exp,
-                                    "latency_ms": None, "stage": "live",
-                                }
-                                _gpt_approved = None
-                                _gpt_conf = None
-                                _gpt_reason = _guard_block_reason
-                                _gpt_source = "rag_block"
-                                _gpt_ms = None
-                        except Exception as _gpt_err:
+                            _gpt_result_payload = {
+                                "available": True,
+                                "approved": _ctx_live["action"] != "block",
+                                "confidence": _ctx_live["wr"],
+                                "reason": _ctx_live["reason"],
+                                "source": f"ctx_L{_ctx_live['level']}",
+                                "exp_minutes": None,
+                                "latency_ms": 0,
+                                "stage": "live",
+                            }
+                            _gpt_approved = _gpt_result_payload["approved"]
+                            _gpt_conf = _ctx_live["wr"]
+                            _gpt_reason = _ctx_live["reason"]
+                            _gpt_source = f"ctx_L{_ctx_live['level']}"
+                            _gpt_ms = 0
+                        except Exception as _ctx_err:
                             _gpt_result_payload = {
                                 "available": False,
                                 "approved": None,
                                 "confidence": None,
-                                "reason": f"erro live: {_gpt_err}",
+                                "reason": f"erro context live: {_ctx_err}",
                                 "source": None,
-                                "exp_minutes": _gpt_exp,
+                                "exp_minutes": None,
                                 "latency_ms": None,
                                 "stage": "live",
                             }
@@ -7125,12 +7005,12 @@ def _main_inner():
                             _gpt_source = None
                             _gpt_ms = None
                             log.warning(paint(
-                                f"  ⚠️ IA Gen. erro: {_gpt_err} — mantendo decisão NN",
+                                f"  ⚠️ Context filter erro: {_ctx_err} — mantendo decisão NN",
                                 C.Y
                             ))
                     elif _nn_approved and _guard_df is not None and _is_dt_mode:
                         log.info(paint(
-                            "  ⚡ IA Gen. pulada no DT por configuracao",
+                            "  ⚡ Context filter desativado no DT",
                             C.B
                         ))
 
@@ -7609,8 +7489,8 @@ def _main_inner():
                     },
                     "shadow_pattern_lib": setup.get("shadow_pattern_lib"),
                     "ai_consensus": setup.get("ai_consensus"),
-                    # ── IA WS Generativa ──
-                    "gpt": {
+                    # ── Context Filter ──
+                    "context_filter": {
                         "available": bool(_gpt_result_payload.get("available")),
                         "approved": _gpt_approved,
                         "confidence": _gpt_conf,
@@ -7829,40 +7709,6 @@ def _main_inner():
                     decision_id=_decision_id,
                     order_id=op_id,
                 )
-
-                # ═══ RAG: Salvar resultado na memória para trades futuros ═══
-                if _live_status in ("win", "loss") and _is_dt_mode:
-                    try:
-                        _rag_save_rs = pat_data.get("right_shoulder", {}).get("price", 0)
-                        _rag_save_neck = pat_data.get("neckline", 0)
-                        _rag_save_depth = pat_data.get("depth", 0)
-                        _rag_save_dr = (_rag_save_depth / atr_val) if atr_val > 0 else 0
-                        _rag_save_iL = pat_data.get("left_shoulder", {}).get("idx", 0)
-                        _rag_save_iH = pat_data.get("head", {}).get("idx", 0)
-                        _rag_save_iR = pat_data.get("right_shoulder", {}).get("idx", 0)
-                        _rag_save_span = _rag_save_iR - _rag_save_iL
-                        _rag_save_dl = _rag_save_iH - _rag_save_iL
-                        _rag_save_dr2 = _rag_save_iR - _rag_save_iH
-                        _rag_save_sym = min(_rag_save_dl, _rag_save_dr2) / max(_rag_save_dl, _rag_save_dr2) if max(_rag_save_dl, _rag_save_dr2) > 0 else 0
-                        _rag_save_bodies = [abs(float(_g_C[_bi]) - float(_g_O[_bi])) for _bi in range(max(0, _g_n - 5), _g_n)] if _g_n > 0 else []
-                        _rag_save_avg = sum(_rag_save_bodies) / len(_rag_save_bodies) if _rag_save_bodies else 0
-                        _rag_save_consol = (_rag_save_avg / atr_val * 100) < 40 if atr_val > 0 else False
-                        import datetime as _dt_mod
-                        rag_save_trade(
-                            ativo=ativo, direcao=direcao, result=_live_status,
-                            profit=float(res), entry_price=float(_live_entry_price or 0),
-                            rs_price=_rag_save_rs, neckline=_rag_save_neck, atr_val=atr_val,
-                            nn_score=float(_nn_score or 0),
-                            gpt_confidence=int(_gpt_conf or 0),
-                            gpt_exp=int(_gpt_exp or _use_exp or 2),
-                            consolidacao=_rag_save_consol,
-                            pat_type=str(pat_type),
-                            depth=_rag_save_depth, symmetry=_rag_save_sym,
-                            span=_rag_save_span, depth_ratio=_rag_save_dr,
-                            hour=_dt_mod.datetime.utcnow().hour,
-                        )
-                    except Exception as _rag_save_err:
-                        log.debug(f"  RAG save error: {_rag_save_err}")
 
                 # ── IA: aprender com o resultado ──
                 ai_update(ativo, setup, res, hs_stats)
