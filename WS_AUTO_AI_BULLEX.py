@@ -817,6 +817,43 @@ def _get_session_params(guard_df=None, atr_val=0.0):
     }
 
 
+def _compute_smart_exp(C, H, L, n, atr_val, nn_score, pat_data):
+    """Calcula duração ideal (1 ou 2 min) com base na velocidade do preço.
+    Se o movimento médio por candle M1 supera 30% do ATR E a NN está ≥85%,
+    1 minuto é suficiente → mais rápido, menor exposição ao risco.
+    Caso contrário, 2 minutos (padrão, alinhado com treino).
+    """
+    try:
+        if nn_score is None or nn_score < 0.92:
+            return EXP_FIXA  # 2 min (padrão — NN não é confiante o bastante para 1min)
+
+        look = min(10, n - 1)
+        if look < 3:
+            return EXP_FIXA
+
+        moves = []
+        for k in range(n - look, n):
+            moves.append(abs(float(C[k]) - float(C[k - 1])))
+        avg_move = float(np.mean(moves)) if moves else 0
+
+        if atr_val <= 0:
+            return EXP_FIXA
+
+        # Profundidade do padrão → impulso esperado
+        depth = float((pat_data or {}).get("depth", 0))
+        depth_ratio = depth / atr_val
+
+        impulse = 0.3 + depth_ratio * 0.15 + nn_score * 0.4
+        expected_1m = avg_move * min(impulse, 1.2)
+        min_move = atr_val * 0.30
+
+        if expected_1m >= min_move:
+            return 1  # 1 minuto basta
+        return EXP_FIXA  # 2 min (padrão)
+    except Exception:
+        return EXP_FIXA
+
+
 def _dt_geometry_scan_filter(geo: Optional[dict], geom_score: Optional[float]) -> dict:
     def _between(value: float, low: float, high: float) -> bool:
         return low <= float(value) <= high
@@ -3322,7 +3359,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
     patterns = []
     tol = atr * 0.35
     min_spacing = 12
-    max_spacing = 60
+    max_spacing = 45
     _train_mode = bool(training or max_candles_ago >= 9999)
     min_depth = atr * 1.5  # alinhado entre treino e live (depth não afeta WR)
     min_candle_range = atr * 0.20
@@ -5179,6 +5216,515 @@ def get_realtime_entry_snapshot(bx: BrokerAPI, ativo: str, timeframe: int,
     return current_price, closed_df
 
 
+# ═══════════════════════════════════════════════════════════════
+# FRESH TRAIN — Baixa CSV do GitHub, preenche gap, treina do zero
+# ═══════════════════════════════════════════════════════════════
+GITHUB_CSV_RAW_URL = os.getenv(
+    "WS_CSV_RAW_URL",
+    "https://raw.githubusercontent.com/whsouza22/wstrader-update/main/candles_100k/{file_name}"
+)
+_CSV_CACHE_DIR = os.path.join(get_ws_user_data_dir(), "candles_100k")
+
+
+def _download_csv_from_github(ativo: str) -> Optional[str]:
+    """Baixa CSV de velas do GitHub para cache local.
+    Retorna caminho do arquivo local ou None se falhar."""
+    import urllib.request
+    import urllib.error
+
+    os.makedirs(_CSV_CACHE_DIR, exist_ok=True)
+    file_name = f"{ativo}.csv"
+    local_path = os.path.join(_CSV_CACHE_DIR, file_name)
+    url = GITHUB_CSV_RAW_URL.replace("{file_name}", file_name)
+
+    try:
+        log.info(paint(f"  🌐 Baixando CSV {ativo} do GitHub...", C.B))
+        req = urllib.request.Request(url, headers={"User-Agent": "WS-Trader-IA/1.0"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = resp.read()
+        with open(local_path, "wb") as f:
+            f.write(data)
+        size_mb = len(data) / (1024 * 1024)
+        log.info(paint(f"  📥 CSV {ativo}: {size_mb:.1f} MB baixado", C.G))
+        return local_path
+    except urllib.error.HTTPError as e:
+        log.warning(paint(f"  ⚠️ CSV {ativo}: HTTP {e.code} — não encontrado no GitHub", C.Y))
+    except Exception as e:
+        log.warning(paint(f"  ⚠️ CSV {ativo}: erro no download — {e}", C.Y))
+    return None
+
+
+def _fill_csv_gap(bx, ativo: str, csv_path: str) -> Optional[str]:
+    """Lê CSV existente, baixa SOMENTE as velas faltantes da corretora,
+    e retorna caminho do CSV atualizado.
+
+    Calcula o gap entre a última data do CSV e o horário atual,
+    baixa apenas as velas M1 necessárias para fechar o gap.
+    """
+    try:
+        df = pd.read_csv(csv_path)
+        df["time"] = pd.to_datetime(df["time"])
+        df = df.sort_values("time").drop_duplicates(subset=["time"], keep="last")
+        last_time = df["time"].iloc[-1]
+        n_csv = len(df)
+
+        now = pd.Timestamp.now()
+        gap_minutes = int((now - last_time).total_seconds() / 60)
+
+        if gap_minutes <= 1:
+            log.info(paint(f"  ✅ CSV {ativo}: já atualizado ({n_csv} velas)", C.G))
+            return csv_path
+
+        # Baixar apenas as velas que faltam (com margem de 5 para sobreposição/dedup)
+        n_download = min(gap_minutes + 5, 5000)
+        log.info(paint(
+            f"  📊 CSV {ativo}: última vela {last_time} | gap={gap_minutes} min | baixando {n_download} velas...",
+            C.B
+        ))
+
+        df_new = get_candles_df(bx, ativo, TF_M1, n_download, min_len=1)
+        if df_new is None or len(df_new) == 0:
+            log.warning(paint(f"  ⚠️ CSV {ativo}: falha ao baixar velas da corretora", C.Y))
+            return csv_path  # Usa CSV como está
+
+        # Converter para mesmo formato do CSV (time como coluna, não index)
+        df_new = df_new.reset_index()
+        df_new["time"] = pd.to_datetime(df_new["time"])
+
+        # Concatenar e deduplicar
+        df_combined = pd.concat([df, df_new[["time", "open", "high", "low", "close"]]], ignore_index=True)
+        df_combined["time"] = pd.to_datetime(df_combined["time"])
+        df_combined = df_combined.sort_values("time").drop_duplicates(subset=["time"], keep="last")
+        df_combined = df_combined.reset_index(drop=True)
+
+        n_added = len(df_combined) - n_csv
+        log.info(paint(
+            f"  ✅ CSV {ativo}: +{n_added} velas novas | total={len(df_combined)}",
+            C.G
+        ))
+
+        # Salvar CSV atualizado
+        df_combined.to_csv(csv_path, index=False)
+        return csv_path
+
+    except Exception as e:
+        log.warning(paint(f"  ⚠️ CSV {ativo}: erro no gap-fill — {e}", C.Y))
+        return csv_path
+
+
+def _fresh_train_single(ativo: str, csv_path: str, hs_stats: dict) -> Optional[ReversalAI]:
+    """Treina NN do zero para UM ativo usando CSV completo.
+    Mesma lógica de train_neural_network.py train_single_asset()."""
+    try:
+        df = pd.read_csv(csv_path)
+        df["time"] = pd.to_datetime(df["time"])
+        df.set_index("time", inplace=True)
+        needed = ["open", "high", "low", "close"]
+        for col in needed:
+            if col not in df.columns:
+                return None
+        df = df[needed].dropna().sort_index()
+        df = df[~df.index.duplicated(keep="first")]
+
+        H = df["high"].values
+        L = df["low"].values
+        C_arr = df["close"].values
+        O = df["open"].values
+        n = len(H)
+
+        if n < 200:
+            log.warning(paint(f"  ⚠️ {ativo}: CSV muito curto ({n} velas)", C.Y))
+            return None
+
+        atr_vals = [float(H[k] - L[k]) for k in range(max(0, n - 14), n)]
+        atr = float(np.mean(atr_vals)) if atr_vals else 0.001
+        if atr <= 0:
+            return None
+
+        ph, pl = detect_pivots(H, L, window=5)
+        all_dt = detect_double_touch(H, L, C_arr, O, ph, pl, atr, n,
+                                     max_candles_ago=9999, training=False)
+        if not all_dt:
+            log.warning(paint(f"  ⚠️ {ativo}: nenhum DT no CSV ({n} velas)", C.Y))
+            return None
+
+        # Criar ReversalAI LIMPA
+        ai = ReversalAI(ativo)
+        ai._ai1 = None
+        ai._ai2 = None
+        ai._ai3 = None
+        ai._ai1_ready = False
+        ai._ai2_ready = False
+        ai._ai3_ready = False
+        ai._train_data = []
+
+        # FASE 1: Coletar arm_wr stats
+        _local_hs = {"meta": {"total": 0, "wins": 0}, "arms": {}}
+        for pat in all_dt:
+            bt = backtest_pattern(pat, C_arr, O, H, L, n)
+            if bt is None or bt["result"] not in ("win", "loss"):
+                continue
+            result = 1 if bt["result"] == "win" else 0
+            arm = f"{ativo}_{pat.get('type', 'HS')}_{pat.get('mode', 'classic')}"
+            if arm not in _local_hs["arms"]:
+                _local_hs["arms"][arm] = {"wins": 0, "total": 0}
+            _local_hs["arms"][arm]["total"] += 1
+            if result:
+                _local_hs["arms"][arm]["wins"] += 1
+
+        # Usar hs_stats global se tiver mais dados
+        _use_stats = hs_stats if hs_stats.get("meta", {}).get("total", 0) > _local_hs["meta"]["total"] else _local_hs
+
+        # FASE 2: Extrair features e alimentar IA
+        _w, _l, _added = 0, 0, 0
+        for pat in all_dt:
+            bt = backtest_pattern(pat, C_arr, O, H, L, n)
+            if bt is None or bt["result"] not in ("win", "loss"):
+                continue
+            result = 1 if bt["result"] == "win" else 0
+
+            rs_idx = pat["right_shoulder"]["idx"]
+            win_start = max(0, rs_idx - 110)
+            _post_rs_extra = random.choice([0, 1])
+            win_end = min(n, rs_idx + 1 + _post_rs_extra)
+            H_win = H[win_start:win_end]
+            L_win = L[win_start:win_end]
+            C_win = C_arr[win_start:win_end]
+            O_win = O[win_start:win_end]
+            n_win = len(H_win)
+
+            atr_local_vals = [float(H_win[k] - L_win[k]) for k in range(max(0, n_win - 14), n_win)]
+            atr_local = float(np.mean(atr_local_vals)) if atr_local_vals else atr
+
+            pat_copy = dict(pat)
+            pat_copy["candles_ago"] = max(0, n_win - 1 - (rs_idx - win_start))
+
+            feats = extract_features(pat_copy, H_win, L_win, C_win, O_win, n_win,
+                                     atr_local, _use_stats, ativo)
+            if feats is not None:
+                ok = ai.feed_dt_features(feats, result)
+                if ok:
+                    _added += 1
+                    if result == 1:
+                        _w += 1
+                    else:
+                        _l += 1
+
+        if _added < MIN_SAMPLES_ML:
+            log.warning(paint(f"  ⚠️ {ativo}: poucos padrões ({_added} < {MIN_SAMPLES_ML})", C.Y))
+            return None
+
+        # FASE 3: Treinar
+        ok = ai.train_all(force=True)
+        if not ok:
+            log.warning(paint(f"  ❌ {ativo}: treino falhou", C.R))
+            return None
+
+        wr = _w / _added * 100 if _added > 0 else 0
+        log.info(paint(
+            f"  ✅ {ativo}: {_added} padrões ({_w}W/{_l}L = {wr:.1f}%) | "
+            f"IA1={ai._ai1_val:.1%} IA2={ai._ai2_val:.1%}"
+            + (f" IA3={ai._ai3_val:.1%}" if ai._ai3_ready else "")
+            + f" | {n} velas",
+            C.G
+        ))
+        return ai
+
+    except Exception as e:
+        log.warning(paint(f"  ⚠️ {ativo}: erro no treino — {e}", C.Y))
+        return None
+
+
+def _fresh_train_assets(bx, assets: list, reversal_ai_map: dict, hs_stats: dict):
+    """Pipeline completo: CSV GitHub → gap-fill → delete pkl → treina do zero.
+
+    Para cada ativo:
+      1. Baixa CSV do GitHub (se não existe no cache local)
+      2. Preenche gap com velas da corretora (última data CSV → agora)
+      3. Deleta pkl antigo
+      4. Treina NN do zero com CSV completo (~87K+ velas)
+      5. Modelo fresco na memória
+    """
+    log.info(paint(f"\n🧠 FRESH TRAIN: Treinando {len(assets)} ativos do zero com CSV + gap-fill...", C.B))
+    print(f">>> FRESH TRAIN: Iniciando treino fresco ({len(assets)} ativos)", flush=True)
+    _t0 = time.time()
+    _ok = 0
+
+    for ativo in assets:
+        try:
+            # 1. Verificar se tem CSV local (cache), senão baixa do GitHub
+            csv_path = os.path.join(_CSV_CACHE_DIR, f"{ativo}.csv")
+            if not os.path.exists(csv_path):
+                csv_path = _download_csv_from_github(ativo)
+                if csv_path is None:
+                    log.warning(paint(f"  ⚠️ {ativo}: sem CSV disponível — pulando", C.Y))
+                    continue
+
+            # 2. Preencher gap com velas da corretora
+            csv_path = _fill_csv_gap(bx, ativo, csv_path)
+            if csv_path is None:
+                continue
+
+            # 3. Deletar pkl antigo (treino sempre do zero)
+            pkl_path = get_reversal_model_persist_path(ativo)
+            if os.path.exists(pkl_path):
+                os.remove(pkl_path)
+                log.info(paint(f"  🗑️ PKL {ativo} deletado — treino do zero", C.Y))
+
+            # 4. Treinar do zero com CSV completo
+            ai = _fresh_train_single(ativo, csv_path, hs_stats)
+            if ai is not None:
+                reversal_ai_map[ativo] = ai
+                ai.save_stats_to_disk()
+                _ok += 1
+            else:
+                # Fallback: manter modelo existente se treino falhar
+                if ativo not in reversal_ai_map:
+                    reversal_ai_map[ativo] = ReversalAI(ativo)
+
+        except Exception as e:
+            log.warning(paint(f"  ⚠️ {ativo}: erro no pipeline — {e}", C.Y))
+            continue
+
+    _elapsed = time.time() - _t0
+    log.info(paint(
+        f"✅ FRESH TRAIN CONCLUÍDO: {_ok}/{len(assets)} ativos treinados em {_elapsed:.1f}s",
+        C.G if _ok > 0 else C.Y
+    ))
+    print(f">>> FRESH TRAIN: {_ok}/{len(assets)} modelos treinados do zero ({_elapsed:.1f}s)", flush=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# LIVE RETRAIN — Retreina NN com 900 velas recentes ao vivo
+# ═══════════════════════════════════════════════════════════════
+_LIVE_RETRAIN_CANDLES = 900
+_LIVE_RETRAIN_MIN_PATTERNS = 10   # Mínimo de padrões para retreinar
+_live_retrain_feed_count: dict = {}  # {ativo: n_feeds_since_last_retrain}
+_LIVE_RETRAIN_EVERY_N_FEEDS = 10   # Retreina após N novos resultados ao vivo
+
+
+def _live_retrain_asset(bx, ativo: str, reversal_ai_map: dict, hs_stats: dict) -> bool:
+    """Retreina modelo NN com 900 velas recentes da corretora.
+
+    Combina padrões encontrados nas últimas 900 velas para calibrar
+    o modelo à condição ATUAL do mercado. A arquitetura (45 features,
+    XGBoost+LightGBM+MLP) preserva o conhecimento da rede neural.
+    """
+    try:
+        log.info(paint(f"  🔄 Live Retrain: {ativo} — baixando {_LIVE_RETRAIN_CANDLES} velas...", C.B))
+        df = get_candles_df(bx, ativo, TF_M1, _LIVE_RETRAIN_CANDLES, min_len=200)
+        if df is None:
+            log.info(paint(f"  ⚠️ Live Retrain {ativo}: candles insuficientes", C.Y))
+            return False
+
+        H = df["high"].values
+        L = df["low"].values
+        C_arr = df["close"].values
+        O = df["open"].values
+        n = len(H)
+
+        atr_vals = [float(H[k] - L[k]) for k in range(max(0, n - 14), n)]
+        atr = float(np.mean(atr_vals)) if atr_vals else 0.001
+        if atr <= 0:
+            return False
+
+        # Detectar pivots e DTs — mesma lógica do treino offline
+        ph, pl = detect_pivots(H, L, window=5)
+        all_dt = detect_double_touch(H, L, C_arr, O, ph, pl, atr, n,
+                                     max_candles_ago=9999, training=False)
+
+        if not all_dt:
+            log.info(paint(f"  ⚠️ Live Retrain {ativo}: nenhum DT encontrado nas {n} velas", C.Y))
+            return False
+
+        _ensure_reversal_model_loaded(reversal_ai_map, ativo)
+        ai = reversal_ai_map.get(ativo)
+        if ai is None:
+            return False
+
+        # Coletar arm_wr stats (feature f11)
+        _local_hs_stats = {"meta": {"total": 0, "wins": 0}, "arms": {}}
+        for pat in all_dt:
+            bt = backtest_pattern(pat, C_arr, O, H, L, n)
+            if bt is None or bt["result"] not in ("win", "loss"):
+                continue
+            result = 1 if bt["result"] == "win" else 0
+            arm = f"{ativo}_{pat.get('type', 'HS')}_{pat.get('mode', 'classic')}"
+            if arm not in _local_hs_stats["arms"]:
+                _local_hs_stats["arms"][arm] = {"wins": 0, "total": 0}
+            _local_hs_stats["arms"][arm]["total"] += 1
+            if result:
+                _local_hs_stats["arms"][arm]["wins"] += 1
+
+        # Usar hs_stats global se tiver mais dados
+        _use_stats = hs_stats if hs_stats.get("meta", {}).get("total", 0) > _local_hs_stats["meta"]["total"] else _local_hs_stats
+
+        # Extrair features e alimentar IA
+        _w, _l, _added = 0, 0, 0
+        for pat in all_dt:
+            bt = backtest_pattern(pat, C_arr, O, H, L, n)
+            if bt is None or bt["result"] not in ("win", "loss"):
+                continue
+            result = 1 if bt["result"] == "win" else 0
+
+            rs_idx = pat["right_shoulder"]["idx"]
+            win_start = max(0, rs_idx - 110)
+            _post_rs_extra = random.choice([0, 1])
+            win_end = min(n, rs_idx + 1 + _post_rs_extra)
+            H_win = H[win_start:win_end]
+            L_win = L[win_start:win_end]
+            C_win = C_arr[win_start:win_end]
+            O_win = O[win_start:win_end]
+            n_win = len(H_win)
+
+            atr_local_vals = [float(H_win[k] - L_win[k]) for k in range(max(0, n_win - 14), n_win)]
+            atr_local = float(np.mean(atr_local_vals)) if atr_local_vals else atr
+
+            pat_copy = dict(pat)
+            pat_copy["candles_ago"] = max(0, n_win - 1 - (rs_idx - win_start))
+
+            feats = extract_features(pat_copy, H_win, L_win, C_win, O_win, n_win,
+                                     atr_local, _use_stats, ativo)
+            if feats is not None:
+                ok = ai.feed_dt_features(feats, result)
+                if ok:
+                    _added += 1
+                    if result == 1:
+                        _w += 1
+                    else:
+                        _l += 1
+
+        if _added < _LIVE_RETRAIN_MIN_PATTERNS:
+            log.info(paint(
+                f"  ⚠️ Live Retrain {ativo}: {_added} padrões (min={_LIVE_RETRAIN_MIN_PATTERNS}) — mantendo modelo atual",
+                C.Y
+            ))
+            return False
+
+        wr = _w / _added * 100 if _added > 0 else 0
+        log.info(paint(
+            f"  🧠 Live Retrain {ativo}: {_added} padrões ({_w}W/{_l}L = {wr:.1f}%) — treinando...",
+            C.B
+        ))
+
+        ok = ai.train_all(force=True)
+        if ok:
+            ai.save_stats_to_disk()
+            log.info(paint(
+                f"  ✅ Live Retrain {ativo}: modelo atualizado! "
+                f"IA1={ai._ai1_val:.1%} IA2={ai._ai2_val:.1%}"
+                + (f" IA3={ai._ai3_val:.1%}" if ai._ai3_ready else "")
+                + f" | {n} velas → {_added} padrões",
+                C.G
+            ))
+            print(
+                f">>> LIVE RETRAIN: {ativo} atualizado | {_added} padrões ({wr:.0f}% WR) | "
+                f"IA1={ai._ai1_val:.1%} IA2={ai._ai2_val:.1%}",
+                flush=True
+            )
+            return True
+        else:
+            log.info(paint(f"  ❌ Live Retrain {ativo}: treino falhou", C.R))
+            return False
+
+    except Exception as e:
+        log.warning(paint(f"  ⚠️ Live Retrain {ativo} erro: {e}", C.Y))
+        return False
+
+
+def _live_retrain_all(bx, assets: list, reversal_ai_map: dict, hs_stats: dict):
+    """Retreina TODOS os ativos do pool com 900 velas recentes."""
+    log.info(paint(f"\n🔄 LIVE RETRAIN: Retreinando {len(assets)} ativos com {_LIVE_RETRAIN_CANDLES} velas recentes...", C.B))
+    print(f">>> LIVE RETRAIN: Iniciando retreino ao vivo ({len(assets)} ativos, {_LIVE_RETRAIN_CANDLES} velas)", flush=True)
+    _t0 = time.time()
+    _ok = 0
+    for ativo in assets:
+        if _live_retrain_asset(bx, ativo, reversal_ai_map, hs_stats):
+            _ok += 1
+    _elapsed = time.time() - _t0
+    log.info(paint(
+        f"✅ LIVE RETRAIN CONCLUÍDO: {_ok}/{len(assets)} ativos atualizados em {_elapsed:.1f}s",
+        C.G if _ok > 0 else C.Y
+    ))
+    print(f">>> LIVE RETRAIN: {_ok}/{len(assets)} modelos atualizados ({_elapsed:.1f}s)", flush=True)
+
+
+def _live_feed_trade_result(ativo: str, pat_data: dict, result_label: int,
+                            guard_df, atr_val: float,
+                            reversal_ai_map: dict, hs_stats: dict,
+                            bx=None):
+    """Alimenta resultado de trade ao vivo na NN para aprendizado contínuo.
+
+    Após acumular _LIVE_RETRAIN_EVERY_N_FEEDS novos resultados, retreina o modelo.
+    """
+    global _live_retrain_feed_count
+    try:
+        ai = reversal_ai_map.get(ativo)
+        if ai is None:
+            return
+
+        # Extrair features do padrão que acabou de ser operado
+        if guard_df is None or len(guard_df) < 50:
+            return
+
+        _H = guard_df["high"].values
+        _L = guard_df["low"].values
+        _C = guard_df["close"].values
+        _O = guard_df["open"].values
+        _n = len(_H)
+        _rs_idx = int(pat_data.get("right_shoulder", {}).get("idx", _n - 1))
+        _rs_idx = max(0, min(_rs_idx, _n - 1))
+
+        _win_start = max(0, _rs_idx - 110)
+        _win_end = min(_n, _rs_idx + 2)
+        H_win = _H[_win_start:_win_end]
+        L_win = _L[_win_start:_win_end]
+        C_win = _C[_win_start:_win_end]
+        O_win = _O[_win_start:_win_end]
+        n_win = len(H_win)
+        if n_win < 25:
+            return
+
+        atr_local_vals = [float(H_win[k] - L_win[k]) for k in range(max(0, n_win - 14), n_win)]
+        atr_local = float(np.mean(atr_local_vals)) if atr_local_vals else atr_val
+
+        pat_copy = dict(pat_data)
+        pat_copy["candles_ago"] = max(0, n_win - 1 - (_rs_idx - _win_start))
+
+        feats = extract_features(pat_copy, H_win, L_win, C_win, O_win, n_win,
+                                 atr_local, hs_stats, ativo)
+        if feats is None:
+            return
+
+        ok = ai.feed_dt_features(feats, result_label)
+        if not ok:
+            return
+
+        # Contagem de feeds desde último retrain
+        if ativo not in _live_retrain_feed_count:
+            _live_retrain_feed_count[ativo] = 0
+        _live_retrain_feed_count[ativo] += 1
+
+        _n_feeds = _live_retrain_feed_count[ativo]
+        log.info(paint(
+            f"  📝 NN Feed: {ativo} {'WIN' if result_label == 1 else 'LOSS'} | "
+            f"feeds={_n_feeds}/{_LIVE_RETRAIN_EVERY_N_FEEDS} até retrain",
+            C.B
+        ))
+
+        # Retreinar periodicamente
+        if _n_feeds >= _LIVE_RETRAIN_EVERY_N_FEEDS and bx is not None:
+            _live_retrain_feed_count[ativo] = 0
+            log.info(paint(
+                f"  🔄 NN Auto-Retrain: {ativo} — {_n_feeds} novos resultados acumulados",
+                C.B
+            ))
+            _live_retrain_asset(bx, ativo, reversal_ai_map, hs_stats)
+
+    except Exception as e:
+        log.debug(f"  Live feed erro: {e}")
+
+
 def _estimate_dt_nn_score(ativo: str, pat: dict, df: Optional[pd.DataFrame], atr_val: float,
                           hs_stats: dict, reversal_ai_map: Optional[dict] = None,
                           return_reason: bool = False):
@@ -5209,7 +5755,7 @@ def _estimate_dt_nn_score(ativo: str, pat: dict, df: Optional[pd.DataFrame], atr
         _rs_idx = max(0, min(_rs_idx, _n - 1))
 
         _win_start = max(0, _rs_idx - _dt_context_candles)
-        _win_end = min(_n, _rs_idx + 1)
+        _win_end = min(_n, _rs_idx + 2)  # Inclui até 1 vela pós-RS para features RE-CHECK
         _H_win = _H[_win_start:_win_end]
         _L_win = _L[_win_start:_win_end]
         _C_win = _C[_win_start:_win_end]
@@ -5829,29 +6375,9 @@ def _main_inner():
     else:
         log.info(paint("🌱 Primeira execução da IA...", C.Y))
 
-    # ── PASSO 1: Carregar base pré-treinada (local ou GitHub) ──
-    # Se disponível, PULA o treino local (já vem treinada do desenvolvedor)
-    hs_stats = _load_or_download_training_base(hs_stats)
-    _n_after_base = hs_stats.get("meta", {}).get("total", 0)
-
-    # ── PASSO 2: Treino local com CSVs (87K velas por ativo) ──
-    # SEMPRE treina se CSVs existem e ainda não foram processados
-    _CSV_DIR_CHECK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_5000")
-    _csvs_exist = os.path.isdir(_CSV_DIR_CHECK) and len(os.listdir(_CSV_DIR_CHECK)) > 0
-    _trained_csv = hs_stats.get("meta", {}).get("trained_with_csv", False)
-    _has_base = hs_stats.get("meta", {}).get("deep_train_version", "") != ""
-
-    if _csvs_exist and not _trained_csv:
-        log.info(paint("🏋️ CSVs de treino profundo detectados — treinando IA com todos os ativos...", C.B))
-        hs_stats = _train_ia_from_history(bx, hs_stats)
-    elif _has_base:
-        log.info(paint(
-            f"✅ Base pré-treinada OK! PULANDO treino local",
-            C.G
-        ))
-    else:
-        log.info(paint("🏋️ Sem base pré-treinada — treinando IA localmente...", C.B))
-        hs_stats = _train_ia_from_history(bx, hs_stats)
+    # ── 100% NN: Pular download da base Bayesiana (43MB) e treino local ──
+    # Toda decisão agora é da rede neural. O fresh train via CSV substitui tudo.
+    log.info(paint("✅ Modo 100% NN — pulando download da base Bayesiana (43MB)", C.G))
 
     log.info("=" * 60)
     log.info(paint(f"🚀 WS TRADER — Double Touch / Multi-Asset ({_BROKER_LABEL})", C.G))
@@ -5861,9 +6387,8 @@ def _main_inner():
     global _top_dt_assets
     _top_dt_assets = _pick_top_dt_assets(hs_stats, n_top=max(SCAN_NUM_ATIVOS, _ENTRY_GUARD_POOL_SIZE))
 
-    # ── Carregar modelo NN per-ativo (treinado offline) ──
-    for _asset_load in _top_dt_assets:
-        _ensure_reversal_model_loaded(reversal_ai_map, _asset_load)
+    # ── FRESH TRAIN: Baixa CSV do GitHub → preenche gap → deleta pkl → treina do zero ──
+    _fresh_train_assets(bx, _top_dt_assets, reversal_ai_map, hs_stats)
 
     log.info(f"✅ Estratégia: SOMENTE Double Touch (Duplo Toque)")
     log.info(f"✅ Pool ranqueado de ativos: {_top_dt_assets}")
@@ -6694,20 +7219,14 @@ def _main_inner():
                         f" | latencia_scan={_graph_signal_age_sec:.2f}s"
                         if _graph_signal_age_sec is not None else ""
                     )
-                    # ═══ FIX TIMING: treino usa C[entry_idx] = CLOSE da vela.
-                    # candles_ago=0 → vela ainda não fechou → AGUARDAR :00
-                    # candles_ago>=1 → vela já fechou → entrar direto.
-                    if _candles_ago == 0:
-                        log.info(paint(
-                            f"  ⏱️ {_mode_label} MODE: candles_ago=0 → aguardando virada :00 (= C[entry_idx] do treino){_latency_suffix}",
-                            C.Y
-                        ))
-                        wait_candle_open()
-                    else:
-                        log.info(paint(
-                            f"  ⚡ {_mode_label} MODE: candles_ago={_candles_ago} → vela fechada, entrada imediata{_latency_suffix}",
-                            C.G
-                        ))
+                    # ═══ FIX TIMING: SEMPRE entrar no :00 (abertura da vela).
+                    # O treino usa CLOSE da vela → entrada no OPEN da próxima.
+                    # Entrar no meio do minuto (:33) desfasa o timing real.
+                    log.info(paint(
+                        f"  ⏱️ {_mode_label} MODE: candles_ago={_candles_ago} → aguardando virada :00{_latency_suffix}",
+                        C.Y
+                    ))
+                    wait_candle_open()
                 else:
                     log.info(paint(
                         f"  ⏱️ {_mode_label} MODE: Aguardando virada :00 para entrada "
@@ -6866,11 +7385,11 @@ def _main_inner():
 
                     if not _bounce_ok:
                         log.info(paint(
-                            f"  🚫 BOUNCE FRACO: {ativo} {direcao} | {_bounce_reason} → CANCELADO",
+                            f"  🚫 BOUNCE FRACO BLOQUEOU: {ativo} {direcao} | {_bounce_reason} — CANCELADO",
                             C.R
                         ))
-                        print(f">>> IA: Bounce fraco {ativo} {direcao} — {_bounce_reason}", flush=True)
-                        continue  # próximo candidato
+                        print(f">>> IA: BOUNCE FRACO bloqueou {ativo} {direcao} — {_bounce_reason}", flush=True)
+                        _all_guards_ok = False
                     else:
                         log.info(paint(
                             f"  ✅ BOUNCE CONFIRMADO: {ativo} {direcao} | preço bounceando corretamente",
@@ -7019,7 +7538,57 @@ def _main_inner():
                     "target_room_atr": round(float(setup.get("live_metrics", {}).get("target_room_atr", 0)), 3) if setup.get("live_metrics") else None,
                 }
 
+                # ═══ PROTEÇÃO ANTI-STREAK: após 2+ losses consecutivos, exigir NN mais alto ═══
+                if _consecutive_losses >= 2 and _nn_score is not None:
+                    _streak_nn_min = 0.90  # exigir 90% após streak
+                    if _nn_score < _streak_nn_min:
+                        log.info(paint(
+                            f"  🚫 STREAK GUARD: {ativo} {direcao} | {_consecutive_losses} losses consecutivos "
+                            f"→ NN={_nn_score*100:.0f}% < {_streak_nn_min*100:.0f}% mínimo anti-streak — CANCELADO",
+                            C.R
+                        ))
+                        print(f">>> IA: STREAK GUARD bloqueou {ativo} {direcao} — {_consecutive_losses} losses, NN={_nn_score*100:.0f}%", flush=True)
+                        continue
+                    else:
+                        log.info(paint(
+                            f"  ⚠️ STREAK MODE: {ativo} {direcao} | {_consecutive_losses} losses consecutivos "
+                            f"— NN={_nn_score*100:.0f}% ≥ {_streak_nn_min*100:.0f}% → permitido com cautela",
+                            C.Y
+                        ))
+
+                # ═══ SHADOW DIVERGENCE GUARD: se biblioteca diverge E NN < 85%, bloquear ═══
+                _shadow_lib = setup.get("shadow_pattern_lib") or {}
+                if _shadow_lib.get("available") and not _shadow_lib.get("agreement", True):
+                    _shadow_nn_min = 0.85
+                    if _nn_score is not None and _nn_score < _shadow_nn_min:
+                        log.info(paint(
+                            f"  🚫 SHADOW DIVERGE BLOQUEOU: {ativo} {direcao} | "
+                            f"biblioteca diverge + NN={_nn_score*100:.0f}% < {_shadow_nn_min*100:.0f}% — CANCELADO",
+                            C.R
+                        ))
+                        print(f">>> IA: SHADOW DIVERGE bloqueou {ativo} {direcao} — NN={_nn_score*100:.0f}%", flush=True)
+                        continue
+
                 _use_exp = EXP_EARLY if _is_early else _smart_exp
+                # ═══ SMART EXP: 1 min se velocidade + NN permitem ═══
+                if not _is_early and _is_dt_mode and _nn_score is not None and _guard_df is not None:
+                    _smart_computed = _compute_smart_exp(
+                        _g_C, _g_H, _g_L, _g_n, atr_val, _nn_score, pat_data
+                    )
+                    if _smart_computed != _use_exp:
+                        log.info(paint(
+                            f"  ⚡ SMART EXP: {_use_exp}min → {_smart_computed}min "
+                            f"(NN={_nn_score*100:.0f}% velocidade ok)",
+                            C.G if _smart_computed == 1 else C.B
+                        ))
+                        _use_exp = _smart_computed
+                # ═══ STREAK MODE: forçar 2min após 2+ losses consecutivos ═══
+                if _consecutive_losses >= 2 and _use_exp == 1:
+                    log.info(paint(
+                        f"  ⚠️ STREAK → EXP: forçando 2min (era 1min) — {_consecutive_losses} losses consecutivos",
+                        C.Y
+                    ))
+                    _use_exp = EXP_FIXA
                 _send_delay_sec = time.time() % 60
                 if _is_dt and DT_GRAPH_SIGNAL_ENTRY:
                     if _graph_signal_age_sec is not None:
@@ -7039,62 +7608,44 @@ def _main_inner():
                     )
                     continue
 
-                # ═══ INVERSÃO ADAPTATIVA PER-ASSET ═══
-                # Usa mapa pré-computado (models/ws_inversion_map.json) gerado pela
-                # análise offline de milhares de padrões históricos por ativo.
-                # Para decidir zona (>=95 / 80-95 / <80) usa MAX(scan, recheck)
-                # para evitar escape via RE-CHECK que diminui o score.
+                # ═══ DECISÃO DE DIREÇÃO BASEADA NO MAPA OFFLINE ═══
+                # Análise de milhares de padrões históricos por ativo mostrou:
+                #   NN >= 80%: WR original 92-100% → SEMPRE ENTRAR ORIGINAL
+                #   NN < 80%:  WR varia por ativo → consultar mapa per-asset
+                # NUNCA inverter: dados comprovam que direção original é melhor.
                 _direcao_original = direcao
                 if _nn_score is not None:
-                    # FIX: usar MAX do scan e recheck para classificar a ZONA
                     _nn_zone_score = max(_scan_nn_score, _nn_score)
                     _nn_zone_pct = _nn_zone_score * 100
-                    _nn_pct = _nn_score * 100  # score real (recheck se disponível)
+                    _nn_pct = _nn_score * 100
 
-                    if _nn_zone_pct >= 95:
-                        # Faixa alta: consultar mapa de inversão per-asset
-                        _inv_profile = _inversion_map.get(ativo, {})
-                        _inv_action = _inv_profile.get("action", "skip")  # default: skip se sem dados
-                        _inv_wr = _inv_profile.get("high_nn", {}).get("original_wr", 0.5)
-                        _inv_n = _inv_profile.get("high_nn", {}).get("samples", 0)
-
-                        if _inv_action == "invert":
-                            direcao = "PUT" if direcao == "CALL" else "CALL"
-                            log.info(paint(
-                                f"  🔄 INVERTIDO (perfil): {ativo} {_direcao_original} → {direcao} | "
-                                f"NN={_nn_pct:.0f}% | WR_orig={_inv_wr:.0%} n={_inv_n} → inverter",
-                                C.Y
-                            ))
-                        elif _inv_action == "keep":
-                            log.info(paint(
-                                f"  ✅ MANTIDO (perfil): {ativo} {direcao} | "
-                                f"NN={_nn_pct:.0f}% | WR_orig={_inv_wr:.0%} n={_inv_n} → manter",
-                                C.G
-                            ))
-                        else:
-                            # skip: sem dados suficientes ou zona incerta
-                            log.info(paint(
-                                f"  ⏸️ SKIP (perfil): {ativo} {direcao} | "
-                                f"NN={_nn_pct:.0f}% | WR_orig={_inv_wr:.0%} n={_inv_n} → pular",
-                                C.Y
-                            ))
-                            print(f">>> IA: Skip {ativo} {direcao} — NN={_nn_pct:.0f}% perfil incerto (n={_inv_n})", flush=True)
-                            continue
-
-                    elif _nn_zone_pct < 80:
-                        # Baixa confiança = manter (72% WR comprovado)
+                    if _nn_zone_pct >= 80:
+                        # NN alto (≥80%): WR original 92-100% comprovado → ENTRAR
                         log.info(paint(
-                            f"  ✅ SINAL MANTIDO: {ativo} {direcao} | NN={_nn_pct:.0f}% (<80% = manter original)",
+                            f"  ✅ NN CONFIANTE: {ativo} {direcao} | NN={_nn_pct:.0f}% (zona={_nn_zone_pct:.0f}% ≥80% → entrar original)",
                             C.G
                         ))
                     else:
-                        # Zona cinza 80-95% = pular
-                        log.info(paint(
-                            f"  ⏸️ ZONA CINZA: {ativo} {direcao} | NN={_nn_pct:.0f}% (zona={_nn_zone_pct:.0f}% 80-95% = não operar)",
-                            C.Y
-                        ))
-                        print(f">>> IA: Zona cinza {ativo} {direcao} — NN={_nn_pct:.0f}% (80-95% skip)", flush=True)
-                        continue
+                        # NN baixo (<80%): consultar perfil do ativo
+                        _inv_profile = _inversion_map.get(ativo, {})
+                        _low_action = _inv_profile.get("low_nn_action", "skip")
+                        _low_wr = _inv_profile.get("low_nn", {}).get("original_wr", 0.5)
+                        _low_n = _inv_profile.get("low_nn", {}).get("samples", 0)
+
+                        if _low_action == "keep":
+                            # Ativo funciona bem mesmo com NN baixo
+                            log.info(paint(
+                                f"  ✅ NN BAIXO OK: {ativo} {direcao} | NN={_nn_pct:.0f}% | WR_orig={_low_wr:.0%} n={_low_n} → entrar",
+                                C.G
+                            ))
+                        else:
+                            # NN baixo + ativo não confiável nessa faixa
+                            log.info(paint(
+                                f"  🚫 NN BAIXO SKIP: {ativo} {direcao} | NN={_nn_pct:.0f}% | WR_orig={_low_wr:.0%} n={_low_n} → pular",
+                                C.R
+                            ))
+                            print(f">>> IA: Skip {ativo} {direcao} — NN={_nn_pct:.0f}% baixo (WR={_low_wr:.0%})", flush=True)
+                            continue
 
                 # ═══ ATUALIZAR DASHBOARD COM DIREÇÃO REAL ═══
                 _was_inverted = (direcao != _direcao_original)
@@ -7190,6 +7741,16 @@ def _main_inner():
 
                 # ── IA: aprender com o resultado ──
                 ai_update(ativo, setup, res, hs_stats)
+
+                # ── NN: Feedback ao vivo — alimenta resultado na rede neural ──
+                if _live_status in ("win", "loss") and _is_dt_mode:
+                    _result_label = 1 if _live_status == "win" else 0
+                    _live_feed_trade_result(
+                        ativo, pat_data, _result_label,
+                        _guard_df, atr_val,
+                        reversal_ai_map, hs_stats,
+                        bx=bx,
+                    )
 
                 # ── Resultado: tracking ──
                 _trade_result_01 = 1 if res > 0 else 0
