@@ -6279,6 +6279,7 @@ def _main_inner():
                     _nn_pred = None
                     _nn_score = None
                     _nn_source = None
+                    _ctx_nn_threshold = None  # threshold da context table (preenchido adiante)
                     if _all_guards_ok and _is_dt_mode and setup.get("nn_pre_pred") is not None:
                         _nn_pred = setup.get("nn_pre_pred")
                         _nn_score = float(setup.get("nn_pre_score") or _nn_pred.get("nn_score", _nn_pred.get("prob_win", 0)) or 0)
@@ -6430,6 +6431,9 @@ def _main_inner():
                             )
                             _ctx_live_log = format_context_log(_ctx_live)
                             log.info(paint(f"  {_ctx_live_log}", C.B))
+
+                            # Salvar nn_threshold da context table para uso no RE-CHECK
+                            _ctx_nn_threshold = _ctx_live.get("nn_threshold")
 
                             if _ctx_live["action"] == "block":
                                 _guard_block_reason = _ctx_live["reason"]
@@ -6711,16 +6715,22 @@ def _main_inner():
                                 _nn_p3 = _nn2_p3
                                 _nn_source = "recheck"
                                 # Re-avaliar aprovação com novo score
-                                if _nn2_s >= _NN_MIN_PROB:
+                                # Usar o MAIOR entre _NN_MIN_PROB e o threshold da context table
+                                _recheck_min = _NN_MIN_PROB
+                                _recheck_ctx_label = ""
+                                if _ctx_nn_threshold is not None and _ctx_nn_threshold / 100.0 > _recheck_min:
+                                    _recheck_min = _ctx_nn_threshold / 100.0
+                                    _recheck_ctx_label = f" (CTX exige ≥{_ctx_nn_threshold:.0f}%)"
+                                if _nn2_s >= _recheck_min:
                                     _nn_approved = True
                                     log.info(paint(
-                                        f"  ✅ NN RE-CHECK APROVADO: {_nn2_s:.0%} >= {_NN_MIN_PROB:.0%}",
+                                        f"  ✅ NN RE-CHECK APROVADO: {_nn2_s:.0%} >= {_recheck_min:.0%}{_recheck_ctx_label}",
                                         C.G
                                     ))
                                 else:
                                     _nn_approved = False
                                     log.info(paint(
-                                        f"  🚫 NN RE-CHECK BLOQUEOU: {_nn2_s:.0%} < {_NN_MIN_PROB:.0%}",
+                                        f"  🚫 NN RE-CHECK BLOQUEOU: {_nn2_s:.0%} < {_recheck_min:.0%}{_recheck_ctx_label}",
                                         C.R
                                     ))
                                 # Atualizar preço atual com dado fresco
@@ -6733,13 +6743,25 @@ def _main_inner():
                     except Exception as _recheck_ex:
                         log.debug(f"  NN RE-CHECK erro: {_recheck_ex}")
 
-                # ═══ INVERSÃO INTELIGENTE substitui adaptação de sessão ═══
-                # (a lógica de inversão por faixa de NN decide tudo)
+                # ═══ THRESHOLD FINAL: maior entre session e context table ═══
                 _session_threshold = _NN_MIN_PROB
+                if _ctx_nn_threshold is not None and _ctx_nn_threshold / 100.0 > _session_threshold:
+                    _session_threshold = _ctx_nn_threshold / 100.0
 
                 # Re-avaliar aprovação com threshold adaptado
                 if _nn_pred is not None and _nn_score < _session_threshold:
                     _nn_approved = False
+
+                # ═══ Atualizar consensus com score final (pós RE-CHECK) ═══
+                if _nn_source == "recheck" and _nn_pred is not None:
+                    _ai_consensus_live = _build_ai_cotrader_consensus(
+                        setup.get("mode", "classic"),
+                        ia_prob,
+                        _nn_pred,
+                        _gpt_result_payload,
+                        setup.get("shadow_pattern_lib"),
+                    )
+                    setup["ai_consensus"] = _ai_consensus_live
 
                 # ═══ BLOQUEIO FINAL: se NN não aprovou, cancelar entrada ═══
                 if _is_dt_mode and not _nn_approved and _nn_pred is not None:
