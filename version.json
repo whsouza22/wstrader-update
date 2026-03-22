@@ -1,6 +1,6 @@
 {
-  "version": "6.3.2",
-  "changelog": "v6.3.2 - inversao adaptativa per-asset via mapa offline + fix zona cinza RE-CHECK escape + fix desenho DB/DT no dashboard",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.3.2/WsTrader_Setup_6.3.2.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.3.2/WsTrader_Setup_6.3.2.exe"
+  "version": "6.4.0",
+  "changelog": "v6.4.0 - IA 45 features: +5 post-RS RE-CHECK intelligence. NN agora VE a vela apos o RS e decide com mais inteligencia.",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.4.0/WsTrader_Setup_6.4.0.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.4.0/WsTrader_Setup_6.4.0.exe"
 }

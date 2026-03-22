@@ -2028,10 +2028,10 @@ def build_api_data():
     # Cria set de chaves únicas dos trades já lidos do arquivo
     _seen = set()
     for be in broker_entries:
-        _seen.add((be.get("ativo",""), int(be.get("ts", 0) // 60)))
+        _seen.add((be.get("ativo",""), be.get("dir",""), int(be.get("ts", 0) // 120)))
     with _real_trades_lock:
         for rt in _real_trades:
-            key = (rt.get("ativo",""), int(rt.get("ts", 0) // 60))
+            key = (rt.get("ativo",""), rt.get("dir",""), int(rt.get("ts", 0) // 120))
             if key not in _seen:
                 broker_entries.append(rt)
                 _seen.add(key)
@@ -3371,12 +3371,18 @@ function buildLivePanel(data) {
         var pConf = Math.round((sig.prediction_2m.confidence || 0) * 100);
         predBadge = '<div style="margin-top:4px;font-size:10px;font-weight:700;color:' + (pExp === 1 ? '#00e676' : '#38bdf8') + '"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-clock"/></svg> EXP ' + pExp + 'M \u2192 ' + pPrice + ' (' + pConf + '%)</div>';
     }
+    var metaBadge = '';
+    if (sig.target) {
+        var metaPrice = Number(sig.target).toFixed(5);
+        var metaColor = sig.direction === 'PUT' ? '#ff3d57' : '#00e676';
+        metaBadge = '<div style="margin-top:3px;font-size:10px;font-weight:700;color:' + metaColor + '"><svg class="icon-svg" style="width:10px;height:10px;stroke:' + metaColor + '"><use href="#i-target"/></svg> META ' + metaPrice + '</div>';
+    }
     return '<div class="signal-card" onclick="selectAsset(\'' + sig.ativo + '\')">' +
       '<div class="sc-top"><span class="sc-name">' + sig.ativo + nnBadge + invertBadge + resultBadge + '</span><span class="sc-dir ' + cls + '"><svg class="icon-svg" style="width:10px;height:10px"><use href="' + dirIcon + '"/></svg> ' + sig.direction + '</span></div>' +
     '<div class="sc-bottom"><span class="sc-type"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-activity"/></svg> ' + (sig.type==='DOUBLE_TOP'?'DT \u25BC':'DB \u25B2') + ' ' + sig.mode + '</span>' +
       '<span class="sc-prob"><svg class="icon-svg" style="width:12px;height:12px;stroke:var(--purple)"><use href="#i-brain"/></svg> ' + prob + '%' +
             '<span class="prob-bar"><span class="prob-fill" style="width:' + prob + '%"></span></span></span></div>' +
-            predBadge +
+            predBadge + metaBadge +
             '<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"><span style="font-size:10px;font-weight:700;color:' + (aiSummary.cls === 'good' ? '#86efac' : '#fdba74') + '">' + aiSummary.text + '</span></div></div>';
   }).join('');
 }
@@ -3392,7 +3398,15 @@ function buildResultsPanel(data) {
     el.innerHTML = '<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:20px 0"><svg class="icon-svg" style="width:16px;height:16px;opacity:.4"><use href="#i-activity"/></svg><br>Sem entradas reais ainda<br><span style="font-size:10px;opacity:.6">Inicie o bot para ver os trades aqui</span></div>';
     return;
   }
-    el.innerHTML = entries.map(function(r, idx) {
+    /* Dedup client-side: mesmo ativo+dir dentro de 2min = mesmo trade */
+  var dedupSeen = {};
+  entries = entries.filter(function(r) {
+    var dk = (r.ativo||'') + '|' + (r.dir||'') + '|' + Math.floor((r.ts||0)/120);
+    if (dedupSeen[dk]) return false;
+    dedupSeen[dk] = true;
+    return true;
+  });
+  el.innerHTML = entries.map(function(r, idx) {
     var cls = r.result === 'win' ? 'win' : r.result === 'entry' ? 'entry' : 'loss';
     var icoRef = r.result === 'win' ? '#i-check' : r.result === 'entry' ? '#i-clock' : '#i-x';
     var priceStr = r.price ? parseFloat(r.price).toFixed(5) : '';
