@@ -9,7 +9,7 @@
 ; Configurações Gerais
 ; ================================
 Name "WS Trader AI"
-OutFile "WsTrader_Setup_6.3.0.exe"
+OutFile "WsTrader_Setup_6.3.1.exe"
 InstallDir "$PROGRAMFILES64\WsTrader"
 InstallDirRegKey HKLM "Software\WsTrader" "InstallDir"
 RequestExecutionLevel admin
@@ -50,13 +50,13 @@ RequestExecutionLevel admin
 ; ================================
 ; Informações da Versão
 ; ================================
-VIProductVersion "6.3.0.0"
+VIProductVersion "6.3.1.0"
 VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "ProductName" "WS Trader AI"
 VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "CompanyName" "WS Trader Team"
 VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "LegalCopyright" "© 2026 WS Trader Team"
 VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "FileDescription" "Assistente Inteligente de Trading"
-VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "FileVersion" "6.3.0"
-VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "ProductVersion" "6.3.0"
+VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "FileVersion" "6.3.1"
+VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "ProductVersion" "6.3.1"
 
 ; ================================
 ; Seção Principal - Instalação
@@ -74,6 +74,84 @@ Section "WS Trader AI" SecMain
     ; Remove instalação antiga para garantir atualização limpa
     RMDir /r "$INSTDIR\_internal"
     Delete "$INSTDIR\WsTrader.exe"
+
+    ; ================================
+    ; LIMPEZA TOTAL de caches e dados operacionais antigos
+    ; Preserva APENAS: .env (credenciais) e preferences.json
+    ; ================================
+
+    ; --- ~/.wstrader/ (principal) ---
+    Delete "$PROFILE\.wstrader\ws_trade_decisions.json"
+    Delete "$PROFILE\.wstrader\ws_dashboard_cache.json"
+    Delete "$PROFILE\.wstrader\ws_live_candles.json"
+    Delete "$PROFILE\.wstrader\ws_live_trades_iq.json"
+    Delete "$PROFILE\.wstrader\ws_live_trades_bullex.json"
+    Delete "$PROFILE\.wstrader\ws_live_trades_casatrader.json"
+    Delete "$PROFILE\.wstrader\ws_last_entry.json"
+    Delete "$PROFILE\.wstrader\ws_dt_level_memory.json"
+    Delete "$PROFILE\.wstrader\ws_bot.lock"
+    Delete "$PROFILE\.wstrader\ws_daily_log.json"
+    Delete "$PROFILE\.wstrader\ws_brain_weights.json"
+    Delete "$PROFILE\.wstrader\ws_ai_stats_hs.json"
+    Delete "$PROFILE\.wstrader\ws_reversal_data_unified.json"
+    Delete "$PROFILE\.wstrader\daily_lockout.json"
+    Delete "$PROFILE\.wstrader\loss_analysis.json"
+    Delete "$PROFILE\.wstrader\hs_bot_train_control.json"
+    Delete "$PROFILE\.wstrader\hs_ia_dashboard_stats.json"
+    Delete "$PROFILE\.wstrader\hs_ia_train_control.json"
+    Delete "$PROFILE\.wstrader\ws_ai_stats_m1.json"
+
+    ; Stats per-ativo e per-broker (glob ws_ai_stats_*.json)
+    FindFirst $0 $1 "$PROFILE\.wstrader\ws_ai_stats_*.json"
+    loop_stats:
+        StrCmp $1 "" done_stats
+        Delete "$PROFILE\.wstrader\$1"
+        FindNext $0 $1
+        Goto loop_stats
+    done_stats:
+    FindClose $0
+
+    ; Modelos entry_guard per-ativo (entry_guard_*.pkl)
+    FindFirst $0 $1 "$PROFILE\.wstrader\entry_guard_*.pkl"
+    loop_entry:
+        StrCmp $1 "" done_entry
+        Delete "$PROFILE\.wstrader\$1"
+        FindNext $0 $1
+        Goto loop_entry
+    done_entry:
+    FindClose $0
+
+    ; Modelos reversal per-broker (reversal_tf_*.pkl)
+    FindFirst $0 $1 "$PROFILE\.wstrader\reversal_tf_*.pkl"
+    loop_reversal:
+        StrCmp $1 "" done_reversal
+        Delete "$PROFILE\.wstrader\$1"
+        FindNext $0 $1
+        Goto loop_reversal
+    done_reversal:
+    FindClose $0
+
+    ; --- %APPDATA%/WsTrader/trade_memory/ ---
+    RMDir /r "$APPDATA\WsTrader\trade_memory"
+
+    ; --- Logs no %USERPROFILE% ---
+    Delete "$PROFILE\wstrader_error.txt"
+    Delete "$PROFILE\wstrader_backend.log"
+    Delete "$PROFILE\wstrader_backend_crash.log"
+
+    ; --- Temp update files ---
+    RMDir /r "$TEMP\wstrader_update"
+
+    ; --- Operations data in install dir ---
+    RMDir /r "$INSTDIR\data"
+    RMDir /r "$INSTDIR\exports"
+
+    ; --- Legacy daily_data ---
+    RMDir /r "$PROFILE\.wstrader\daily_data"
+
+    ; ================================
+    ; FIM DA LIMPEZA - .env e preferences.json preservados
+    ; ================================
     
     ; Força sobrescrever SEMPRE (ignora datas/versões)
     SetOverwrite on
@@ -93,7 +171,7 @@ Section "WS Trader AI" SecMain
 
     ; Salva informações no registro
     WriteRegStr HKLM "Software\WsTrader" "InstallDir" "$INSTDIR"
-    WriteRegStr HKLM "Software\WsTrader" "Version" "6.3.0"
+    WriteRegStr HKLM "Software\WsTrader" "Version" "6.3.1"
 
     ; Cria desinstalador
     WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -103,7 +181,7 @@ Section "WS Trader AI" SecMain
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "UninstallString" "$INSTDIR\Uninstall.exe"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "DisplayIcon" "$INSTDIR\WsTrader.exe"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "Publisher" "WS Trader Team"
-    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "DisplayVersion" "6.3.0"
+    WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "DisplayVersion" "6.3.1"
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "NoModify" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "NoRepair" 1
     WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\WsTrader" "EstimatedSize" 320000
