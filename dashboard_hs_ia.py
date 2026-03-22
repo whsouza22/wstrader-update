@@ -1333,15 +1333,15 @@ def _load_bot_trade_logs() -> list:
             pass
     # Deduplicar: se há um resultado (win/loss/tie) para um entry do mesmo ativo, manter só o resultado
     deduped = []
-    seen_results = set()  # (ativo, ts_approx) já resolvidos
+    seen_results = set()  # (ativo+dir, ts_approx) já resolvidos
     # Primeiro pass: coletar todos os resultados
     for e in entries:
         if e["result"] in ("win", "loss", "tie"):
-            seen_results.add(e["ativo"] + "_" + str(int(e.get("ts", 0) // 300)))
+            seen_results.add(e["ativo"] + "_" + e.get("dir", "") + "_" + str(int(e.get("ts", 0) // 300)))
     # Segundo pass: filtrar entries que já têm resultado
     for e in entries:
         if e["result"] == "entry":
-            key = e["ativo"] + "_" + str(int(e.get("ts", 0) // 300))
+            key = e["ativo"] + "_" + e.get("dir", "") + "_" + str(int(e.get("ts", 0) // 300))
             if key in seen_results:
                 continue  # pular entry duplicado — já temos o resultado
         deduped.append(e)
@@ -2025,16 +2025,34 @@ def build_api_data():
                 lm["nn_p2"] = _be_match.get("nn_p2")
                 lm["nn_p3"] = _be_match.get("nn_p3")
     # Mesclar com trades recebidos via POST (tempo real), sem duplicar
-    # Cria set de chaves únicas dos trades já lidos do arquivo
-    _seen = set()
+    # Dedup por decision_id/order_id (primário) + ativo+dir bucket (fallback)
+    _seen_ids = set()
+    _seen_keys = set()
     for be in broker_entries:
-        _seen.add((be.get("ativo",""), be.get("dir",""), int(be.get("ts", 0) // 120)))
+        if be.get("decision_id"):
+            _seen_ids.add(be["decision_id"])
+        if be.get("order_id") is not None:
+            _seen_ids.add(str(be["order_id"]))
+        _seen_keys.add((be.get("ativo",""), be.get("dir",""), int(be.get("ts", 0) // 300)))
     with _real_trades_lock:
         for rt in _real_trades:
-            key = (rt.get("ativo",""), rt.get("dir",""), int(rt.get("ts", 0) // 120))
-            if key not in _seen:
+            # Skip se já temos este trade por ID
+            if rt.get("decision_id") and rt["decision_id"] in _seen_ids:
+                continue
+            if rt.get("order_id") is not None and str(rt["order_id"]) in _seen_ids:
+                continue
+            key = (rt.get("ativo",""), rt.get("dir",""), int(rt.get("ts", 0) // 300))
+            if key not in _seen_keys:
                 broker_entries.append(rt)
-                _seen.add(key)
+                _seen_keys.add(key)
+                if rt.get("decision_id"):
+                    _seen_ids.add(rt["decision_id"])
+    # Consolidar: se há win/loss para um ativo+dir, remover entry duplicado
+    _resolved = set()
+    for be in broker_entries:
+        if be.get("result") in ("win", "loss", "tie"):
+            _resolved.add((be.get("ativo",""), be.get("dir",""), int(be.get("ts", 0) // 300)))
+    broker_entries = [be for be in broker_entries if not (be.get("result") == "entry" and (be.get("ativo",""), be.get("dir",""), int(be.get("ts", 0) // 300)) in _resolved)]
     broker_entries.sort(key=lambda x: x.get("ts", 0), reverse=True)
     broker_entries = broker_entries[:50]
 
@@ -3398,12 +3416,18 @@ function buildResultsPanel(data) {
     el.innerHTML = '<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:20px 0"><svg class="icon-svg" style="width:16px;height:16px;opacity:.4"><use href="#i-activity"/></svg><br>Sem entradas reais ainda<br><span style="font-size:10px;opacity:.6">Inicie o bot para ver os trades aqui</span></div>';
     return;
   }
-    /* Dedup client-side: mesmo ativo+dir dentro de 2min = mesmo trade */
-  var dedupSeen = {};
+    /* Dedup client-side: se win/loss existe para ativo+dir, remover entry */
+  var resolvedKeys = {};
+  entries.forEach(function(r) {
+    if (r.result === 'win' || r.result === 'loss' || r.result === 'tie') {
+      resolvedKeys[(r.ativo||'') + '|' + (r.dir||'') + '|' + Math.floor((r.ts||0)/300)] = true;
+    }
+  });
   entries = entries.filter(function(r) {
-    var dk = (r.ativo||'') + '|' + (r.dir||'') + '|' + Math.floor((r.ts||0)/120);
-    if (dedupSeen[dk]) return false;
-    dedupSeen[dk] = true;
+    if (r.result === 'entry') {
+      var dk = (r.ativo||'') + '|' + (r.dir||'') + '|' + Math.floor((r.ts||0)/300);
+      if (resolvedKeys[dk]) return false;
+    }
     return true;
   });
   el.innerHTML = entries.map(function(r, idx) {
@@ -3861,11 +3885,11 @@ class HSHandler(SimpleHTTPRequestHandler):
                             for i in range(len(_real_trades) - 1, -1, -1):
                                 same_decision = body.get("decision_id") and _real_trades[i].get("decision_id") == body.get("decision_id")
                                 same_order = body.get("order_id") is not None and _real_trades[i].get("order_id") == body.get("order_id")
-                                fallback_match = _real_trades[i]["ativo"] == body["ativo"] and _real_trades[i]["result"] == "entry"
+                                fallback_match = _real_trades[i]["ativo"] == body["ativo"] and _real_trades[i]["dir"] == body.get("dir", "?") and _real_trades[i]["result"] == "entry"
                                 if same_decision or same_order or fallback_match:
                                     _real_trades[i]["result"] = new_status
                                     _real_trades[i]["profit"] = body.get("profit", 0)
-                                    _real_trades[i]["ts"] = body.get("ts", time.time())
+                                    # NÃO alterar ts — manter timestamp original da entrada para dedup funcionar
                                     if body.get("decision_id"):
                                         _real_trades[i]["decision_id"] = body.get("decision_id")
                                     if body.get("order_id") is not None:
@@ -3907,7 +3931,7 @@ class HSHandler(SimpleHTTPRequestHandler):
                             for _j in range(len(_existing) - 1, -1, -1):
                                 same_decision = body.get("decision_id") and _existing[_j].get("decision_id") == body.get("decision_id")
                                 same_order = body.get("order_id") is not None and _existing[_j].get("order_id") == body.get("order_id")
-                                fallback_match = _existing[_j].get("ativo") == new_entry["ativo"] and _existing[_j].get("status") == "entry"
+                                fallback_match = _existing[_j].get("ativo") == new_entry["ativo"] and _existing[_j].get("dir") == new_entry["dir"] and _existing[_j].get("status") == "entry"
                                 if same_decision or same_order or fallback_match:
                                     _existing[_j]["status"] = new_status
                                     _existing[_j]["resultado"] = new_entry["profit"]
