@@ -19,7 +19,8 @@
       "wins": 37,
       "losses": 112,
       "samples": 149
-    }
+    },
+    "low_nn_action": "skip"
   },
   "AUDCHF-OTC": {
     "action": "keep",
@@ -41,7 +42,8 @@
       "wins": 297,
       "losses": 145,
       "samples": 442
-    }
+    },
+    "low_nn_action": "keep"
   },
   "AUDJPY-OTC": {
     "action": "keep",
@@ -63,7 +65,8 @@
       "wins": 2,
       "losses": 45,
       "samples": 47
-    }
+    },
+    "low_nn_action": "skip"
   },
   "AUDNZD-OTC": {
     "action": "keep",
@@ -85,7 +88,8 @@
       "wins": 318,
       "losses": 127,
       "samples": 445
-    }
+    },
+    "low_nn_action": "keep"
   },
   "AUDUSD-OTC": {
     "action": "keep",
@@ -107,7 +111,8 @@
       "wins": 418,
       "losses": 107,
       "samples": 525
-    }
+    },
+    "low_nn_action": "keep"
   },
   "CADCHF-OTC": {
     "action": "keep",
@@ -129,7 +134,8 @@
       "wins": 519,
       "losses": 131,
       "samples": 650
-    }
+    },
+    "low_nn_action": "keep"
   },
   "CADJPY-OTC": {
     "action": "keep",
@@ -151,7 +157,8 @@
       "wins": 235,
       "losses": 105,
       "samples": 340
-    }
+    },
+    "low_nn_action": "keep"
   },
   "CHFJPY-OTC": {
     "action": "keep",
@@ -173,7 +180,8 @@
       "wins": 81,
       "losses": 123,
       "samples": 204
-    }
+    },
+    "low_nn_action": "skip"
   },
   "EURAUD-OTC": {
     "action": "keep",
@@ -195,7 +203,8 @@
       "wins": 32,
       "losses": 108,
       "samples": 140
-    }
+    },
+    "low_nn_action": "skip"
   },
   "EURCAD-OTC": {
     "action": "keep",
@@ -217,7 +226,8 @@
       "wins": 267,
       "losses": 146,
       "samples": 413
-    }
+    },
+    "low_nn_action": "keep"
   },
   "EURCHF-OTC": {
     "action": "keep",
@@ -239,7 +249,8 @@
       "wins": 219,
       "losses": 127,
       "samples": 346
-    }
+    },
+    "low_nn_action": "keep"
   },
   "EURGBP-OTC": {
     "action": "keep",
@@ -261,7 +272,8 @@
       "wins": 516,
       "losses": 103,
       "samples": 619
-    }
+    },
+    "low_nn_action": "keep"
   },
   "EURJPY-OTC": {
     "action": "keep",
@@ -283,7 +295,8 @@
       "wins": 80,
       "losses": 115,
       "samples": 195
-    }
+    },
+    "low_nn_action": "skip"
   },
   "EURNZD-OTC": {
     "action": "skip",
@@ -305,7 +318,8 @@
       "wins": 1353,
       "losses": 163,
       "samples": 1516
-    }
+    },
+    "low_nn_action": "keep"
   },
   "EURUSD-OTC": {
     "action": "keep",
@@ -327,7 +341,8 @@
       "wins": 74,
       "losses": 113,
       "samples": 187
-    }
+    },
+    "low_nn_action": "skip"
   },
   "GBPAUD-OTC": {
     "action": "keep",
@@ -349,7 +364,8 @@
       "wins": 83,
       "losses": 101,
       "samples": 184
-    }
+    },
+    "low_nn_action": "skip"
   },
   "GBPCAD-OTC": {
     "action": "keep",
@@ -371,7 +387,8 @@
       "wins": 67,
       "losses": 97,
       "samples": 164
-    }
+    },
+    "low_nn_action": "skip"
   },
   "GBPCHF-OTC": {
     "action": "keep",
@@ -393,7 +410,8 @@
       "wins": 102,
       "losses": 137,
       "samples": 239
-    }
+    },
+    "low_nn_action": "skip"
   },
   "GBPJPY-OTC": {
     "action": "keep",
@@ -415,7 +433,8 @@
       "wins": 140,
       "losses": 147,
       "samples": 287
-    }
+    },
+    "low_nn_action": "skip"
   },
   "GBPNZD-OTC": {
     "action": "keep",
@@ -437,7 +456,8 @@
       "wins": 64,
       "losses": 108,
       "samples": 172
-    }
+    },
+    "low_nn_action": "skip"
   },
   "GBPUSD-OTC": {
     "action": "keep",
@@ -459,7 +479,8 @@
       "wins": 265,
       "losses": 136,
       "samples": 401
-    }
+    },
+    "low_nn_action": "keep"
   },
   "NZDCAD-OTC": {
     "action": "keep",
@@ -481,7 +502,8 @@
       "wins": 159,
       "losses": 127,
       "samples": 286
-    }
+    },
+    "low_nn_action": "keep"
   },
   "NZDJPY-OTC": {
     "action": "skip",
@@ -503,7 +525,8 @@
       "wins": 1191,
       "losses": 121,
       "samples": 1312
-    }
+    },
+    "low_nn_action": "keep"
   },
   "NZDUSD-OTC": {
     "action": "keep",
@@ -525,7 +548,8 @@
       "wins": 74,
       "losses": 92,
       "samples": 166
-    }
+    },
+    "low_nn_action": "skip"
   },
   "USDCAD-OTC": {
     "action": "keep",
@@ -547,7 +571,8 @@
       "wins": 147,
       "losses": 105,
       "samples": 252
-    }
+    },
+    "low_nn_action": "keep"
   },
   "USDCHF-OTC": {
     "action": "skip",
@@ -569,7 +594,8 @@
       "wins": 1192,
       "losses": 136,
       "samples": 1328
-    }
+    },
+    "low_nn_action": "keep"
   },
   "USDHKD-OTC": {
     "action": "keep",
@@ -591,7 +617,8 @@
       "wins": 200,
       "losses": 137,
       "samples": 337
-    }
+    },
+    "low_nn_action": "keep"
   },
   "USDINR-OTC": {
     "action": "keep",
@@ -613,7 +640,8 @@
       "wins": 196,
       "losses": 134,
       "samples": 330
-    }
+    },
+    "low_nn_action": "keep"
   },
   "USDJPY-OTC": {
     "action": "keep",
@@ -635,7 +663,8 @@
       "wins": 165,
       "losses": 171,
       "samples": 336
-    }
+    },
+    "low_nn_action": "skip"
   },
   "USDSGD-OTC": {
     "action": "keep",
@@ -657,7 +686,8 @@
       "wins": 197,
       "losses": 108,
       "samples": 305
-    }
+    },
+    "low_nn_action": "keep"
   },
   "USDZAR-OTC": {
     "action": "skip",
@@ -679,6 +709,7 @@
       "wins": 1205,
       "losses": 140,
       "samples": 1345
-    }
+    },
+    "low_nn_action": "keep"
   }
 }
