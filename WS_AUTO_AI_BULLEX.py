@@ -6766,8 +6766,8 @@ def _main_inner():
 
                 # ═══ STUDY + SHADOW FILTER ═══
                 # Backtest: L=4/W=1 → WR=82.3%, L=3/W=1 → WR=86.9%
-                # Shadow divergente = biblioteca detectou padrão na direção OPOSTA
-                # Ambos juntos → bloqueio total; isolados → elevar threshold
+                # Shadow divergente = biblioteca detectou padrão na direção OPOSTA → BLOQUEIA
+                # Study bad isolado → elevar threshold
                 _study_prof = setup.get("win_geometry_alignment", {}).get("study_profile", {})
                 _loss_h = int(_study_prof.get("negative_hits", 0) or 0)
                 _win_h = int(_study_prof.get("positive_hits", 0) or 0)
@@ -6776,14 +6776,14 @@ def _main_inner():
                 _study_bad = _loss_h >= 3 and _loss_h >= 3 * max(_win_h, 1)
                 _shadow_bad = _shadow_agree is False  # explicitamente False
 
-                if _study_bad and _shadow_bad:
+                if _shadow_bad:
                     log.info(paint(
-                        f"  🚫 STUDY+SHADOW BLOCK: {ativo} {direcao} | "
-                        f"loss_hits={_loss_h} win_hits={_win_h} + shadow diverge → bloqueio",
+                        f"  🚫 SHADOW BLOCK: {ativo} {direcao} | "
+                        f"biblioteca diverge → bloqueio total",
                         C.R
                     ))
-                    print(f">>> IA: study+shadow bloqueou {ativo} {direcao} — "
-                          f"L={_loss_h}/W={_win_h} + shadow diverge", flush=True)
+                    print(f">>> IA: shadow bloqueou {ativo} {direcao} — "
+                          f"biblioteca diverge", flush=True)
                     continue
                 elif _study_bad:
                     _STUDY_NN_MIN = 0.92
@@ -6791,14 +6791,6 @@ def _main_inner():
                         _session_threshold = _STUDY_NN_MIN
                     log.info(paint(
                         f"  🔴 STUDY DANGER: loss_hits={_loss_h} win_hits={_win_h} → NN mín={_STUDY_NN_MIN:.0%}",
-                        C.Y
-                    ))
-                elif _shadow_bad:
-                    _SHADOW_NN_MIN = 0.93
-                    if _session_threshold < _SHADOW_NN_MIN:
-                        _session_threshold = _SHADOW_NN_MIN
-                    log.info(paint(
-                        f"  🔴 SHADOW DIVERGE: biblioteca oposta → NN mín={_SHADOW_NN_MIN:.0%}",
                         C.Y
                     ))
 
