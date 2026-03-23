@@ -6764,6 +6764,44 @@ def _main_inner():
                         C.Y
                     ))
 
+                # ═══ STUDY + SHADOW FILTER ═══
+                # Backtest: L=4/W=1 → WR=82.3%, L=3/W=1 → WR=86.9%
+                # Shadow divergente = biblioteca detectou padrão na direção OPOSTA
+                # Ambos juntos → bloqueio total; isolados → elevar threshold
+                _study_prof = setup.get("win_geometry_alignment", {}).get("study_profile", {})
+                _loss_h = int(_study_prof.get("negative_hits", 0) or 0)
+                _win_h = int(_study_prof.get("positive_hits", 0) or 0)
+                _shadow_lib = setup.get("shadow_pattern_lib", {})
+                _shadow_agree = _shadow_lib.get("agreement")  # True/False/None
+                _study_bad = _loss_h >= 3 and _loss_h >= 3 * max(_win_h, 1)
+                _shadow_bad = _shadow_agree is False  # explicitamente False
+
+                if _study_bad and _shadow_bad:
+                    log.info(paint(
+                        f"  🚫 STUDY+SHADOW BLOCK: {ativo} {direcao} | "
+                        f"loss_hits={_loss_h} win_hits={_win_h} + shadow diverge → bloqueio",
+                        C.R
+                    ))
+                    print(f">>> IA: study+shadow bloqueou {ativo} {direcao} — "
+                          f"L={_loss_h}/W={_win_h} + shadow diverge", flush=True)
+                    continue
+                elif _study_bad:
+                    _STUDY_NN_MIN = 0.92
+                    if _session_threshold < _STUDY_NN_MIN:
+                        _session_threshold = _STUDY_NN_MIN
+                    log.info(paint(
+                        f"  🔴 STUDY DANGER: loss_hits={_loss_h} win_hits={_win_h} → NN mín={_STUDY_NN_MIN:.0%}",
+                        C.Y
+                    ))
+                elif _shadow_bad:
+                    _SHADOW_NN_MIN = 0.90
+                    if _session_threshold < _SHADOW_NN_MIN:
+                        _session_threshold = _SHADOW_NN_MIN
+                    log.info(paint(
+                        f"  🔴 SHADOW DIVERGE: biblioteca oposta → NN mín={_SHADOW_NN_MIN:.0%}",
+                        C.Y
+                    ))
+
                 # Re-avaliar aprovação com threshold adaptado
                 if _nn_pred is not None and _nn_score < _session_threshold:
                     _nn_approved = False
@@ -7010,6 +7048,13 @@ def _main_inner():
                     "wick_pct": locals().get('_wick_pct', 0),
                     "elite_guard": setup.get("elite_guard"),
                     "asset_hour_cooldown": _asset_hour_cooldown.get(_ah_check_key) == 0 if _ah_check_key else False,
+                    "study_shadow_filter": {
+                        "loss_hits": _loss_h,
+                        "win_hits": _win_h,
+                        "shadow_agreement": _shadow_agree,
+                        "study_bad": _study_bad,
+                        "shadow_bad": _shadow_bad,
+                    },
                     "progress_pct": round(float(setup.get("live_metrics", {}).get("progress_pct", 0)), 2) if setup.get("live_metrics") else None,
                     "target_room_atr": round(float(setup.get("live_metrics", {}).get("target_room_atr", 0)), 3) if setup.get("live_metrics") else None,
                 }
