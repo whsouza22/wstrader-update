@@ -229,6 +229,7 @@ _GUARDS_DISABLED = True  # Guards 1-5 OFF — as 3 IAs (89.7% acc) já sabem fil
 _DECISION_ENGINE_ENABLED = False  # Desativado: regime/quality/risk são features f26-f39 no NN
 _recent_trade_results = []        # mantido para log/estatísticas
 _consecutive_losses = 0           # contador de losses consecutivos para adaptar threshold
+_asset_hour_cooldown = {}         # {ativo_hora} → 0/1 último resultado (cooldown inteligente)
 
 # ── Reversal AI config ──
 CONFIDENCE_MIN = float(os.getenv('WS_CONF_MIN', "40.0"))       # Confiança mínima da IA para entrar
@@ -5874,9 +5875,11 @@ def _main_inner():
         saldo_inicial = 1000.0
 
     global _consecutive_losses
+    global _asset_hour_cooldown
     total_trades = 0
     total_wins = 0
     _consecutive_losses = 0
+    _asset_hour_cooldown = {}
     _current_day = _date_cls.today()
 
     # ── Restaurar contadores W/L do dia (sobrevive a reinícios) ──
@@ -6748,6 +6751,19 @@ def _main_inner():
                 if _ctx_nn_threshold is not None and _ctx_nn_threshold / 100.0 > _session_threshold:
                     _session_threshold = _ctx_nn_threshold / 100.0
 
+                # ═══ ASSET-HOUR COOLDOWN: mesmo ativo+hora teve LOSS → exigir NN≥92% ═══
+                # Dados de 78K trades: WR cai de 89.9% → 61.4% quando repete ativo+hora após LOSS
+                _COOLDOWN_NN_MIN = 0.92
+                _ah_check_hour = datetime.now().hour
+                _ah_check_key = f"{ativo}_{_ah_check_hour}"
+                if _asset_hour_cooldown.get(_ah_check_key) == 0:  # último resultado = LOSS
+                    if _session_threshold < _COOLDOWN_NN_MIN:
+                        _session_threshold = _COOLDOWN_NN_MIN
+                    log.info(paint(
+                        f"  🔴 COOLDOWN: {ativo} teve LOSS nesta hora — NN mín={_COOLDOWN_NN_MIN:.0%}",
+                        C.Y
+                    ))
+
                 # Re-avaliar aprovação com threshold adaptado
                 if _nn_pred is not None and _nn_score < _session_threshold:
                     _nn_approved = False
@@ -6993,6 +7009,7 @@ def _main_inner():
                     "atr": round(atr_val, 6),
                     "wick_pct": locals().get('_wick_pct', 0),
                     "elite_guard": setup.get("elite_guard"),
+                    "asset_hour_cooldown": _asset_hour_cooldown.get(_ah_check_key) == 0 if _ah_check_key else False,
                     "progress_pct": round(float(setup.get("live_metrics", {}).get("progress_pct", 0)), 2) if setup.get("live_metrics") else None,
                     "target_room_atr": round(float(setup.get("live_metrics", {}).get("target_room_atr", 0)), 3) if setup.get("live_metrics") else None,
                 }
@@ -7208,6 +7225,12 @@ def _main_inner():
                     del _recent_trade_results[:-50]
                 _arm_key_res = f"{ativo}_{pat_type}_{setup.get('mode', 'classic')}"
                 _n_arm = hs_stats.get("arms", {}).get(_arm_key_res, {}).get("total", 0)
+
+                # ── Asset-Hour Cooldown: registrar resultado para evitar repeat-loss ──
+                _ah_hour = datetime.now().hour
+                _ah_key = f"{ativo}_{_ah_hour}"
+                _asset_hour_cooldown[_ah_key] = _trade_result_01
+
                 log.info(paint(
                     f"  📊 Resultado registrado: {ativo} | {'WIN' if res > 0 else 'LOSS' if res < 0 else 'EMPATE'} | "
                     f"prob={ia_prob:.2f} | trades_ativo={_n_arm}",
