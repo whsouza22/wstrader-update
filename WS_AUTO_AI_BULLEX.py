@@ -6794,7 +6794,7 @@ def _main_inner():
                         C.Y
                     ))
                 elif _shadow_bad:
-                    _SHADOW_NN_MIN = 0.90
+                    _SHADOW_NN_MIN = 0.93
                     if _session_threshold < _SHADOW_NN_MIN:
                         _session_threshold = _SHADOW_NN_MIN
                     log.info(paint(
