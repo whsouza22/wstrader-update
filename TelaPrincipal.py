@@ -229,7 +229,7 @@ logger = logging.getLogger(__name__)
 WINDOW_ICON_FILENAME = "ws_ai_trader_corrigido.ico"
 
 # Versão padrão do aplicativo
-CURRENT_VERSION = "6.7.0" # v6.1.6: previsao visual moderna, sinais persistentes no grafico, timing relaxado
+CURRENT_VERSION = "6.8.0" # v6.1.6: previsao visual moderna, sinais persistentes no grafico, timing relaxado
 
 # URL do JSON para verificação de atualizações
 VERSION_URL = "https://whsouza22.github.io/wstrader-update/version.json"

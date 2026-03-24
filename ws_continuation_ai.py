@@ -470,13 +470,7 @@ class ContinuationAI:
             # Filtro alta confianca: ambos modelos devem concordar
             both_agree = (p_xgb >= th) and (p_lgb >= th)
 
-            # Filtros de regime (eliminam momentos ruins)
-            alt = feats.get("alternation", 0.5)
-            comp = feats.get("compression_ratio", 0.5)
-            vol = feats.get("vol_regime", 1.0)
-            regime_ok = (alt < 0.65) and (comp >= 0.15) and (vol < 1.8)
-
-            approved = both_agree and regime_ok
+            approved = both_agree
 
             # Backtest: se temos velas suficientes apos a entrada
             bt = None
@@ -629,13 +623,7 @@ class ContinuationAI:
         prob, p_xgb, p_lgb, th = self._predict(x, ativo)
         both_agree = (p_xgb >= th) and (p_lgb >= th)
 
-        # Filtros de regime
-        alt = feats.get("alternation", 0.5)
-        comp = feats.get("compression_ratio", 0.5)
-        vol = feats.get("vol_regime", 1.0)
-        regime_ok = (alt < 0.65) and (comp >= 0.15) and (vol < 1.8)
-
-        return prob, both_agree and regime_ok
+        return prob, both_agree
 
     def get_stats(self):
         """Retorna stats do modelo para exibicao."""

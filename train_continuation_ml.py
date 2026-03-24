@@ -364,10 +364,11 @@ def build_dataset(ativo, df, min_impulse=3, exp=2):
         else:
             label = 1 if C[exit_idx] > C[entry_idx] else 0
 
+        # Features extraidas no candle exit_idx (visao completa)
         feats = extract_pattern_features(
             O, H, L, C, atr, ema8, ema20, ema50, rsi,
             pat["imp_start"], pat["imp_end"],
-            pat["sm_start"], pat["sm_end"],
+            pat["sm_start"], exit_idx,
             pat["direction"], exp
         )
 
@@ -382,19 +383,20 @@ def build_dataset(ativo, df, min_impulse=3, exp=2):
 
         # --- EXTENDED FEATURES (per-asset signal) ---
         is_put_b = pat["direction"] == "PUT"
-        atr_j = max(atr[j], 1e-10)
+        ei = exit_idx
+        atr_ei = max(atr[ei], 1e-10)
 
         # EMA slopes (5 candle lookback)
-        if j >= 5:
-            feats["ema8_slope"] = (ema8[j] - ema8[j - 5]) / atr_j
-            feats["ema20_slope"] = (ema20[j] - ema20[j - 5]) / atr_j
-            feats["rsi_change5"] = (rsi[j] - rsi[j - 5]) / 100.0
+        if ei >= 5:
+            feats["ema8_slope"] = (ema8[ei] - ema8[ei - 5]) / atr_ei
+            feats["ema20_slope"] = (ema20[ei] - ema20[ei - 5]) / atr_ei
+            feats["rsi_change5"] = (rsi[ei] - rsi[ei - 5]) / 100.0
         else:
             feats["ema8_slope"] = feats["ema20_slope"] = feats["rsi_change5"] = 0.0
 
         # Consecutive aligned candles
         consec = 0
-        for k in range(j, max(j - 10, -1), -1):
+        for k in range(ei, max(ei - 10, -1), -1):
             if (C[k] < O[k]) == is_put_b:
                 consec += 1
             else:
@@ -402,12 +404,12 @@ def build_dataset(ativo, df, min_impulse=3, exp=2):
         feats["consecutive_aligned"] = consec
 
         # Body/wick analysis of last 5 candles
-        if j >= 5:
-            bodies5 = np.abs(C[j - 5:j] - O[j - 5:j])
-            ranges5 = H[j - 5:j] - L[j - 5:j]
+        if ei >= 5:
+            bodies5 = np.abs(C[ei - 5:ei] - O[ei - 5:ei])
+            ranges5 = H[ei - 5:ei] - L[ei - 5:ei]
             feats["body_pct_5"] = float(np.mean(bodies5 / (ranges5 + 1e-10)))
             feats["directional_pct_5"] = sum(
-                1 for k in range(j - 5, j) if (C[k] < O[k]) == is_put_b
+                1 for k in range(ei - 5, ei) if (C[k] < O[k]) == is_put_b
             ) / 5.0
         else:
             feats["body_pct_5"] = feats["directional_pct_5"] = 0.5
