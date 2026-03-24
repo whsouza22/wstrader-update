@@ -339,7 +339,7 @@ class ContinuationAI:
         self._load_model()
 
     def _predict(self, x, ativo=""):
-        """Prediz usando modelo per-asset ou global. Retorna (prob, p_xgb, p_lgb, threshold)."""
+        """Prediz usando modelo per-asset ou global. Retorna (prob, p_xgb, p_lgb, p_nb, threshold)."""
         am = None
         if self.per_asset and ativo:
             am = self.per_asset.get(ativo)
@@ -348,16 +348,19 @@ class ContinuationAI:
             x_df = pd.DataFrame(x_s, columns=self.feature_cols)
             p_xgb = float(am["xgb"].predict_proba(x_df)[0, 1])
             p_lgb = float(am["lgb"].predict_proba(x_df)[0, 1])
+            nb = am.get("nb")
+            p_nb = float(nb.predict_proba(x_df)[0, 1]) if nb else (p_xgb + p_lgb) / 2.0
             th = am.get("threshold", self.threshold)
         elif self.xgb is not None:
             x_s = self.scaler.transform(x)
             x_df = pd.DataFrame(x_s, columns=self.feature_cols)
             p_xgb = float(self.xgb.predict_proba(x_df)[0, 1])
             p_lgb = float(self.lgb.predict_proba(x_df)[0, 1])
+            p_nb = (p_xgb + p_lgb) / 2.0
             th = self.threshold
         else:
-            return 0.5, 0.5, 0.5, self.threshold
-        return (p_xgb + p_lgb) / 2.0, p_xgb, p_lgb, th
+            return 0.5, 0.5, 0.5, 0.5, self.threshold
+        return (p_xgb + p_lgb + p_nb) / 3.0, p_xgb, p_lgb, p_nb, th
 
     def scan(self, df, ativo="", max_candles_ago=2):
         """Detecta padroes de compressao e retorna sinais filtrados pela ML.
@@ -465,12 +468,12 @@ class ContinuationAI:
             x = np.nan_to_num(x, nan=0.0, posinf=3.0, neginf=-3.0)
 
             # Predizer (per-asset ou global)
-            prob, p_xgb, p_lgb, th = self._predict(x, ativo)
+            prob, p_xgb, p_lgb, p_nb, th = self._predict(x, ativo)
 
-            # Filtro alta confianca: ambos modelos devem concordar
-            both_agree = (p_xgb >= th) and (p_lgb >= th)
+            # Filtro alta confianca: TODOS os 3 modelos devem concordar
+            all_agree = (p_xgb >= th) and (p_lgb >= th) and (p_nb >= th)
 
-            approved = both_agree
+            approved = all_agree
 
             # Backtest: se temos velas suficientes apos a entrada
             bt = None
@@ -539,14 +542,11 @@ class ContinuationAI:
                 "backtest": bt,
                 "xgb_prob": round(p_xgb, 4),
                 "lgb_prob": round(p_lgb, 4),
+                "nb_prob": round(p_nb, 4),
                 "ia_prob": round(prob, 3),
-                "both_agree": bool((p_xgb >= th) and (p_lgb >= th)),
-                "regime_ok": bool(regime_ok),
-                "regime": {
-                    "alternation": round(alt, 3),
-                    "compression": round(comp, 3),
-                    "vol_regime": round(vol, 3),
-                },
+                "both_agree": bool(all_agree),
+                "regime_ok": True,
+                "regime": {},
             }
 
             # Adicionar timestamps para compatibilidade com dashboard
@@ -620,10 +620,10 @@ class ContinuationAI:
         x = np.array([[feats.get(col, 0) for col in self.feature_cols]], dtype=np.float32)
         x = np.nan_to_num(x, nan=0.0, posinf=3.0, neginf=-3.0)
 
-        prob, p_xgb, p_lgb, th = self._predict(x, ativo)
-        both_agree = (p_xgb >= th) and (p_lgb >= th)
+        prob, p_xgb, p_lgb, p_nb, th = self._predict(x, ativo)
+        all_agree = (p_xgb >= th) and (p_lgb >= th) and (p_nb >= th)
 
-        return prob, both_agree
+        return prob, all_agree
 
     def get_stats(self):
         """Retorna stats do modelo para exibicao."""

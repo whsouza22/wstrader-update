@@ -31,6 +31,8 @@ import lightgbm as lgb
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import StandardScaler
+from sklearn.naive_bayes import GaussianNB
+from sklearn.calibration import CalibratedClassifierCV
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
 CSV_DIR = os.path.join(_BASE, "candles_100k")
@@ -508,15 +510,21 @@ def main():
         lgb_m.fit(X_train, y_train)
         lgb_pred = lgb_m.predict_proba(X_test)[:, 1]
 
-        # Ensemble
-        ens_pred = (xgb_pred + lgb_pred) / 2.0
+        # GaussianNB (Bayesiano) com calibracao
+        nb_base = GaussianNB()
+        nb_m = CalibratedClassifierCV(nb_base, cv=3, method="isotonic")
+        nb_m.fit(X_train, y_train)
+        nb_pred = nb_m.predict_proba(X_test)[:, 1]
+
+        # Ensemble (3 modelos)
+        ens_pred = (xgb_pred + lgb_pred + nb_pred) / 3.0
         acc_50 = accuracy_score(y_test, (ens_pred >= 0.5).astype(int))
 
-        # Find best threshold (both models must agree — higher WR)
+        # Find best threshold (ALL 3 models must agree — higher WR)
         best_t, best_wr, best_n = 0.50, acc_50 * 100, int(np.sum(ens_pred >= 0.50))
         for t in [0.52, 0.55, 0.57, 0.60, 0.62, 0.65]:
-            # Both agree filter: both XGB and LGB above threshold
-            mask = (xgb_pred >= t) & (lgb_pred >= t)
+            # All-agree filter: XGB, LGB and Bayes above threshold
+            mask = (xgb_pred >= t) & (lgb_pred >= t) & (nb_pred >= t)
             n_sel = int(np.sum(mask))
             if n_sel < 20:
                 continue
@@ -527,6 +535,7 @@ def main():
         per_asset_models[ativo] = {
             "xgb": xgb_m,
             "lgb": lgb_m,
+            "nb": nb_m,
             "scaler": scaler,
             "threshold": best_t,
             "acc": round(acc_50 * 100, 1),
