@@ -127,13 +127,10 @@ from ws_adaptive_brain import extract_features
 
 # ═══ IA 4 — FILTRO DE CONTEXTO (tabela pré-computada do backtest) ═══
 from ws_context_filter import context_lookup, format_context_log
-<<<<<<< Updated upstream
-=======
 
 # ═══ IA 5 — CONTINUAÇÃO (Compressão + Breakout ML) ═══
 from ws_continuation_ai import ContinuationAI
 _continuation_ai = ContinuationAI()
->>>>>>> Stashed changes
 
 try:
     from tradingpatterns import tradingpatterns as _shadow_patterns_lib
@@ -182,7 +179,7 @@ SHADOW_PATTERN_LIB_MAX_BAR_DISTANCE = max(1, int(os.getenv("WS_SHADOW_PATTERN_LI
 PAYOUT_MINIMO = int(os.getenv("WS_PAYOUT_MIN", "80"))   # 80%+ payout → com WR 90%+ é lucrativo
 PAYOUT_REFRESH_SEC = int(os.getenv("WS_PAYOUT_REFRESH", "180"))
 
-NUM_ATIVOS = max(1, int(os.getenv("WS_NUM_ATIVOS", "4")))
+NUM_ATIVOS = max(1, int(os.getenv("WS_NUM_ATIVOS", "8")))
 SCAN_NUM_ATIVOS = max(1, min(NUM_ATIVOS, int(os.getenv("WS_SCAN_ATIVOS", str(NUM_ATIVOS)))))
 
 # ── Expiração FIXA 2 minutos (alinhada com treino) ──
@@ -317,11 +314,7 @@ AI_STATS_FILE = os.path.join(os.path.expanduser("~"), ".wstrader", "ws_ai_stats_
 AI_MIN_SAMPLES = 5
 AI_CONF_MIN = 0.3
 AI_MIN_PROB = 0.55  # CORRIGIDO: era 0.40 (permitia entradas com 40% prob = moeda)
-<<<<<<< Updated upstream
-DT_BAYES_FINAL_MIN = max(0.75, min(0.95, float(os.getenv("WS_DT_BAYES_FINAL_MIN", "0.75"))))
-=======
 DT_BAYES_FINAL_MIN = max(0.55, min(0.95, float(os.getenv("WS_DT_BAYES_FINAL_MIN", "0.60"))))
->>>>>>> Stashed changes
 HORARIO_INICIO_MIN = 90    # 1h30 da manhã (1*60 + 30)
 HORARIO_FIM_MIN    = 1080  # 18h00 (18*60)
 MAX_DIST_OMBRO_ATR = 0.5  # CORRIGIDO: era 1.0 (muito longe do ombro D = entrada ruim)
@@ -1450,19 +1443,6 @@ def _get_full_pattern_qualified_assets(min_wr: Optional[float] = None) -> List[s
     return qualified
 
 
-def _get_full_pattern_top_assets(limit: Optional[int] = None) -> List[str]:
-    max_items = FULL_PATTERN_TOP_ASSETS if limit is None else max(1, int(limit))
-    return _get_full_pattern_qualified_assets()[:max_items]
-
-
-def _filter_assets_by_full_pattern_study(assets: List[str]) -> List[str]:
-    qualified = set(_get_full_pattern_qualified_assets())
-    if not qualified:
-        return list(assets)
-    filtered = [asset for asset in assets if asset in qualified]
-    return filtered if filtered else list(assets)
-
-
 def _classify_dt_signal_candle(pat: dict, df: Optional[pd.DataFrame]) -> dict:
     if df is None or len(df) < 1:
         return {
@@ -1730,7 +1710,6 @@ _DT_ENTRY_PROGRESS_MAX = max(
     _ENTRY_WIN_SIG_PROGRESS,
     min(0.45, float(os.getenv("WS_DT_ENTRY_PROGRESS_MAX", "0.22")))
 )
-_ASSET_SELECTION_CANDLES = max(120, min(LIVE_SCAN_N_M1, int(os.getenv("WS_ASSET_SELECTION_CANDLES", "180"))))
 _entry_guard_cache: Dict[str, Optional[dict]] = {}
 
 # ── Cache compartilhado com o Dashboard (o bot escreve, dashboard lê) ──
@@ -2868,15 +2847,6 @@ def _rank_assets_by_entry_guard() -> List[Tuple[str, float, float, float, int]]:
     return ranked
 
 
-def _is_high_accuracy_asset(acc: float, auc: float, precision: float, samples: int) -> bool:
-    return bool(
-        acc >= _ENTRY_GUARD_MIN_ACC
-        and auc >= _ENTRY_GUARD_MIN_AUC
-        and precision >= _ENTRY_GUARD_MIN_PREC
-        and samples >= _ENTRY_GUARD_MIN_SAMPLES
-    )
-
-
 def _is_conservative_fallback_asset(acc: float, auc: float, precision: float, samples: int) -> bool:
     return bool(
         acc >= _ENTRY_GUARD_FALLBACK_MIN_ACC
@@ -2884,91 +2854,6 @@ def _is_conservative_fallback_asset(acc: float, auc: float, precision: float, sa
         and precision >= _ENTRY_GUARD_FALLBACK_MIN_PREC
         and samples >= _ENTRY_GUARD_MIN_SAMPLES
     )
-
-
-def _score_live_asset_candidate(bx: BrokerAPI, ativo: str, acc: float, payout: int = 0) -> Optional[dict]:
-    """Ranqueia ativos para a varredura dinâmica usando accuracy, padrões e lateralidade."""
-    df = get_candles_df(bx, ativo, TF_M1, _ASSET_SELECTION_CANDLES, min_len=90)
-    if df is None or len(df) < 90:
-        return None
-
-    try:
-        H = df["high"].values
-        L = df["low"].values
-        C_arr = df["close"].values
-        O = df["open"].values
-        n = len(H)
-        atr_vals = [float(H[k] - L[k]) for k in range(max(0, n - 14), n)]
-        atr = float(np.mean(atr_vals)) if atr_vals else 0.0
-        if atr <= 0:
-            return None
-
-        pivot_highs, pivot_lows = detect_pivots(H, L, window=5)
-
-        visible_patterns_raw = detect_double_touch(
-            H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
-            max_candles_ago=9999, training=True,
-        )
-        visible_start = max(0, n - 120)
-        visible_count = 0
-        for pat in visible_patterns_raw:
-            rs_idx = int((pat.get("right_shoulder") or {}).get("idx", -1))
-            if rs_idx >= visible_start:
-                visible_count += 1
-
-        live_patterns_raw = detect_double_touch(
-            H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
-            max_candles_ago=MAX_LIVE_SIGNAL_CANDLES,
-        )
-
-        fresh_candidates = []
-        for pat in live_patterns_raw:
-            bt = backtest_pattern(pat, C_arr, O, H, L, n)
-            if bt is not None:
-                continue
-            candles_ago = max(0, n - 1 - pat["right_shoulder"]["idx"])
-            if candles_ago > MAX_LIVE_SIGNAL_CANDLES:
-                continue
-            if pat.get("mode") == "realtime":
-                continue
-            if pat.get("mode") not in ("early", "double_touch") and candles_ago > 2:
-                continue
-            fresh_candidates.append((pat["type"], pat["direction"], candles_ago))
-
-        dedup = {}
-        for pat_type, direction, candles_ago in fresh_candidates:
-            key = f"{pat_type}_{direction}"
-            if key not in dedup or candles_ago < dedup[key]:
-                dedup[key] = candles_ago
-
-        live_count = len(dedup)
-        direction_count = len({direction for _, direction, _ in fresh_candidates}) if fresh_candidates else 0
-        live_score = min(live_count / 2.0, 1.0)
-        visible_score = min(visible_count / 6.0, 1.0)
-        payout_score = min(max(float(payout) / 100.0, 0.0), 1.0)
-        conflict_penalty = 0.08 if direction_count > 1 else 0.0
-
-        selection_score = (
-            float(acc) * 0.35
-            + live_score * 0.30
-            + visible_score * 0.20
-            + payout_score * 0.15
-            - conflict_penalty
-        )
-
-        return {
-            "asset": ativo,
-            "selection_score": round(float(selection_score), 4),
-            "accuracy": round(float(acc), 4),
-            "visible_count": int(visible_count),
-            "live_count": int(live_count),
-            "regime_ok": True,
-            "regime_score": 0.0,
-            "regime_reason": "",
-            "payout": int(payout),
-        }
-    except Exception:
-        return None
 
 
 def _download_entry_guard_from_github(file_name: str, quiet: bool = False) -> bool:
@@ -4110,6 +3995,19 @@ def _write_dashboard_cache(dashboard_assets: dict, payouts: dict, live_signals: 
         cache["summary"]["wr"] = round((_total_wins / max(_total_done, 1)) * 100.0, 1) if _total_done > 0 else 0.0
         for _ptype, _bucket in cache["summary"]["by_type"].items():
             _bucket["wr"] = round((_bucket["wins"] / max(_bucket["total"], 1)) * 100.0, 1) if _bucket["total"] > 0 else 0.0
+
+        # Adicionar stats do modelo continuation ML por ativo
+        if _continuation_ai.loaded and hasattr(_continuation_ai, 'per_asset'):
+            _ml_stats = {}
+            for _ativo, _data in _continuation_ai.per_asset.items():
+                _ml_stats[_ativo] = {
+                    "wr": round(float(_data.get("wr", 0)), 1),
+                    "acc": round(float(_data.get("acc", 0)), 1),
+                    "threshold": round(float(_data.get("threshold", 0.55)), 2),
+                    "n_test": int(_data.get("n_test", 0)),
+                }
+            cache["continuation_ml"] = _ml_stats
+
         _safe_save_json(_DASHBOARD_CACHE_FILE, cache)
     except Exception as e:
         log.debug(f"Erro ao escrever cache dashboard: {e}")
@@ -5421,55 +5319,70 @@ _top_dt_assets: List[str] = []  # TOP N ativos DT (N definido por benchmark)
 
 
 def _pick_top_dt_assets(hs_stats: dict, n_top: int = 4) -> List[str]:
-    """Retorna o pool ranqueado pelos modelos entry-guard treinados por ativo."""
-    ranked = _rank_assets_by_entry_guard()
-    if ranked:
-        filtered_ranked = [
-            item for item in ranked
-            if _is_high_accuracy_asset(item[1], item[2], item[3], item[4])
-        ]
-        conservative_ranked = [
-            item for item in ranked
-            if _is_conservative_fallback_asset(item[1], item[2], item[3], item[4])
-        ]
-        if filtered_ranked:
-            chosen_rank = filtered_ranked
-        elif conservative_ranked:
-            chosen_rank = conservative_ranked
-        else:
-            chosen_rank = []
+    """Retorna o pool ranqueado pela acurácia/WR do modelo Continuation ML per-asset."""
+    # Usar modelo continuation ML (per-asset) como fonte primária
+    if _continuation_ai.loaded and hasattr(_continuation_ai, 'per_asset') and _continuation_ai.per_asset:
+        ranked = []
+        for ativo, data in _continuation_ai.per_asset.items():
+            wr = float(data.get("wr", 0))
+            acc = float(data.get("acc", 0))
+            n_test = int(data.get("n_test", 0))
+            threshold = float(data.get("threshold", 0.55))
+            ranked.append((ativo, wr, acc, threshold, n_test))
+        # Ordenar por WR descendente
+        ranked.sort(key=lambda x: (x[1], x[2], x[4]), reverse=True)
 
-        if not chosen_rank:
-            log.warning(paint(
-                "⚠️ Nenhum ativo passou nos filtros de qualidade do entry guard — varredura DT ficará pausada até haver ativos confiáveis",
-                C.Y
-            ))
-            return []
+        # Filtro: WR >= 70% e pelo menos 50 trades de teste
+        _MIN_WR = 70.0
+        _MIN_TRADES = 50
+        filtered = [item for item in ranked if item[1] >= _MIN_WR and item[4] >= _MIN_TRADES]
 
-        pool_size = min(len(chosen_rank), max(n_top, _ENTRY_GUARD_POOL_SIZE))
-        top = [item[0] for item in chosen_rank[:pool_size]]
-        if filtered_ranked:
+        if not filtered:
+            # Fallback: usar todos com WR >= 60%
+            filtered = [item for item in ranked if item[1] >= 60.0]
+            if filtered:
+                log.warning(paint(
+                    f"⚠️ Nenhum ativo com WR>={_MIN_WR}% — usando pool relaxado (WR>=60%): {len(filtered)} ativos",
+                    C.Y
+                ))
+
+        if not filtered:
+            filtered = ranked[:n_top]
+            log.warning(paint("⚠️ Usando todos os ativos disponíveis (sem filtro de WR)", C.Y))
+
+        pool_size = min(len(filtered), max(n_top, _ENTRY_GUARD_POOL_SIZE))
+        top = [item[0] for item in filtered[:pool_size]]
+
+        log.info(paint(
+            f"🎯 Pool Continuation ML: {len(filtered)} ativo(s) com WR>={_MIN_WR}%",
+            C.G
+        ))
+        for i, (asset, wr, acc, threshold, n_test) in enumerate(filtered[:pool_size]):
             log.info(paint(
-                f"🎯 Pool dinâmico: {len(filtered_ranked)} ativo(s) | acc>={_ENTRY_GUARD_MIN_ACC:.0%} | auc>={_ENTRY_GUARD_MIN_AUC:.2f} | prec>={_ENTRY_GUARD_MIN_PREC:.0%}",
-                C.G
-            ))
-        elif conservative_ranked:
-            log.warning(paint(
-                f"⚠️ Nenhum ativo passou no filtro alto — usando pool conservador | acc>={_ENTRY_GUARD_FALLBACK_MIN_ACC:.0%} | auc>={_ENTRY_GUARD_FALLBACK_MIN_AUC:.2f} | prec>={_ENTRY_GUARD_FALLBACK_MIN_PREC:.0%}",
-                C.Y
-            ))
-        else:
-            log.warning(paint("⚠️ Pool de ativos vazio após filtros de qualidade", C.Y))
-        for i, (asset, acc, auc, precision, samples) in enumerate(chosen_rank[:min(pool_size, len(chosen_rank))]):
-            log.info(paint(
-                f"🎯 ASSET #{i+1}: {asset} | acc={acc:.1%} | auc={auc:.3f} | prec={precision:.1%} | amostras={samples}",
+                f"🎯 ASSET #{i+1}: {asset} | WR={wr:.1f}% | acc={acc:.1f}% | thr={threshold:.2f} | trades={n_test}",
                 C.G
             ))
         return top
 
-    top = _get_full_pattern_qualified_assets()[:n_top] or ["NZDJPY-OTC", "GBPAUD-OTC", "USDCAD-OTC", "EURNZD-OTC"][:n_top]
-    for i, a in enumerate(top[:n_top]):
-        log.info(paint(f"🎯 ASSET #{i+1}: {a} (fallback sem entry_guard treinado)", C.Y))
+    # Fallback: entry-guard ranking (legado)
+    ranked = _rank_assets_by_entry_guard()
+    if ranked:
+        chosen_rank = [
+            item for item in ranked
+            if _is_conservative_fallback_asset(item[1], item[2], item[3], item[4])
+        ] or ranked[:n_top]
+        pool_size = min(len(chosen_rank), max(n_top, _ENTRY_GUARD_POOL_SIZE))
+        top = [item[0] for item in chosen_rank[:pool_size]]
+        for i, (asset, acc, auc, precision, samples) in enumerate(chosen_rank[:pool_size]):
+            log.info(paint(
+                f"🎯 ASSET #{i+1}: {asset} | acc={acc:.1%} | auc={auc:.3f} | prec={precision:.1%} (fallback entry-guard)",
+                C.Y
+            ))
+        return top
+
+    top = ["NZDJPY-OTC", "GBPAUD-OTC", "USDCAD-OTC", "EURNZD-OTC"][:n_top]
+    for i, a in enumerate(top):
+        log.info(paint(f"🎯 ASSET #{i+1}: {a} (fallback padrão)", C.Y))
     return top
 
 
@@ -5518,58 +5431,41 @@ def obter_top_ativos_otc(bx: BrokerAPI) -> List[str]:
         for t in good_targets:
             payouts_map.setdefault(t, 0)
 
-    ranked_metrics = {
-        asset: (acc, auc, precision, samples)
-        for asset, acc, auc, precision, samples in _rank_assets_by_entry_guard()
-    }
+    # Ranquear por WR do modelo continuation ML
     dynamic_rank = []
     for asset in good_targets:
-        acc, auc, precision, samples = ranked_metrics.get(asset, (0.0, 0.0, 0.0, 0))
-        analysis = _score_live_asset_candidate(bx, asset, acc, payout=payouts_map.get(asset, 0))
-        if analysis is None:
-            payout_score = min(max(float(payouts_map.get(asset, 0)) / 100.0, 0.0), 1.0)
-            analysis = {
-                "asset": asset,
-                "selection_score": round(float(acc) * 0.45 + payout_score * 0.05, 4),
-                "accuracy": round(float(acc), 4),
-                "visible_count": 0,
-                "live_count": 0,
-                "regime_ok": True,
-                "regime_score": 0.5,
-                "regime_reason": "fallback sem leitura de candles",
-                "payout": int(payouts_map.get(asset, 0)),
-            }
-        analysis["auc"] = round(float(auc), 4)
-        analysis["precision"] = round(float(precision), 4)
-        analysis["samples"] = int(samples)
-        dynamic_rank.append(analysis)
+        wr = 0.0
+        acc = 0.0
+        if _continuation_ai.loaded and hasattr(_continuation_ai, 'per_asset'):
+            asset_data = _continuation_ai.per_asset.get(asset, {})
+            wr = float(asset_data.get("wr", 0))
+            acc = float(asset_data.get("acc", 0))
+        payout = payouts_map.get(asset, 0)
+        # Score: 70% WR + 20% acc + 10% payout
+        score = wr / 100.0 * 0.70 + acc / 100.0 * 0.20 + min(payout / 100.0, 1.0) * 0.10
+        dynamic_rank.append({
+            "asset": asset,
+            "selection_score": round(score, 4),
+            "wr": round(wr, 1),
+            "accuracy": round(acc, 1),
+            "payout": int(payout),
+        })
 
-    dynamic_rank.sort(
-        key=lambda item: (
-            item.get("selection_score", 0.0),
-            item.get("live_count", 0),
-            item.get("visible_count", 0),
-            item.get("accuracy", 0.0),
-            item.get("regime_score", 0.0),
-            item.get("payout", 0),
-        ),
-        reverse=True,
-    )
+    dynamic_rank.sort(key=lambda item: item["selection_score"], reverse=True)
 
     _scan_count = SCAN_NUM_ATIVOS
     _cache_ativos = [item["asset"] for item in dynamic_rank[:_scan_count]] if dynamic_rank else good_targets[:_scan_count]
     _cache_ativos_ts = time.time()
     if dynamic_rank:
         log.info(paint(
-            f"🎯 Rotação dinâmica DT: pool={len(dynamic_rank)} | selecionando {len(_cache_ativos)} ativo(s) por acc+padrões+lateral",
+            f"🎯 Rotação dinâmica: pool={len(dynamic_rank)} | selecionando {len(_cache_ativos)} ativo(s) por WR+acc",
             C.G
         ))
         for idx, item in enumerate(dynamic_rank[:len(_cache_ativos)]):
-            _regime_flag = "lateral" if item.get("regime_ok") else "não-lateral"
             log.info(paint(
-                f"🎯 SCAN #{idx+1}: {item['asset']} | sel={item['selection_score']:.3f} | acc={item['accuracy']:.1%} | "
-                f"entry={item['live_count']} | vis={item['visible_count']} | {_regime_flag}={item['regime_score']:.2f} | payout={item['payout']}%",
-                C.G if item.get("regime_ok") else C.Y
+                f"🎯 SCAN #{idx+1}: {item['asset']} | sel={item['selection_score']:.3f} | WR={item['wr']:.1f}% | "
+                f"acc={item['accuracy']:.1f}% | payout={item['payout']}%",
+                C.G
             ))
     log.info(paint(f"🎯 ATIVOS EM VARREDURA ({len(_cache_ativos)}): {_cache_ativos}", C.G))
     return _cache_ativos
@@ -5995,23 +5891,15 @@ def _main_inner():
     global _top_dt_assets
     _top_dt_assets = _pick_top_dt_assets(hs_stats, n_top=max(SCAN_NUM_ATIVOS, _ENTRY_GUARD_POOL_SIZE))
 
-<<<<<<< Updated upstream
-    log.info(f"✅ Estratégia: SOMENTE Double Touch (Duplo Toque)")
-=======
     log.info(f"✅ Estratégia: Continuation ML (Compressão + Breakout)")
     log.info(f"✅ Modelo: XGBoost + LightGBM | WF={_continuation_ai.stats.get('walk_forward_wr', 0):.1f}%" if _continuation_ai.loaded else "")
->>>>>>> Stashed changes
     log.info(f"✅ Pool ranqueado de ativos: {_top_dt_assets}")
     log.info(f"✅ Varredura simultânea de ativos: {SCAN_NUM_ATIVOS}")
     log.info(f"✅ Live scan candles: {LIVE_SCAN_N_M1}")
     log.info(f"✅ Corretora: {_BROKER_LABEL} ({BROKER_TYPE})")
     log.info(f"✅ Expiração: {EXP_FIXA} minuto(s)")
     log.info(f"✅ Sinais: Detecção LOCAL (direto da corretora, sem delay)")
-<<<<<<< Updated upstream
-    log.info(f"✅ Modelos NN: pré-treinados offline (PKL imutáveis)")
-    log.info(f"✅ Context Table: filtro estatístico de 78k trades")
-=======
->>>>>>> Stashed changes
+
     log.info("=" * 60)
 
     # Saldo inicial
@@ -7032,23 +6920,16 @@ def _main_inner():
                                 _nn_p3 = _nn2_p3
                                 _nn_source = "recheck"
                                 # Re-avaliar aprovação com novo score
-<<<<<<< Updated upstream
-                                # Usar o MAIOR entre _NN_MIN_PROB e o threshold da context table
-=======
                                 # Usar o MAIOR entre _NN_MIN_PROB, context table e piso absoluto
->>>>>>> Stashed changes
                                 _recheck_min = _NN_MIN_PROB
                                 _recheck_ctx_label = ""
                                 if _ctx_nn_threshold is not None and _ctx_nn_threshold / 100.0 > _recheck_min:
                                     _recheck_min = _ctx_nn_threshold / 100.0
                                     _recheck_ctx_label = f" (CTX exige ≥{_ctx_nn_threshold:.0f}%)"
-<<<<<<< Updated upstream
-=======
                                 # Piso absoluto: nenhuma entrada com NN < 75% no RE-CHECK
                                 if _recheck_min < DT_RECHECK_ABS_FLOOR:
                                     _recheck_min = DT_RECHECK_ABS_FLOOR
                                     _recheck_ctx_label += f" | piso={DT_RECHECK_ABS_FLOOR:.0%}"
->>>>>>> Stashed changes
                                 if _nn2_s >= _recheck_min:
                                     _nn_approved = True
                                     log.info(paint(
@@ -7075,6 +6956,7 @@ def _main_inner():
                 _session_threshold = _NN_MIN_PROB
                 if _ctx_nn_threshold is not None and _ctx_nn_threshold / 100.0 > _session_threshold:
                     _session_threshold = _ctx_nn_threshold / 100.0
+
 
                 # ═══ ASSET-HOUR COOLDOWN: mesmo ativo+hora teve LOSS → exigir NN≥92% ═══
                 # Dados de 78K trades: WR cai de 89.9% → 61.4% quando repete ativo+hora após LOSS
@@ -7110,9 +6992,6 @@ def _main_inner():
                     print(f">>> IA: shadow bloqueou {ativo} {direcao} — "
                           f"biblioteca diverge", flush=True)
                     continue
-<<<<<<< Updated upstream
-                elif _study_bad:
-=======
 
                 # ═══ BAYES GATE: prob deve ser > moeda (>=60%) ═══
                 _bayes_p = float(ia_prob or 0.0)
@@ -7127,7 +7006,6 @@ def _main_inner():
                     continue
 
                 if _study_bad:
->>>>>>> Stashed changes
                     _STUDY_NN_MIN = 0.92
                     if _session_threshold < _STUDY_NN_MIN:
                         _session_threshold = _STUDY_NN_MIN

@@ -1154,6 +1154,7 @@ def _live_broker_thread():
                                 _cache["selected_assets"] = list(bot_snapshot.get("selected_assets", []) or [])
                                 _cache["ia_summary"] = bot_summary
                                 _cache["analysis_source"] = "bot"
+                                _cache["continuation_ml"] = bot_snapshot.get("continuation_ml", {})
                                 if bot_ts and bot_ts != _cache.get("bot_cache_ts", 0):
                                     _cache["scan_count"] += 1
                                     _cache["bot_cache_ts"] = bot_ts
@@ -2065,7 +2066,9 @@ def build_api_data():
 
     # ── NN Stats per-ativo (lidos dos arquivos de stats salvos pelo bot) ──
     nn_per_asset = {}
-    _top_assets = ["NZDJPY-OTC", "GBPAUD-OTC", "USDCAD-OTC", "EURNZD-OTC"]
+    _top_assets = list(_cache.get("selected_assets", []) or [])
+    if not _top_assets:
+        _top_assets = list(ad.keys())
     for _nn_asset in _top_assets:
         _nn_file = os.path.join(_USER_DIR, f"ws_ai_stats_{_nn_asset}.json")
         if os.path.exists(_nn_file):
@@ -2091,6 +2094,7 @@ def build_api_data():
         "broker_entries": broker_entries,
         "ia_training_stats": ia_training_stats,
         "nn_per_asset": nn_per_asset,
+        "continuation_ml": _cache.get("continuation_ml", {}),
         "scan_count": scan_count,
         "min_visible_patterns": _MIN_VISIBLE_PATTERNS,
         "last_update": datetime.now().strftime("%H:%M:%S"),
