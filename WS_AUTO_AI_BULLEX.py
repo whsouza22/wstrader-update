@@ -127,6 +127,13 @@ from ws_adaptive_brain import extract_features
 
 # ═══ IA 4 — FILTRO DE CONTEXTO (tabela pré-computada do backtest) ═══
 from ws_context_filter import context_lookup, format_context_log
+<<<<<<< Updated upstream
+=======
+
+# ═══ IA 5 — CONTINUAÇÃO (Compressão + Breakout ML) ═══
+from ws_continuation_ai import ContinuationAI
+_continuation_ai = ContinuationAI()
+>>>>>>> Stashed changes
 
 try:
     from tradingpatterns import tradingpatterns as _shadow_patterns_lib
@@ -301,6 +308,7 @@ def _normalize_dt_live_profile(value) -> str:
 
 DT_LIVE_PROFILE = _normalize_dt_live_profile(os.getenv("WS_DT_LIVE_PROFILE", "standard"))
 DT_NN_MIN_FLOOR = max(0.30, min(0.98, float(os.getenv("WS_DT_NN_MIN_FLOOR", "0.40"))))
+DT_RECHECK_ABS_FLOOR = max(0.50, min(0.98, float(os.getenv("WS_DT_RECHECK_ABS_FLOOR", "0.90"))))
 
 # ── Variáveis para Engine / IA ──
 DECIDIR_ANTES_FECHAR_SEC = int(os.getenv("WS_DECIDIR_ANTES_FECHAR", "12"))
@@ -309,7 +317,11 @@ AI_STATS_FILE = os.path.join(os.path.expanduser("~"), ".wstrader", "ws_ai_stats_
 AI_MIN_SAMPLES = 5
 AI_CONF_MIN = 0.3
 AI_MIN_PROB = 0.55  # CORRIGIDO: era 0.40 (permitia entradas com 40% prob = moeda)
+<<<<<<< Updated upstream
 DT_BAYES_FINAL_MIN = max(0.75, min(0.95, float(os.getenv("WS_DT_BAYES_FINAL_MIN", "0.75"))))
+=======
+DT_BAYES_FINAL_MIN = max(0.55, min(0.95, float(os.getenv("WS_DT_BAYES_FINAL_MIN", "0.60"))))
+>>>>>>> Stashed changes
 HORARIO_INICIO_MIN = 90    # 1h30 da manhã (1*60 + 30)
 HORARIO_FIM_MIN    = 1080  # 18h00 (18*60)
 MAX_DIST_OMBRO_ATR = 0.5  # CORRIGIDO: era 1.0 (muito longe do ombro D = entrada ruim)
@@ -1617,6 +1629,80 @@ def _seed_bundled_models() -> None:
                 log.info(paint(f"📦 Modelos embarcados disponíveis de {folder_name}: {copied}", C.G))
         except Exception as ex:
             log.warning(paint(f"⚠️ Falha ao inicializar modelos embarcados de {folder_name}: {ex}", C.Y))
+
+
+# ═══════════════════════════════════════════════════════════════
+# AUTO-TREINO: treinar modelo ML com CSVs locais na inicialização
+# ═══════════════════════════════════════════════════════════════
+_CANDLES_100K_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_100k")
+
+
+def _run_auto_train(bx: BrokerAPI) -> bool:
+    """Treino automático na inicialização usando CSVs locais (candles_100k/).
+    Retorna True se treinou com sucesso."""
+    global _continuation_ai
+
+    # Verificar se há CSVs para treinar
+    csv_files = [f for f in os.listdir(_CANDLES_100K_DIR) if f.endswith(".csv")] if os.path.isdir(_CANDLES_100K_DIR) else []
+    if len(csv_files) < 3:
+        print(f">>> TREINO: Poucos CSVs ({len(csv_files)}) em candles_100k/ — usando modelo existente", flush=True)
+        log.info(paint(f"⚠️ Auto-treino: apenas {len(csv_files)} CSVs em candles_100k/ — pulando", C.Y))
+        return False
+
+    print("", flush=True)
+    print("=" * 60, flush=True)
+    print("  🧠 WS TRADER — TREINO AUTOMÁTICO DA IA", flush=True)
+    print(f"  Treinando com {len(csv_files)} ativos de candles_100k/", flush=True)
+    print("  (O bot começará a operar após o treino)", flush=True)
+    print("=" * 60, flush=True)
+    print("", flush=True)
+    log.info(paint(f"🧠 TREINO AUTOMÁTICO: {len(csv_files)} CSVs encontrados — iniciando treino ML...", C.B))
+
+    t0 = time.time()
+
+    # Treinar modelo
+    print(">>> TREINO: 🔄 Treinando modelo ML (XGBoost + LightGBM)...", flush=True)
+    log.info(paint("🔄 TREINO ML: Iniciando treino XGBoost + LightGBM...", C.B))
+
+    try:
+        import train_continuation_ml
+        train_continuation_ml.main()
+        t_total = time.time() - t0
+        print(f"\n>>> TREINO: ✅ Treino concluído em {t_total:.0f}s", flush=True)
+        log.info(paint(f"✅ TREINO ML concluído em {t_total:.0f}s", C.G))
+    except Exception as e:
+        log.error(paint(f"❌ TREINO ML falhou: {e}", C.R))
+        print(f">>> TREINO: ❌ Erro no treino: {e}", flush=True)
+        print(">>> TREINO: Usando modelo anterior (se existir)", flush=True)
+        return False
+
+    # Recarregar modelo na IA
+    print(">>> TREINO: Recarregando modelo na IA...", flush=True)
+    try:
+        _continuation_ai._load_model()
+        if _continuation_ai.loaded:
+            stats = _continuation_ai.stats
+            print(f">>> TREINO: ✅ Modelo carregado: WR={stats.get('test_wr', '?')}% "
+                  f"WF={stats.get('walk_forward_wr', '?')}% "
+                  f"threshold={_continuation_ai.threshold}", flush=True)
+            log.info(paint(
+                f"✅ Modelo recarregado: WR_teste={stats.get('test_wr', '?')}% "
+                f"WF={stats.get('walk_forward_wr', '?')}%", C.G
+            ))
+        else:
+            print(">>> TREINO: ⚠️ Modelo não carregou — verifique os logs", flush=True)
+            return False
+    except Exception as e:
+        log.error(paint(f"❌ Erro ao recarregar modelo: {e}", C.R))
+        return False
+
+    print("", flush=True)
+    print("=" * 60, flush=True)
+    print("  ✅ TREINO CONCLUÍDO — INICIANDO OPERAÇÕES", flush=True)
+    print("=" * 60, flush=True)
+    print("", flush=True)
+    return True
+
 
 _ENTRY_GUARD_ENABLED = (os.getenv("WS_ENTRY_GUARD", "1").strip() == "1")
 _ENTRY_GUARD_POOL_SIZE = max(NUM_ATIVOS, int(os.getenv("WS_ENTRY_GUARD_POOL", "31")))
@@ -3397,6 +3483,15 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 depth = touch_level - v_price
                 if depth < min_depth:
                     continue
+                # Zone check: DT touch deve estar na zona ALTA do range recente
+                _z_start = max(0, idx1 - 30)
+                _z_hi = float(np.max(H[_z_start:j + 1]))
+                _z_lo = float(np.min(L[_z_start:j + 1]))
+                _z_rng = _z_hi - _z_lo
+                if _z_rng > atr * 2:
+                    _z_pos = (touch_level - _z_lo) / _z_rng
+                    if _z_pos < 0.55:
+                        continue
                 d_left = v_idx - idx1
                 d_right = j - v_idx
                 _n_piv_at_lvl = sum(1 for _, p in pivot_highs if abs(p - touch_level) <= tol)
@@ -3482,6 +3577,15 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
                 depth = p_price - touch_level
                 if depth < min_depth:
                     continue
+                # Zone check: DB touch deve estar na zona BAIXA do range recente
+                _z_start = max(0, idx1 - 30)
+                _z_hi = float(np.max(H[_z_start:j + 1]))
+                _z_lo = float(np.min(L[_z_start:j + 1]))
+                _z_rng = _z_hi - _z_lo
+                if _z_rng > atr * 2:
+                    _z_pos = (touch_level - _z_lo) / _z_rng
+                    if _z_pos > 0.45:
+                        continue
                 d_left = p_idx - idx1
                 d_right = j - p_idx
                 _n_piv_at_lvl = sum(1 for _, p in pivot_lows if abs(p - touch_level) <= tol)
@@ -4059,47 +4163,9 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
         _market_regime = {}
         _dashboard_assets[ativo]["market_regime"] = {}
 
-        # ── Detectar pivots e padrões H&S ──
-        pivot_highs, pivot_lows = detect_pivots(H, L, window=5)
-
-        # Snapshot único para o dashboard: padrões visíveis do próprio bot.
-        _dashboard_patterns_raw = detect_double_touch(
-            H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
-            max_candles_ago=9999, training=True,
-        )
-        _dashboard_visible_start = max(0, n - 120)
-        _dashboard_patterns = []
-        for _dpat in _dashboard_patterns_raw:
-            _rs_idx = int((_dpat.get("right_shoulder") or {}).get("idx", -1))
-            if _rs_idx < _dashboard_visible_start:
-                continue
-            _dbt = backtest_pattern(_dpat, C_arr, O, H, L, n)
-            if _dbt is not None and _dbt.get("result") not in ("win", "loss"):
-                continue
-            _d_ia = ai_predict_hs(ativo, _dpat, hs_stats)
-            _dashboard_patterns.append(
-                _serialize_dashboard_pattern(
-                    ativo,
-                    _dpat,
-                    df,
-                    ia_prob=_d_ia,
-                    backtest=_dbt,
-                    scan_ts=_scan_start,
-                    market_regime=None,
-                )
-            )
-        _dashboard_assets[ativo]["patterns"] = _dashboard_patterns
-
-        # ── SOMENTE Double Touch (H&S removido — DT tem WR melhor no live) ──
-        # Live: aceitar apenas sinais muito recentes para evitar entrada em padrão velho.
-        # A revalidação final antes da ordem confirma que o DT continua fresco.
-        patterns = detect_double_touch(
-            H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
-            max_candles_ago=MAX_LIVE_SIGNAL_CANDLES,
-        )
-
-        if not patterns:
-            continue
+        # ═══ SOMENTE CONTINUATION ML (DT/Geometria removidos) ═══
+        _dashboard_assets[ativo]["patterns"] = []
+        patterns = []
 
         _detected_recent = len(patterns)
 
@@ -4160,11 +4226,7 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                 live_patterns.append(pat)
 
         if not live_patterns:
-            log.info(paint(
-                f"  📭 {ativo}: {_detected_recent} DT recente(s) detectado(s), mas nenhum ficou fresco/live para entrada",
-                C.Y
-            ))
-            continue
+            pass  # Sem DT — prosseguir para Continuation scan
 
         # ── DEDUPLICAR: 1 padrão por tipo+direção, manter o mais recente ──
         _dedup = {}
@@ -4575,8 +4637,55 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
             if best_trade is None or score > best_trade[0]:
                 best_trade = (score, ativo, setup, atr)
 
+        # ═══ CONTINUATION SCAN (Compressão + Breakout ML) ═══
+        if _continuation_ai.loaded:
+            try:
+                _cont_signals = _continuation_ai.scan_live(df, ativo, max_candles_ago=MAX_LIVE_SIGNAL_CANDLES)
+                for _cs in _cont_signals:
+                    _cont_score = float(_cs["ml_prob"])
+                    _cont_setup = {
+                        "dir": _cs["direction"],
+                        "type": "CONTINUATION",
+                        "mode": "continuation",
+                        "confidence": _cs["confidence"],
+                        "pattern": _cs.get("pattern", {}),
+                        "continuation_signal": _cs,
+                        "last_close": float(C_arr[-1]),
+                        "ml_prob": _cs["ml_prob"],
+                        "exp_candles": _cs.get("exp_candles", 2),
+                    }
+                    all_candidates.append((_cont_score, ativo, _cont_setup, atr))
+                    _total_patterns += 1
+
+                    # Dashboard live signal
+                    _dashboard_live_signals.append(_cs)
+
+                    log.info(paint(
+                        f"  📊 CONTINUATION: {ativo} | {_cs['direction']} | ML={_cs['ml_prob']:.2f} | "
+                        f"candles_ago={_cs['candles_ago']}",
+                        C.B
+                    ))
+
+                    if best_any is None or _cont_score > best_any[0]:
+                        best_any = (_cont_score, ativo, _cont_setup, atr)
+                    if best_trade is None or _cont_score > best_trade[0]:
+                        best_trade = (_cont_score, ativo, _cont_setup, atr)
+            except Exception as _cont_scan_err:
+                log.debug(f"  ⚠️ Continuation scan erro {ativo}: {_cont_scan_err}")
+
+        # Dashboard: incluir padrões de continuação (backtest) para visualização
+        if _continuation_ai.loaded:
+            try:
+                _cont_all = _continuation_ai.scan(df, ativo, max_candles_ago=9999)
+                _cont_visible_start = max(0, n - 120)
+                for _ca in _cont_all:
+                    if _ca.get("breakout_idx", 0) >= _cont_visible_start and _ca.get("backtest"):
+                        _dashboard_assets[ativo].setdefault("patterns", []).append(_ca)
+            except Exception:
+                pass
+
     if _total_patterns > 0:
-        log.info(paint(f"  🔍 Scan local: {_total_patterns} padrão(ões) DT recente(s) encontrado(s)", C.G))
+        log.info(paint(f"  🔍 Scan local: {_total_patterns} padrão(ões) encontrado(s)", C.G))
 
     # ── Escrever cache para o dashboard (atualiza a cada scan) ──
     try:
@@ -5799,6 +5908,9 @@ def _main_inner():
     _seed_bundled_models()
     bx = ensure_connected(bx)
 
+    # ═══ TREINO AUTOMÁTICO: Baixar velas + treinar ML antes de operar ═══
+    _run_auto_train(bx)
+
     if _ENTRY_GUARD_ENABLED:
         _sync_entry_guard_models_from_github()
 
@@ -5830,6 +5942,43 @@ def _main_inner():
     hs_stats = _safe_load_json(AI_STATS_FILE)
     _n_total = hs_stats.get("meta", {}).get("total", 0)
 
+    # ── Seed Bayes arms a partir do context_table (backtest) ──
+    if len(hs_stats.get("arms", {})) < 10:
+        try:
+            import pickle as _pkl
+            _ct_path = os.path.join(os.path.dirname(__file__), "models", "context_table.pkl")
+            if os.path.isfile(_ct_path):
+                with open(_ct_path, "rb") as _f:
+                    _ct = _pkl.load(_f)
+                _DIR_MAP = {"put": "DOUBLE_TOP", "call": "DOUBLE_BOTTOM"}
+                _agg = {}
+                for (asset, direction, *_rest), bucket in _ct.items():
+                    if asset == "_ALL_":
+                        continue
+                    _dt = _DIR_MAP.get(direction)
+                    if not _dt:
+                        continue
+                    _arm_key = f"{asset}_{_dt}_double_touch"
+                    if _arm_key not in _agg:
+                        _agg[_arm_key] = {"wins": 0, "total": 0}
+                    _agg[_arm_key]["wins"] += bucket.get("wins", 0)
+                    _agg[_arm_key]["total"] += bucket.get("total", 0)
+                # Cap cada arm em 30 amostras (mesmo limite do ai_predict_hs)
+                _seeded = {}
+                for _k, _v in _agg.items():
+                    _t = _v["total"]
+                    _w = _v["wins"]
+                    if _t > 30:
+                        _scale = 30.0 / _t
+                        _w = round(_w * _scale)
+                        _t = 30
+                    _seeded[_k] = {"wins": _w, "total": _t,
+                                   "live_wins": 0, "live_total": 0, "recent": []}
+                hs_stats["arms"] = _seeded
+                log.info(paint(f"🌱 Bayes seeded: {len(_seeded)} arms do context_table", C.G))
+        except Exception as _seed_ex:
+            log.warning(f"⚠️ Seed Bayes falhou: {_seed_ex}")
+
     if _n_total > 0:
         log.info(paint("💾 IA carregada do disco! Memória DT OK", C.G))
     else:
@@ -5839,22 +5988,30 @@ def _main_inner():
     log.info(paint("✅ Modo 100% NN — modelos pré-treinados (sem retreino)", C.G))
 
     log.info("=" * 60)
-    log.info(paint(f"🚀 WS TRADER — Double Touch / Multi-Asset ({_BROKER_LABEL})", C.G))
+    log.info(paint(f"🚀 WS TRADER — Continuation ML / Multi-Asset ({_BROKER_LABEL})", C.G))
     log.info("=" * 60)
 
     # ── SELECIONAR MELHOR ATIVO DT (baseado nos entry-guard models) ──
     global _top_dt_assets
     _top_dt_assets = _pick_top_dt_assets(hs_stats, n_top=max(SCAN_NUM_ATIVOS, _ENTRY_GUARD_POOL_SIZE))
 
+<<<<<<< Updated upstream
     log.info(f"✅ Estratégia: SOMENTE Double Touch (Duplo Toque)")
+=======
+    log.info(f"✅ Estratégia: Continuation ML (Compressão + Breakout)")
+    log.info(f"✅ Modelo: XGBoost + LightGBM | WF={_continuation_ai.stats.get('walk_forward_wr', 0):.1f}%" if _continuation_ai.loaded else "")
+>>>>>>> Stashed changes
     log.info(f"✅ Pool ranqueado de ativos: {_top_dt_assets}")
     log.info(f"✅ Varredura simultânea de ativos: {SCAN_NUM_ATIVOS}")
     log.info(f"✅ Live scan candles: {LIVE_SCAN_N_M1}")
     log.info(f"✅ Corretora: {_BROKER_LABEL} ({BROKER_TYPE})")
     log.info(f"✅ Expiração: {EXP_FIXA} minuto(s)")
     log.info(f"✅ Sinais: Detecção LOCAL (direto da corretora, sem delay)")
+<<<<<<< Updated upstream
     log.info(f"✅ Modelos NN: pré-treinados offline (PKL imutáveis)")
     log.info(f"✅ Context Table: filtro estatístico de 78k trades")
+=======
+>>>>>>> Stashed changes
     log.info("=" * 60)
 
     # Saldo inicial
@@ -6070,12 +6227,11 @@ def _main_inner():
                 elif _new_streams > 0:
                     log.info(paint(f"  ✅ Streams atualizados: {len(_stream_subscribed)} ativos inscritos", C.G))
 
-            # ═══ SCAN DOUBLE TOUCH — no segundo :50 ═══
-            # Scan :50 → 10s para IA → entrada no :00 (CLOSE da vela = igual ao treino)
+            # ═══ SCAN CONTINUATION ML — no segundo :50 ═══
             wait_until_second(ANALYZE_AT_SECOND)
 
             log.info(paint(
-                f"\n🔍 Scan DT em {_target_ativo} ({len(_target_ativo) if isinstance(_target_ativo, list) else 1} ativos, segundo :{ANALYZE_AT_SECOND:02d})...",
+                f"\n🔍 Scan Continuation em {_target_ativo} ({len(_target_ativo) if isinstance(_target_ativo, list) else 1} ativos, segundo :{ANALYZE_AT_SECOND:02d})...",
                 C.B
             ))
             all_candidates, best_any = escolher_melhor_setup_local(
@@ -6086,12 +6242,12 @@ def _main_inner():
                 if best_any:
                     _, a, setup, _ = best_any
                     log.info(paint(
-                        f"  ⏸️ DT em formação: {a} | aguardando confirmação",
+                        f"  ⏸️ Nenhum sinal em {a} | aguardando próximo candle",
                         C.Y
                     ))
                 else:
                     _ativos_str = ", ".join(_target_ativo) if isinstance(_target_ativo, list) else _target_ativo
-                    log.info(paint(f"  ⏸️ Nenhum DT em {_ativos_str}. Próximo candle.", C.Y))
+                    log.info(paint(f"  ⏸️ Nenhum sinal em {_ativos_str}. Próximo candle.", C.Y))
                 s = seconds_to_next(TF_M1)
                 time.sleep(min(s + 1, 30))
                 continue
@@ -6140,6 +6296,151 @@ def _main_inner():
                         f"  ⚠️ CONTRA SINAL ADVISORY: {ativo} {direcao} — NN decide",
                         C.Y
                     ))
+
+                # ═══════════════════════════════════════════════════════
+                # CONTINUATION MODE — ML decide, sem guards DT
+                # ═══════════════════════════════════════════════════════
+                if setup.get("mode") == "continuation":
+                    _cont_signal = setup.get("continuation_signal", {})
+                    _cont_prob = float(_cont_signal.get("ml_prob", 0))
+                    _cont_dir = setup["dir"]
+
+                    log.info(paint(
+                        f"  🎯 CONTINUATION: {ativo} {_cont_dir} | ML={_cont_prob:.0%} | "
+                        f"XGB={_cont_signal.get('xgb_prob', 0):.2f} LGB={_cont_signal.get('lgb_prob', 0):.2f}",
+                        C.G
+                    ))
+
+                    # ═══ STREAK GUARD (mesma protecao do DT) ═══
+                    if _consecutive_losses >= 2 and _cont_prob < 0.70:
+                        log.info(paint(
+                            f"  🚫 STREAK GUARD: {ativo} {_cont_dir} | {_consecutive_losses} losses "
+                            f"→ ML={_cont_prob:.0%} < 70% — CANCELADO",
+                            C.R
+                        ))
+                        continue
+
+                    # Aguardar virada :00 (entrada no OPEN da proxima vela, igual ao treino)
+                    log.info(paint(
+                        f"  ⏱️ CONTINUATION: Aguardando virada :00 para entrada",
+                        C.G
+                    ))
+                    wait_candle_open()
+
+                    stake = calcular_stake(bx)
+                    _use_exp = int(setup.get("exp_candles", 2))
+                    if _use_exp < 1:
+                        _use_exp = EXP_FIXA
+
+                    _decision_id = f"{int(time.time() * 1000)}_{ativo}_{_cont_dir}_CONT_{random.randint(1000, 9999)}"
+                    _live_entry_price = float(setup.get("last_close", 0))
+                    try:
+                        _fresh_df = get_candles_df(bx, ativo, TF_M1, 60, min_len=50)
+                        if _fresh_df is not None and len(_fresh_df) >= 1:
+                            _live_entry_price = float(_fresh_df["close"].values[-1])
+                    except Exception:
+                        pass
+
+                    _decision_payload = {
+                        "decision_id": _decision_id,
+                        "ts": time.time(),
+                        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "ativo": ativo,
+                        "direcao": _cont_dir,
+                        "broker": _broker_suffix,
+                        "pat_type": "CONTINUATION",
+                        "mode": "continuation",
+                        "entry_price": round(_live_entry_price, 6),
+                        "stake": round(stake, 2),
+                        "exp_min": _use_exp,
+                        "resultado": None,
+                        "status": "entry",
+                        "ml_prob": round(_cont_prob, 4),
+                        "xgb_prob": round(float(_cont_signal.get("xgb_prob", 0)), 4),
+                        "lgb_prob": round(float(_cont_signal.get("lgb_prob", 0)), 4),
+                        "continuation_signal": {
+                            "impulse": _cont_signal.get("impulse"),
+                            "compression": _cont_signal.get("compression"),
+                            "breakout_idx": _cont_signal.get("breakout_idx"),
+                            "candles_ago": _cont_signal.get("candles_ago"),
+                        },
+                    }
+
+                    op = enviar_ordem(bx, ativo, _cont_dir, stake, exp=_use_exp)
+                    if not op:
+                        log.warning(paint(f"  ❌ Falha na ordem CONTINUATION: {ativo}", C.R))
+                        continue
+
+                    op_type, op_id = op
+                    _decision_payload["order_id"] = int(op_id) if op_id is not None else None
+                    _save_trade_decision(_decision_payload)
+                    _last_entry_key = f"{ativo}_{_cont_dir}_CONT"
+                    _last_trade_time = time.time()
+                    _save_last_entry_key(_last_entry_key)
+
+                    log.info(paint(
+                        f"  ✅ ENTRADA CONTINUATION: {ativo} {_cont_dir} @ {_live_entry_price:.6f} | "
+                        f"Stake={stake:.2f} | EXP={_use_exp}min | ML={_cont_prob:.0%}",
+                        C.G if _cont_dir == "CALL" else C.R
+                    ))
+                    print(
+                        f">>> IA: Entrada CONTINUATION {ativo} {_cont_dir} @{_live_entry_price:.6f} "
+                        f"stake={stake:.2f} ml={_cont_prob:.0%}",
+                        flush=True
+                    )
+
+                    # ═══ AGUARDAR RESULTADO ═══
+                    res = wait_result(bx, op_type, op_id)
+                    total_trades += 1
+
+                    if res > 0:
+                        total_wins += 1
+                        _live_status = "win"
+                        _consecutive_losses = 0
+                        log.info(paint(f"  ✅ WIN +{res:.2f}$", C.G))
+                        print(f">>> RESULTADO: WIN {ativo} {_cont_dir} +{res:.2f}", flush=True)
+                    elif res < 0:
+                        _live_status = "loss"
+                        _consecutive_losses += 1
+                        log.info(paint(f"  ❌ LOSS {res:.2f}$ (consecutivos: {_consecutive_losses})", C.R))
+                        print(f">>> RESULTADO: LOSS {ativo} {_cont_dir} {res:.2f}", flush=True)
+                    else:
+                        _live_status = "tie"
+                        log.info(paint(f"  ⚪ EMPATE", C.B))
+                        print(f">>> RESULTADO: EMPATE {ativo}", flush=True)
+
+                    _log_live_trade(ativo, _cont_dir, res, _live_entry_price, stake,
+                                    confidence=_cont_prob * 100, status=_live_status,
+                                    decision_id=_decision_id, order_id=op_id)
+                    _update_trade_decision_result(
+                        ativo, _cont_dir, res, _live_status,
+                        decision_id=_decision_id, order_id=op_id,
+                    )
+
+                    _trade_result_01 = 1 if res > 0 else 0
+                    _recent_trade_results.append(_trade_result_01)
+                    if len(_recent_trade_results) > 50:
+                        del _recent_trade_results[:-50]
+
+                    _ah_hour = datetime.now().hour
+                    _ah_key = f"{ativo}_{_ah_hour}"
+                    _asset_hour_cooldown[_ah_key] = _trade_result_01
+
+                    wr = (total_wins / max(1, total_trades)) * 100
+                    try:
+                        saldo_now = float(bx.get_balance())
+                        lucro = saldo_now - saldo_inicial
+                        log.info(paint(
+                            f"  📈 Sessão: {total_trades} trades | {total_wins}W | WR={wr:.1f}% | "
+                            f"Lucro: {'+' if lucro >= 0 else ''}{lucro:.2f}",
+                            C.G if lucro >= 0 else C.R
+                        ))
+                        print(f">>> IA: {total_trades} trades | WR={wr:.1f}% | {'+' if lucro >= 0 else ''}{lucro:.2f}", flush=True)
+                    except Exception:
+                        log.info(f"  📈 Sessão: {total_trades} trades | {total_wins}W | WR={wr:.1f}%")
+
+                    _candidate_traded = True
+                    break  # candidato operado — sair do loop
 
                 # ═══ ANÁLISE COMPLETA: IA + Geometria + Posição ═══
                 pat_data = setup.get("pattern", setup)
@@ -6655,6 +6956,19 @@ def _main_inner():
                 _is_early = setup.get("mode") == "early"
                 _is_dt = setup.get("mode") == "double_touch"
                 _candles_ago = pat_data.get("candles_ago", 99)
+
+                # ═══ SHADOW EARLY CHECK: não esperar :00 se shadow já diverge ═══
+                _shadow_lib_early = setup.get("shadow_pattern_lib", {})
+                if _shadow_lib_early.get("agreement") is False:
+                    log.info(paint(
+                        f"  🚫 SHADOW BLOCK (scan): {ativo} {direcao} | "
+                        f"biblioteca diverge → skip (sem esperar :00)",
+                        C.R
+                    ))
+                    print(f">>> IA: shadow bloqueou {ativo} {direcao} — "
+                          f"biblioteca diverge", flush=True)
+                    continue
+
                 _graph_scan_ts = float(pat_data.get("scan_ts", 0.0) or 0.0)
                 _graph_signal_age_sec = max(0.0, time.time() - _graph_scan_ts) if _graph_scan_ts > 0 else None
                 _mode_label = "EARLY" if _is_early else ("DOUBLE_TOUCH" if _is_dt else "CLASSIC")
@@ -6718,12 +7032,23 @@ def _main_inner():
                                 _nn_p3 = _nn2_p3
                                 _nn_source = "recheck"
                                 # Re-avaliar aprovação com novo score
+<<<<<<< Updated upstream
                                 # Usar o MAIOR entre _NN_MIN_PROB e o threshold da context table
+=======
+                                # Usar o MAIOR entre _NN_MIN_PROB, context table e piso absoluto
+>>>>>>> Stashed changes
                                 _recheck_min = _NN_MIN_PROB
                                 _recheck_ctx_label = ""
                                 if _ctx_nn_threshold is not None and _ctx_nn_threshold / 100.0 > _recheck_min:
                                     _recheck_min = _ctx_nn_threshold / 100.0
                                     _recheck_ctx_label = f" (CTX exige ≥{_ctx_nn_threshold:.0f}%)"
+<<<<<<< Updated upstream
+=======
+                                # Piso absoluto: nenhuma entrada com NN < 75% no RE-CHECK
+                                if _recheck_min < DT_RECHECK_ABS_FLOOR:
+                                    _recheck_min = DT_RECHECK_ABS_FLOOR
+                                    _recheck_ctx_label += f" | piso={DT_RECHECK_ABS_FLOOR:.0%}"
+>>>>>>> Stashed changes
                                 if _nn2_s >= _recheck_min:
                                     _nn_approved = True
                                     log.info(paint(
@@ -6785,7 +7110,24 @@ def _main_inner():
                     print(f">>> IA: shadow bloqueou {ativo} {direcao} — "
                           f"biblioteca diverge", flush=True)
                     continue
+<<<<<<< Updated upstream
                 elif _study_bad:
+=======
+
+                # ═══ BAYES GATE: prob deve ser > moeda (>=60%) ═══
+                _bayes_p = float(ia_prob or 0.0)
+                if _bayes_p < DT_BAYES_FINAL_MIN:
+                    log.info(paint(
+                        f"  🚫 BAYES BLOCK: {ativo} {direcao} | "
+                        f"prob={_bayes_p:.0%} < {DT_BAYES_FINAL_MIN:.0%} — sem convicção",
+                        C.R
+                    ))
+                    print(f">>> IA: Bayes bloqueou {ativo} {direcao} — "
+                          f"prob={_bayes_p:.0%}", flush=True)
+                    continue
+
+                if _study_bad:
+>>>>>>> Stashed changes
                     _STUDY_NN_MIN = 0.92
                     if _session_threshold < _STUDY_NN_MIN:
                         _session_threshold = _STUDY_NN_MIN
