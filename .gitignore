@@ -15,3 +15,7 @@
 # Modelos NN treinados (usados para download automatico)
 !models/
 !models/**
+
+# CSVs de treino (87K velas por ativo)
+!candles_100k/
+!candles_100k/**

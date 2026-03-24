@@ -119,15 +119,14 @@ else:  # bullex (padrão)
 from ws_reversal_ai import (
     ReversalAI,
     FEATURE_NAMES,
-    MIN_SAMPLES_ML,
     get_ws_user_data_dir,
     get_reversal_model_persist_path,
     find_existing_reversal_model_path,
 )
 from ws_adaptive_brain import extract_features
 
-# ═══ IA 4 — GUARD GENERATIVA (IA WS Generativa) ═══
-from ws_generative_guard import gpt_guard_check
+# ═══ IA 4 — FILTRO DE CONTEXTO (tabela pré-computada do backtest) ═══
+from ws_context_filter import context_lookup, format_context_log
 
 try:
     from tradingpatterns import tradingpatterns as _shadow_patterns_lib
@@ -230,10 +229,10 @@ _GUARDS_DISABLED = True  # Guards 1-5 OFF — as 3 IAs (89.7% acc) já sabem fil
 _DECISION_ENGINE_ENABLED = False  # Desativado: regime/quality/risk são features f26-f39 no NN
 _recent_trade_results = []        # mantido para log/estatísticas
 _consecutive_losses = 0           # contador de losses consecutivos para adaptar threshold
+_asset_hour_cooldown = {}         # {ativo_hora} → 0/1 último resultado (cooldown inteligente)
 
 # ── Reversal AI config ──
 CONFIDENCE_MIN = float(os.getenv('WS_CONF_MIN', "40.0"))       # Confiança mínima da IA para entrar
-RETRAIN_INTERVAL_MIN = int(os.getenv("WS_RETRAIN_MIN", "5"))     # Retreinar a cada 5 minutos
 ANALYZE_AT_SECOND = int(os.getenv("WS_ANALYZE_SEC", "30"))      # Analisar no segundo :30 e, se liberar, entrar direto na virada :00
 COOLDOWN_AFTER_TRADE = int(os.getenv("WS_COOLDOWN", "180"))      # Cooldown global após cada trade (3 min)
 MIN_WR_ATIVO = float(os.getenv("WS_MIN_WR", "80.0"))            # WR mínimo para selecionar ativo
@@ -241,8 +240,7 @@ MAX_ENTRY_DELAY_SEC = float(os.getenv("WS_MAX_ENTRY_DELAY_SEC", "6.0"))
 MAX_LIVE_SIGNAL_CANDLES = max(1, int(os.getenv("WS_MAX_LIVE_SIGNAL_CANDLES", "1")))
 DT_LATE_PROGRESS_PCT = float(os.getenv("WS_DT_LATE_PROGRESS_PCT", "60.0"))
 DT_LATE_MIN_TARGET_ATR = float(os.getenv("WS_DT_LATE_MIN_TARGET_ATR", "3.5"))
-ENABLE_GPT_DT_ADVISORY = False   # IA generativa removida
-ENABLE_GPT_DT_COTRADER = False   # IA generativa removida
+ENABLE_CONTEXT_FILTER = True    # Filtro de contexto baseado em backtest
 DT_ENTRY_AT_TURN = (os.getenv("WS_DT_ENTRY_AT_TURN", "1").strip() == "1")
 DT_GRAPH_SIGNAL_ENTRY = (os.getenv("WS_DT_GRAPH_SIGNAL_ENTRY", "1").strip() == "1")
 DT_GRAPH_NN_ONLY_TEST = (os.getenv("WS_DT_GRAPH_NN_ONLY_TEST", "1").strip() == "1")
@@ -312,8 +310,6 @@ AI_MIN_SAMPLES = 5
 AI_CONF_MIN = 0.3
 AI_MIN_PROB = 0.55  # CORRIGIDO: era 0.40 (permitia entradas com 40% prob = moeda)
 DT_BAYES_FINAL_MIN = max(0.75, min(0.95, float(os.getenv("WS_DT_BAYES_FINAL_MIN", "0.75"))))
-GPT_COTRADER_BLOCK_CONF = max(50.0, min(100.0, float(os.getenv("WS_GPT_COTRADER_BLOCK_CONF", "75.0"))))
-GPT_COTRADER_STRONG_BAYES = max(DT_BAYES_FINAL_MIN, min(0.99, float(os.getenv("WS_GPT_COTRADER_STRONG_BAYES", "0.86"))))
 HORARIO_INICIO_MIN = 90    # 1h30 da manhã (1*60 + 30)
 HORARIO_FIM_MIN    = 1080  # 18h00 (18*60)
 MAX_DIST_OMBRO_ATR = 0.5  # CORRIGIDO: era 1.0 (muito longe do ombro D = entrada ruim)
@@ -445,7 +441,7 @@ def _snapshot_pattern_point(point: Optional[dict], df_index) -> Optional[dict]:
     idx = snap["idx"]
     if 0 <= idx < len(df_index):
         try:
-            snap["ts"] = int(df_index[idx].timestamp())
+            snap["ts"] = int(df_index[idx].value // 10**9)
         except Exception:
             snap["ts"] = 0
     return snap
@@ -489,7 +485,7 @@ def _serialize_dashboard_pattern(ativo: str, pat: dict, df, ia_prob: float,
     entry_idx = snap["entry_idx"]
     if 0 <= entry_idx < len(df_index):
         try:
-            snap["entry_ts"] = int(df_index[entry_idx].timestamp())
+            snap["entry_ts"] = int(df_index[entry_idx].value // 10**9)
         except Exception:
             snap["entry_ts"] = 0
 
@@ -543,12 +539,12 @@ def _serialize_dashboard_pattern(ativo: str, pat: dict, df, ia_prob: float,
         }
         if 0 <= bt["entry_idx"] < len(df_index):
             try:
-                bt["entry_ts"] = int(df_index[bt["entry_idx"]].timestamp())
+                bt["entry_ts"] = int(df_index[bt["entry_idx"]].value // 10**9)
             except Exception:
                 bt["entry_ts"] = 0
         if 0 <= bt["exit_idx"] < len(df_index):
             try:
-                bt["exit_ts"] = int(df_index[bt["exit_idx"]].timestamp())
+                bt["exit_ts"] = int(df_index[bt["exit_idx"]].value // 10**9)
             except Exception:
                 bt["exit_ts"] = 0
         snap["backtest"] = bt
@@ -597,15 +593,8 @@ def _build_ai_cotrader_consensus(mode: str,
     if shadow_available and shadow_pattern_lib.get("agreement") is not None:
         shadow_agreement = bool(shadow_pattern_lib.get("agreement"))
 
-    gpt_blocks = bool(
-        mode_name == "double_touch"
-        and ENABLE_GPT_DT_COTRADER
-        and gpt_available
-        and gpt_ok is False
-        and (gpt_conf or 0.0) >= GPT_COTRADER_BLOCK_CONF
-        and bayes_prob < GPT_COTRADER_STRONG_BAYES
-    )
-    final_ok = bool(bayes_ok and not gpt_blocks)
+    gpt_blocks = False  # Context filter bloqueia diretamente via _all_guards_ok
+    final_ok = bool(bayes_ok)
 
     if not bayes_ok:
         reason = f"Bayes abaixo do piso ({bayes_prob:.0%} < {bayes_min:.0%})"
@@ -738,7 +727,7 @@ def _build_shadow_dt_library_comparison(pat: dict, df: Optional[pd.DataFrame], a
             else:
                 continue
             try:
-                ts_val = int(df.index[bar_idx].timestamp())
+                ts_val = int(df.index[bar_idx].value // 10**9)
             except Exception:
                 ts_val = 0
             candidates.append({
@@ -815,6 +804,43 @@ def _get_session_params(guard_df=None, atr_val=0.0):
         "exp_minutes": 2,
         "cooldown_sec": 2 * 60,
     }
+
+
+def _compute_smart_exp(C, H, L, n, atr_val, nn_score, pat_data):
+    """Calcula duração ideal (1 ou 2 min) com base na velocidade do preço.
+    Se o movimento médio por candle M1 supera 30% do ATR E a NN está ≥85%,
+    1 minuto é suficiente → mais rápido, menor exposição ao risco.
+    Caso contrário, 2 minutos (padrão, alinhado com treino).
+    """
+    try:
+        if nn_score is None or nn_score < 0.92:
+            return EXP_FIXA  # 2 min (padrão — NN não é confiante o bastante para 1min)
+
+        look = min(10, n - 1)
+        if look < 3:
+            return EXP_FIXA
+
+        moves = []
+        for k in range(n - look, n):
+            moves.append(abs(float(C[k]) - float(C[k - 1])))
+        avg_move = float(np.mean(moves)) if moves else 0
+
+        if atr_val <= 0:
+            return EXP_FIXA
+
+        # Profundidade do padrão → impulso esperado
+        depth = float((pat_data or {}).get("depth", 0))
+        depth_ratio = depth / atr_val
+
+        impulse = 0.3 + depth_ratio * 0.15 + nn_score * 0.4
+        expected_1m = avg_move * min(impulse, 1.2)
+        min_move = atr_val * 0.30
+
+        if expected_1m >= min_move:
+            return 1  # 1 minuto basta
+        return EXP_FIXA  # 2 min (padrão)
+    except Exception:
+        return EXP_FIXA
 
 
 def _dt_geometry_scan_filter(geo: Optional[dict], geom_score: Optional[float]) -> dict:
@@ -3223,29 +3249,9 @@ def _safe_save_json(filepath, data):
 
 # ═══════════════════════════════════════════════════════════════
 # CONTROLE DE TREINO — MEMÓRIA PERMANENTE (NUNCA RESETA)
-# A IA ACUMULA conhecimento para sempre. Cada vez que liga,
-# carrega do disco e treina APENAS ativos que ainda não têm dados.
+# Stats acumulam WR por ativo para feature f11 (arm_wr).
+# Modelos NN são PRÉ-TREINADOS offline (PKL imutáveis).
 # ═══════════════════════════════════════════════════════════════
-_TRAIN_CONTROL_FILE = os.path.join(os.path.expanduser("~"), ".wstrader", "hs_bot_train_control.json")
-
-
-def _need_retrain_bot():
-    """Retorna sempre False — IA NUNCA reseta. Memória permanente."""
-    return False
-
-
-def _save_retrain_control():
-    """Salva timestamp do último treino (apenas informativo)."""
-    try:
-        os.makedirs(os.path.dirname(_TRAIN_CONTROL_FILE), exist_ok=True)
-        now = datetime.now()
-        iso = now.isocalendar()
-        with open(_TRAIN_CONTROL_FILE, "w") as f:
-            json.dump({"iso_year": iso[0], "iso_week": iso[1], "date": now.isoformat(),
-                       "mode": "permanent_memory"}, f)
-        log.info(paint(f"[TREINO] Controle salvo: {now.strftime('%d/%m/%Y %H:%M')}", C.G))
-    except Exception:
-        pass
 
 
 def _get_ia_level(n_total: int) -> tuple:
@@ -3322,7 +3328,7 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
     patterns = []
     tol = atr * 0.35
     min_spacing = 12
-    max_spacing = 60
+    max_spacing = 45
     _train_mode = bool(training or max_candles_ago >= 9999)
     min_depth = atr * 1.5  # alinhado entre treino e live (depth não afeta WR)
     min_candle_range = atr * 0.20
@@ -3924,7 +3930,6 @@ def _train_ia_from_history(bx, hs_stats: dict) -> dict:
 
     # Salvar no disco — PERMANENTE
     _safe_save_json(AI_STATS_FILE, hs_stats)
-    _save_retrain_control()
 
     return hs_stats
 
@@ -4406,45 +4411,44 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                 "stage": "scan",
             }
             if mode == "double_touch":
-                if _nn_pre_pred is not None and bool(_nn_pre_pred.get("approved", False)) and (ENABLE_GPT_DT_COTRADER or ENABLE_GPT_DT_ADVISORY):
+                if _nn_pre_pred is not None and bool(_nn_pre_pred.get("approved", False)) and ENABLE_CONTEXT_FILTER:
                     try:
-                        _gpt_scan_raw = gpt_guard_check(
-                            ativo=ativo,
-                            direcao=direction,
-                            pat_data=pat,
-                            H=H,
-                            L=L,
-                            C=C_arr,
-                            O=O,
-                            n=n,
-                            atr_val=atr,
-                            nn_pred=_nn_pre_pred,
-                            cur_price=float(C_arr[-1]) if len(C_arr) else 0.0,
+                        # ── CONTEXT TABLE: consultar WR histórico do backtest ──
+                        _ctx_geo = _extract_geometry(pat, atr)
+                        import datetime as _dt_mod
+                        _ctx_hour = _dt_mod.datetime.utcnow().hour
+                        _ctx_result = context_lookup(
+                            ativo=ativo, direcao=direction,
+                            hour=_ctx_hour,
+                            depth_ratio=_ctx_geo["depth_ratio"] if _ctx_geo else 0,
+                            symmetry=_ctx_geo["symmetry"] if _ctx_geo else 0,
                         )
-                        _gpt_scan_is_authoritative = str(_gpt_scan_raw.get("source", "")).lower() in {"gpt", "cache"}
+                        _ctx_log = format_context_log(_ctx_result)
+                        log.info(paint(f"  {_ctx_log}", C.B))
+
                         _gpt_scan_result = {
-                            "available": _gpt_scan_is_authoritative,
-                            "approved": _gpt_scan_raw.get("approved"),
-                            "confidence": _gpt_scan_raw.get("confidence"),
-                            "reason": _gpt_scan_raw.get("reason"),
-                            "source": _gpt_scan_raw.get("source"),
-                            "exp_minutes": _gpt_scan_raw.get("exp_minutes"),
-                            "latency_ms": _gpt_scan_raw.get("latency_ms"),
+                            "available": True,
+                            "approved": _ctx_result["action"] != "block",
+                            "confidence": _ctx_result["wr"],
+                            "reason": _ctx_result["reason"],
+                            "source": f"ctx_L{_ctx_result['level']}",
+                            "exp_minutes": None,
+                            "latency_ms": 0,
                             "stage": "scan",
                         }
-                    except Exception as _gpt_scan_err:
+                    except Exception as _ctx_scan_err:
                         _gpt_scan_result = {
                             "available": False,
                             "approved": None,
                             "confidence": None,
-                            "reason": f"erro no scan: {_gpt_scan_err}",
+                            "reason": f"erro context scan: {_ctx_scan_err}",
                             "source": None,
                             "exp_minutes": None,
                             "latency_ms": None,
                             "stage": "scan",
                         }
                         log.info(paint(
-                            f"  ⚠️ IA Gen. scan indisponivel: {ativo} {direction} | {_gpt_scan_err}",
+                            f"  ⚠️ Context scan erro: {ativo} {direction} | {_ctx_scan_err}",
                             C.Y
                         ))
                 elif _nn_pre_pred is None:
@@ -4452,7 +4456,7 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                 elif not bool(_nn_pre_pred.get("approved", False)):
                     _gpt_scan_result["reason"] = "NN do scan nao aprovou"
                 else:
-                    _gpt_scan_result["reason"] = "IA generativa desativada no DT"
+                    _gpt_scan_result["reason"] = "Context filter desativado"
 
             _ai_consensus = _build_ai_cotrader_consensus(
                 mode,
@@ -5179,6 +5183,8 @@ def get_realtime_entry_snapshot(bx: BrokerAPI, ativo: str, timeframe: int,
     return current_price, closed_df
 
 
+
+
 def _estimate_dt_nn_score(ativo: str, pat: dict, df: Optional[pd.DataFrame], atr_val: float,
                           hs_stats: dict, reversal_ai_map: Optional[dict] = None,
                           return_reason: bool = False):
@@ -5209,7 +5215,7 @@ def _estimate_dt_nn_score(ativo: str, pat: dict, df: Optional[pd.DataFrame], atr
         _rs_idx = max(0, min(_rs_idx, _n - 1))
 
         _win_start = max(0, _rs_idx - _dt_context_candles)
-        _win_end = min(_n, _rs_idx + 1)
+        _win_end = min(_n, _rs_idx + 2)  # Inclui até 1 vela pós-RS para features RE-CHECK
         _H_win = _H[_win_start:_win_end]
         _L_win = _L[_win_start:_win_end]
         _C_win = _C[_win_start:_win_end]
@@ -5829,41 +5835,16 @@ def _main_inner():
     else:
         log.info(paint("🌱 Primeira execução da IA...", C.Y))
 
-    # ── PASSO 1: Carregar base pré-treinada (local ou GitHub) ──
-    # Se disponível, PULA o treino local (já vem treinada do desenvolvedor)
-    hs_stats = _load_or_download_training_base(hs_stats)
-    _n_after_base = hs_stats.get("meta", {}).get("total", 0)
-
-    # ── PASSO 2: Treino local com CSVs (87K velas por ativo) ──
-    # SEMPRE treina se CSVs existem e ainda não foram processados
-    _CSV_DIR_CHECK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_5000")
-    _csvs_exist = os.path.isdir(_CSV_DIR_CHECK) and len(os.listdir(_CSV_DIR_CHECK)) > 0
-    _trained_csv = hs_stats.get("meta", {}).get("trained_with_csv", False)
-    _has_base = hs_stats.get("meta", {}).get("deep_train_version", "") != ""
-
-    if _csvs_exist and not _trained_csv:
-        log.info(paint("🏋️ CSVs de treino profundo detectados — treinando IA com todos os ativos...", C.B))
-        hs_stats = _train_ia_from_history(bx, hs_stats)
-    elif _has_base:
-        log.info(paint(
-            f"✅ Base pré-treinada OK! PULANDO treino local",
-            C.G
-        ))
-    else:
-        log.info(paint("🏋️ Sem base pré-treinada — treinando IA localmente...", C.B))
-        hs_stats = _train_ia_from_history(bx, hs_stats)
+    # ── 100% NN: Modelos pré-treinados (PKL) + Context Table ──
+    log.info(paint("✅ Modo 100% NN — modelos pré-treinados (sem retreino)", C.G))
 
     log.info("=" * 60)
     log.info(paint(f"🚀 WS TRADER — Double Touch / Multi-Asset ({_BROKER_LABEL})", C.G))
     log.info("=" * 60)
 
-    # ── SELECIONAR MELHOR ATIVO DT (baseado no treino + benchmark) ──
+    # ── SELECIONAR MELHOR ATIVO DT (baseado nos entry-guard models) ──
     global _top_dt_assets
     _top_dt_assets = _pick_top_dt_assets(hs_stats, n_top=max(SCAN_NUM_ATIVOS, _ENTRY_GUARD_POOL_SIZE))
-
-    # ── Carregar modelo NN per-ativo (treinado offline) ──
-    for _asset_load in _top_dt_assets:
-        _ensure_reversal_model_loaded(reversal_ai_map, _asset_load)
 
     log.info(f"✅ Estratégia: SOMENTE Double Touch (Duplo Toque)")
     log.info(f"✅ Pool ranqueado de ativos: {_top_dt_assets}")
@@ -5872,8 +5853,8 @@ def _main_inner():
     log.info(f"✅ Corretora: {_BROKER_LABEL} ({BROKER_TYPE})")
     log.info(f"✅ Expiração: {EXP_FIXA} minuto(s)")
     log.info(f"✅ Sinais: Detecção LOCAL (direto da corretora, sem delay)")
-    log.info(f"✅ Memória: PERMANENTE — IA nunca perde conhecimento")
-    log.info(f"✅ IA: ATIVA — acumula padrões DT a cada execução")
+    log.info(f"✅ Modelos NN: pré-treinados offline (PKL imutáveis)")
+    log.info(f"✅ Context Table: filtro estatístico de 78k trades")
     log.info("=" * 60)
 
     # Saldo inicial
@@ -5894,9 +5875,11 @@ def _main_inner():
         saldo_inicial = 1000.0
 
     global _consecutive_losses
+    global _asset_hour_cooldown
     total_trades = 0
     total_wins = 0
     _consecutive_losses = 0
+    _asset_hour_cooldown = {}
     _current_day = _date_cls.today()
 
     # ── Restaurar contadores W/L do dia (sobrevive a reinícios) ──
@@ -6299,6 +6282,7 @@ def _main_inner():
                     _nn_pred = None
                     _nn_score = None
                     _nn_source = None
+                    _ctx_nn_threshold = None  # threshold da context table (preenchido adiante)
                     if _all_guards_ok and _is_dt_mode and setup.get("nn_pre_pred") is not None:
                         _nn_pred = setup.get("nn_pre_pred")
                         _nn_score = float(setup.get("nn_pre_score") or _nn_pred.get("nn_score", _nn_pred.get("prob_win", 0)) or 0)
@@ -6435,71 +6419,56 @@ def _main_inner():
                             C.Y
                         ))
 
-                    # ═══ IA 4 — GUARD GENERATIVA (IA WS Generativa) ═══
-                    # Camada consultiva: analisa 30 velas + geometria + scores NN
-                    # DT: Bayes segura o piso final e a generativa atua como co-trader.
-                    if _nn_approved and _guard_df is not None and (not _is_dt_mode or ENABLE_GPT_DT_COTRADER or ENABLE_GPT_DT_ADVISORY):
+                    # ═══ IA 4 — FILTRO DE CONTEXTO (tabela backtest) ═══
+                    # Consulta WR histórico do backtest por geometria/ativo/hora
+                    if _nn_approved and _guard_df is not None and ENABLE_CONTEXT_FILTER:
                         try:
-                            _gpt_live_result = gpt_guard_check(
-                                ativo=ativo,
-                                direcao=direcao,
-                                pat_data=pat_data,
-                                H=_g_H, L=_g_L, C=_g_C, O=_g_O, n=_g_n,
-                                atr_val=atr_val,
-                                nn_pred=_nn_pred,
-                                cur_price=float(_cur) if _cur else 0,
+                            _ctx_live_geo = _extract_geometry(pat_data, atr_val)
+                            import datetime as _dt_mod
+                            _ctx_live_hour = _dt_mod.datetime.utcnow().hour
+                            _ctx_live = context_lookup(
+                                ativo=ativo, direcao=direcao,
+                                hour=_ctx_live_hour,
+                                depth_ratio=_ctx_live_geo["depth_ratio"] if _ctx_live_geo else 0,
+                                symmetry=_ctx_live_geo["symmetry"] if _ctx_live_geo else 0,
                             )
-                            _gpt_is_authoritative = str(_gpt_live_result.get("source", "")).lower() in {"gpt", "cache"}
+                            _ctx_live_log = format_context_log(_ctx_live)
+                            log.info(paint(f"  {_ctx_live_log}", C.B))
+
+                            # Salvar nn_threshold da context table para uso no RE-CHECK
+                            _ctx_nn_threshold = _ctx_live.get("nn_threshold")
+
+                            if _ctx_live["action"] == "block":
+                                _guard_block_reason = _ctx_live["reason"]
+                                _all_guards_ok = False
+                                log.info(paint(
+                                    f"  ⛔ Context BLOQUEOU: {_ctx_live['reason']}",
+                                    C.R
+                                ))
+
                             _gpt_result_payload = {
-                                "available": _gpt_is_authoritative,
-                                "approved": _gpt_live_result.get("approved"),
-                                "confidence": _gpt_live_result.get("confidence"),
-                                "reason": _gpt_live_result.get("reason"),
-                                "source": _gpt_live_result.get("source"),
-                                "exp_minutes": _gpt_live_result.get("exp_minutes"),
-                                "latency_ms": _gpt_live_result.get("latency_ms"),
+                                "available": True,
+                                "approved": _ctx_live["action"] != "block",
+                                "confidence": _ctx_live["wr"],
+                                "reason": _ctx_live["reason"],
+                                "source": f"ctx_L{_ctx_live['level']}",
+                                "exp_minutes": None,
+                                "latency_ms": 0,
                                 "stage": "live",
                             }
                             _gpt_approved = _gpt_result_payload["approved"]
-                            _gpt_conf = _gpt_result_payload["confidence"]
-                            _gpt_reason = _gpt_result_payload["reason"]
-                            _gpt_source = _gpt_result_payload["source"]
-                            _gpt_ms = _gpt_result_payload["latency_ms"]
-
-                            _gpt_exp = _gpt_result_payload.get("exp_minutes", _smart_exp)
-                            if _gpt_result_payload.get("available") and _gpt_approved:
-                                _smart_exp = _gpt_exp
-                                log.info(paint(
-                                    f"  ✅ IA Gen. APROVOU: conf={_gpt_conf}% | EXP={_gpt_exp}min | "
-                                    f"{_gpt_reason} ({_gpt_source}, {_gpt_ms}ms)",
-                                    C.G
-                                ))
-                            elif _gpt_result_payload.get("available"):
-                                # ADVISORY: apenas loga, NÃO bloqueia — NN já aprovou
-                                log.info(paint(
-                                    f"  ⚠️ IA Gen. discorda: conf={_gpt_conf}% | "
-                                    f"{_gpt_reason} ({_gpt_source}, {_gpt_ms}ms) "
-                                    f"— ENTRADA MANTIDA (NN={_fmt_pct(_nn_score)})",
-                                    C.Y
-                                ))
-                                print(
-                                    f">>> IA Gen. discorda {ativo} {direcao}: "
-                                    f"{_gpt_reason} — ENTRADA MANTIDA (NN aprovado)",
-                                    flush=True
-                                )
-                            else:
-                                log.info(paint(
-                                    f"  ⚪ IA Gen. indisponivel: {_gpt_reason} ({_gpt_source}, {_gpt_ms}ms) — seguindo sem confirmacao generativa",
-                                    C.B
-                                ))
-                        except Exception as _gpt_err:
+                            _gpt_conf = _ctx_live["wr"]
+                            _gpt_reason = _ctx_live["reason"]
+                            _gpt_source = f"ctx_L{_ctx_live['level']}"
+                            _gpt_ms = 0
+                        except Exception as _ctx_err:
                             _gpt_result_payload = {
                                 "available": False,
                                 "approved": None,
                                 "confidence": None,
-                                "reason": f"erro live: {_gpt_err}",
+                                "reason": f"erro context live: {_ctx_err}",
                                 "source": None,
-                                "exp_minutes": _gpt_exp,
+                                "exp_minutes": None,
                                 "latency_ms": None,
                                 "stage": "live",
                             }
@@ -6509,12 +6478,12 @@ def _main_inner():
                             _gpt_source = None
                             _gpt_ms = None
                             log.warning(paint(
-                                f"  ⚠️ IA Gen. erro: {_gpt_err} — mantendo decisão NN",
+                                f"  ⚠️ Context filter erro: {_ctx_err} — mantendo decisão NN",
                                 C.Y
                             ))
                     elif _nn_approved and _guard_df is not None and _is_dt_mode:
                         log.info(paint(
-                            "  ⚡ IA Gen. pulada no DT por configuracao",
+                            "  ⚡ Context filter desativado no DT",
                             C.B
                         ))
 
@@ -6694,20 +6663,14 @@ def _main_inner():
                         f" | latencia_scan={_graph_signal_age_sec:.2f}s"
                         if _graph_signal_age_sec is not None else ""
                     )
-                    # ═══ FIX TIMING: treino usa C[entry_idx] = CLOSE da vela.
-                    # candles_ago=0 → vela ainda não fechou → AGUARDAR :00
-                    # candles_ago>=1 → vela já fechou → entrar direto.
-                    if _candles_ago == 0:
-                        log.info(paint(
-                            f"  ⏱️ {_mode_label} MODE: candles_ago=0 → aguardando virada :00 (= C[entry_idx] do treino){_latency_suffix}",
-                            C.Y
-                        ))
-                        wait_candle_open()
-                    else:
-                        log.info(paint(
-                            f"  ⚡ {_mode_label} MODE: candles_ago={_candles_ago} → vela fechada, entrada imediata{_latency_suffix}",
-                            C.G
-                        ))
+                    # ═══ FIX TIMING: SEMPRE entrar no :00 (abertura da vela).
+                    # O treino usa CLOSE da vela → entrada no OPEN da próxima.
+                    # Entrar no meio do minuto (:33) desfasa o timing real.
+                    log.info(paint(
+                        f"  ⏱️ {_mode_label} MODE: candles_ago={_candles_ago} → aguardando virada :00{_latency_suffix}",
+                        C.Y
+                    ))
+                    wait_candle_open()
                 else:
                     log.info(paint(
                         f"  ⏱️ {_mode_label} MODE: Aguardando virada :00 para entrada "
@@ -6755,16 +6718,22 @@ def _main_inner():
                                 _nn_p3 = _nn2_p3
                                 _nn_source = "recheck"
                                 # Re-avaliar aprovação com novo score
-                                if _nn2_s >= _NN_MIN_PROB:
+                                # Usar o MAIOR entre _NN_MIN_PROB e o threshold da context table
+                                _recheck_min = _NN_MIN_PROB
+                                _recheck_ctx_label = ""
+                                if _ctx_nn_threshold is not None and _ctx_nn_threshold / 100.0 > _recheck_min:
+                                    _recheck_min = _ctx_nn_threshold / 100.0
+                                    _recheck_ctx_label = f" (CTX exige ≥{_ctx_nn_threshold:.0f}%)"
+                                if _nn2_s >= _recheck_min:
                                     _nn_approved = True
                                     log.info(paint(
-                                        f"  ✅ NN RE-CHECK APROVADO: {_nn2_s:.0%} >= {_NN_MIN_PROB:.0%}",
+                                        f"  ✅ NN RE-CHECK APROVADO: {_nn2_s:.0%} >= {_recheck_min:.0%}{_recheck_ctx_label}",
                                         C.G
                                     ))
                                 else:
                                     _nn_approved = False
                                     log.info(paint(
-                                        f"  🚫 NN RE-CHECK BLOQUEOU: {_nn2_s:.0%} < {_NN_MIN_PROB:.0%}",
+                                        f"  🚫 NN RE-CHECK BLOQUEOU: {_nn2_s:.0%} < {_recheck_min:.0%}{_recheck_ctx_label}",
                                         C.R
                                     ))
                                 # Atualizar preço atual com dado fresco
@@ -6777,13 +6746,68 @@ def _main_inner():
                     except Exception as _recheck_ex:
                         log.debug(f"  NN RE-CHECK erro: {_recheck_ex}")
 
-                # ═══ INVERSÃO INTELIGENTE substitui adaptação de sessão ═══
-                # (a lógica de inversão por faixa de NN decide tudo)
+                # ═══ THRESHOLD FINAL: maior entre session e context table ═══
                 _session_threshold = _NN_MIN_PROB
+                if _ctx_nn_threshold is not None and _ctx_nn_threshold / 100.0 > _session_threshold:
+                    _session_threshold = _ctx_nn_threshold / 100.0
+
+                # ═══ ASSET-HOUR COOLDOWN: mesmo ativo+hora teve LOSS → exigir NN≥92% ═══
+                # Dados de 78K trades: WR cai de 89.9% → 61.4% quando repete ativo+hora após LOSS
+                _COOLDOWN_NN_MIN = 0.92
+                _ah_check_hour = datetime.now().hour
+                _ah_check_key = f"{ativo}_{_ah_check_hour}"
+                if _asset_hour_cooldown.get(_ah_check_key) == 0:  # último resultado = LOSS
+                    if _session_threshold < _COOLDOWN_NN_MIN:
+                        _session_threshold = _COOLDOWN_NN_MIN
+                    log.info(paint(
+                        f"  🔴 COOLDOWN: {ativo} teve LOSS nesta hora — NN mín={_COOLDOWN_NN_MIN:.0%}",
+                        C.Y
+                    ))
+
+                # ═══ STUDY + SHADOW FILTER ═══
+                # Backtest: L=4/W=1 → WR=82.3%, L=3/W=1 → WR=86.9%
+                # Shadow divergente = biblioteca detectou padrão na direção OPOSTA → BLOQUEIA
+                # Study bad isolado → elevar threshold
+                _study_prof = setup.get("win_geometry_alignment", {}).get("study_profile", {})
+                _loss_h = int(_study_prof.get("negative_hits", 0) or 0)
+                _win_h = int(_study_prof.get("positive_hits", 0) or 0)
+                _shadow_lib = setup.get("shadow_pattern_lib", {})
+                _shadow_agree = _shadow_lib.get("agreement")  # True/False/None
+                _study_bad = _loss_h >= 3 and _loss_h >= 3 * max(_win_h, 1)
+                _shadow_bad = _shadow_agree is False  # explicitamente False
+
+                if _shadow_bad:
+                    log.info(paint(
+                        f"  🚫 SHADOW BLOCK: {ativo} {direcao} | "
+                        f"biblioteca diverge → bloqueio total",
+                        C.R
+                    ))
+                    print(f">>> IA: shadow bloqueou {ativo} {direcao} — "
+                          f"biblioteca diverge", flush=True)
+                    continue
+                elif _study_bad:
+                    _STUDY_NN_MIN = 0.92
+                    if _session_threshold < _STUDY_NN_MIN:
+                        _session_threshold = _STUDY_NN_MIN
+                    log.info(paint(
+                        f"  🔴 STUDY DANGER: loss_hits={_loss_h} win_hits={_win_h} → NN mín={_STUDY_NN_MIN:.0%}",
+                        C.Y
+                    ))
 
                 # Re-avaliar aprovação com threshold adaptado
                 if _nn_pred is not None and _nn_score < _session_threshold:
                     _nn_approved = False
+
+                # ═══ Atualizar consensus com score final (pós RE-CHECK) ═══
+                if _nn_source == "recheck" and _nn_pred is not None:
+                    _ai_consensus_live = _build_ai_cotrader_consensus(
+                        setup.get("mode", "classic"),
+                        ia_prob,
+                        _nn_pred,
+                        _gpt_result_payload,
+                        setup.get("shadow_pattern_lib"),
+                    )
+                    setup["ai_consensus"] = _ai_consensus_live
 
                 # ═══ BLOQUEIO FINAL: se NN não aprovou, cancelar entrada ═══
                 if _is_dt_mode and not _nn_approved and _nn_pred is not None:
@@ -6866,11 +6890,11 @@ def _main_inner():
 
                     if not _bounce_ok:
                         log.info(paint(
-                            f"  🚫 BOUNCE FRACO: {ativo} {direcao} | {_bounce_reason} → CANCELADO",
+                            f"  🚫 BOUNCE FRACO BLOQUEOU: {ativo} {direcao} | {_bounce_reason} — CANCELADO",
                             C.R
                         ))
-                        print(f">>> IA: Bounce fraco {ativo} {direcao} — {_bounce_reason}", flush=True)
-                        continue  # próximo candidato
+                        print(f">>> IA: BOUNCE FRACO bloqueou {ativo} {direcao} — {_bounce_reason}", flush=True)
+                        _all_guards_ok = False
                     else:
                         log.info(paint(
                             f"  ✅ BOUNCE CONFIRMADO: {ativo} {direcao} | preço bounceando corretamente",
@@ -6999,8 +7023,8 @@ def _main_inner():
                     },
                     "shadow_pattern_lib": setup.get("shadow_pattern_lib"),
                     "ai_consensus": setup.get("ai_consensus"),
-                    # ── IA WS Generativa ──
-                    "gpt": {
+                    # ── Context Filter ──
+                    "context_filter": {
                         "available": bool(_gpt_result_payload.get("available")),
                         "approved": _gpt_approved,
                         "confidence": _gpt_conf,
@@ -7015,11 +7039,69 @@ def _main_inner():
                     "atr": round(atr_val, 6),
                     "wick_pct": locals().get('_wick_pct', 0),
                     "elite_guard": setup.get("elite_guard"),
+                    "asset_hour_cooldown": _asset_hour_cooldown.get(_ah_check_key) == 0 if _ah_check_key else False,
+                    "study_shadow_filter": {
+                        "loss_hits": _loss_h,
+                        "win_hits": _win_h,
+                        "shadow_agreement": _shadow_agree,
+                        "study_bad": _study_bad,
+                        "shadow_bad": _shadow_bad,
+                    },
                     "progress_pct": round(float(setup.get("live_metrics", {}).get("progress_pct", 0)), 2) if setup.get("live_metrics") else None,
                     "target_room_atr": round(float(setup.get("live_metrics", {}).get("target_room_atr", 0)), 3) if setup.get("live_metrics") else None,
                 }
 
+                # ═══ PROTEÇÃO ANTI-STREAK: após 2+ losses consecutivos, exigir NN mais alto ═══
+                if _consecutive_losses >= 2 and _nn_score is not None:
+                    _streak_nn_min = 0.90  # exigir 90% após streak
+                    if _nn_score < _streak_nn_min:
+                        log.info(paint(
+                            f"  🚫 STREAK GUARD: {ativo} {direcao} | {_consecutive_losses} losses consecutivos "
+                            f"→ NN={_nn_score*100:.0f}% < {_streak_nn_min*100:.0f}% mínimo anti-streak — CANCELADO",
+                            C.R
+                        ))
+                        print(f">>> IA: STREAK GUARD bloqueou {ativo} {direcao} — {_consecutive_losses} losses, NN={_nn_score*100:.0f}%", flush=True)
+                        continue
+                    else:
+                        log.info(paint(
+                            f"  ⚠️ STREAK MODE: {ativo} {direcao} | {_consecutive_losses} losses consecutivos "
+                            f"— NN={_nn_score*100:.0f}% ≥ {_streak_nn_min*100:.0f}% → permitido com cautela",
+                            C.Y
+                        ))
+
+                # ═══ SHADOW DIVERGENCE GUARD: se biblioteca diverge E NN < 85%, bloquear ═══
+                _shadow_lib = setup.get("shadow_pattern_lib") or {}
+                if _shadow_lib.get("available") and not _shadow_lib.get("agreement", True):
+                    _shadow_nn_min = 0.85
+                    if _nn_score is not None and _nn_score < _shadow_nn_min:
+                        log.info(paint(
+                            f"  🚫 SHADOW DIVERGE BLOQUEOU: {ativo} {direcao} | "
+                            f"biblioteca diverge + NN={_nn_score*100:.0f}% < {_shadow_nn_min*100:.0f}% — CANCELADO",
+                            C.R
+                        ))
+                        print(f">>> IA: SHADOW DIVERGE bloqueou {ativo} {direcao} — NN={_nn_score*100:.0f}%", flush=True)
+                        continue
+
                 _use_exp = EXP_EARLY if _is_early else _smart_exp
+                # ═══ SMART EXP: 1 min se velocidade + NN permitem ═══
+                if not _is_early and _is_dt_mode and _nn_score is not None and _guard_df is not None:
+                    _smart_computed = _compute_smart_exp(
+                        _g_C, _g_H, _g_L, _g_n, atr_val, _nn_score, pat_data
+                    )
+                    if _smart_computed != _use_exp:
+                        log.info(paint(
+                            f"  ⚡ SMART EXP: {_use_exp}min → {_smart_computed}min "
+                            f"(NN={_nn_score*100:.0f}% velocidade ok)",
+                            C.G if _smart_computed == 1 else C.B
+                        ))
+                        _use_exp = _smart_computed
+                # ═══ STREAK MODE: forçar 2min após 2+ losses consecutivos ═══
+                if _consecutive_losses >= 2 and _use_exp == 1:
+                    log.info(paint(
+                        f"  ⚠️ STREAK → EXP: forçando 2min (era 1min) — {_consecutive_losses} losses consecutivos",
+                        C.Y
+                    ))
+                    _use_exp = EXP_FIXA
                 _send_delay_sec = time.time() % 60
                 if _is_dt and DT_GRAPH_SIGNAL_ENTRY:
                     if _graph_signal_age_sec is not None:
@@ -7039,62 +7121,44 @@ def _main_inner():
                     )
                     continue
 
-                # ═══ INVERSÃO ADAPTATIVA PER-ASSET ═══
-                # Usa mapa pré-computado (models/ws_inversion_map.json) gerado pela
-                # análise offline de milhares de padrões históricos por ativo.
-                # Para decidir zona (>=95 / 80-95 / <80) usa MAX(scan, recheck)
-                # para evitar escape via RE-CHECK que diminui o score.
+                # ═══ DECISÃO DE DIREÇÃO BASEADA NO MAPA OFFLINE ═══
+                # Análise de milhares de padrões históricos por ativo mostrou:
+                #   NN >= 80%: WR original 92-100% → SEMPRE ENTRAR ORIGINAL
+                #   NN < 80%:  WR varia por ativo → consultar mapa per-asset
+                # NUNCA inverter: dados comprovam que direção original é melhor.
                 _direcao_original = direcao
                 if _nn_score is not None:
-                    # FIX: usar MAX do scan e recheck para classificar a ZONA
                     _nn_zone_score = max(_scan_nn_score, _nn_score)
                     _nn_zone_pct = _nn_zone_score * 100
-                    _nn_pct = _nn_score * 100  # score real (recheck se disponível)
+                    _nn_pct = _nn_score * 100
 
-                    if _nn_zone_pct >= 95:
-                        # Faixa alta: consultar mapa de inversão per-asset
-                        _inv_profile = _inversion_map.get(ativo, {})
-                        _inv_action = _inv_profile.get("action", "skip")  # default: skip se sem dados
-                        _inv_wr = _inv_profile.get("high_nn", {}).get("original_wr", 0.5)
-                        _inv_n = _inv_profile.get("high_nn", {}).get("samples", 0)
-
-                        if _inv_action == "invert":
-                            direcao = "PUT" if direcao == "CALL" else "CALL"
-                            log.info(paint(
-                                f"  🔄 INVERTIDO (perfil): {ativo} {_direcao_original} → {direcao} | "
-                                f"NN={_nn_pct:.0f}% | WR_orig={_inv_wr:.0%} n={_inv_n} → inverter",
-                                C.Y
-                            ))
-                        elif _inv_action == "keep":
-                            log.info(paint(
-                                f"  ✅ MANTIDO (perfil): {ativo} {direcao} | "
-                                f"NN={_nn_pct:.0f}% | WR_orig={_inv_wr:.0%} n={_inv_n} → manter",
-                                C.G
-                            ))
-                        else:
-                            # skip: sem dados suficientes ou zona incerta
-                            log.info(paint(
-                                f"  ⏸️ SKIP (perfil): {ativo} {direcao} | "
-                                f"NN={_nn_pct:.0f}% | WR_orig={_inv_wr:.0%} n={_inv_n} → pular",
-                                C.Y
-                            ))
-                            print(f">>> IA: Skip {ativo} {direcao} — NN={_nn_pct:.0f}% perfil incerto (n={_inv_n})", flush=True)
-                            continue
-
-                    elif _nn_zone_pct < 80:
-                        # Baixa confiança = manter (72% WR comprovado)
+                    if _nn_zone_pct >= 80:
+                        # NN alto (≥80%): WR original 92-100% comprovado → ENTRAR
                         log.info(paint(
-                            f"  ✅ SINAL MANTIDO: {ativo} {direcao} | NN={_nn_pct:.0f}% (<80% = manter original)",
+                            f"  ✅ NN CONFIANTE: {ativo} {direcao} | NN={_nn_pct:.0f}% (zona={_nn_zone_pct:.0f}% ≥80% → entrar original)",
                             C.G
                         ))
                     else:
-                        # Zona cinza 80-95% = pular
-                        log.info(paint(
-                            f"  ⏸️ ZONA CINZA: {ativo} {direcao} | NN={_nn_pct:.0f}% (zona={_nn_zone_pct:.0f}% 80-95% = não operar)",
-                            C.Y
-                        ))
-                        print(f">>> IA: Zona cinza {ativo} {direcao} — NN={_nn_pct:.0f}% (80-95% skip)", flush=True)
-                        continue
+                        # NN baixo (<80%): consultar perfil do ativo
+                        _inv_profile = _inversion_map.get(ativo, {})
+                        _low_action = _inv_profile.get("low_nn_action", "skip")
+                        _low_wr = _inv_profile.get("low_nn", {}).get("original_wr", 0.5)
+                        _low_n = _inv_profile.get("low_nn", {}).get("samples", 0)
+
+                        if _low_action == "keep":
+                            # Ativo funciona bem mesmo com NN baixo
+                            log.info(paint(
+                                f"  ✅ NN BAIXO OK: {ativo} {direcao} | NN={_nn_pct:.0f}% | WR_orig={_low_wr:.0%} n={_low_n} → entrar",
+                                C.G
+                            ))
+                        else:
+                            # NN baixo + ativo não confiável nessa faixa
+                            log.info(paint(
+                                f"  🚫 NN BAIXO SKIP: {ativo} {direcao} | NN={_nn_pct:.0f}% | WR_orig={_low_wr:.0%} n={_low_n} → pular",
+                                C.R
+                            ))
+                            print(f">>> IA: Skip {ativo} {direcao} — NN={_nn_pct:.0f}% baixo (WR={_low_wr:.0%})", flush=True)
+                            continue
 
                 # ═══ ATUALIZAR DASHBOARD COM DIREÇÃO REAL ═══
                 _was_inverted = (direcao != _direcao_original)
@@ -7198,15 +7262,18 @@ def _main_inner():
                     del _recent_trade_results[:-50]
                 _arm_key_res = f"{ativo}_{pat_type}_{setup.get('mode', 'classic')}"
                 _n_arm = hs_stats.get("arms", {}).get(_arm_key_res, {}).get("total", 0)
+
+                # ── Asset-Hour Cooldown: registrar resultado para evitar repeat-loss ──
+                _ah_hour = datetime.now().hour
+                _ah_key = f"{ativo}_{_ah_hour}"
+                _asset_hour_cooldown[_ah_key] = _trade_result_01
+
                 log.info(paint(
-                    f"  🤖 IA atualizada: {ativo} | resultado={'WIN' if res > 0 else 'LOSS' if res < 0 else 'EMPATE'} | "
-                    f"prob_antes={ia_prob:.2f} | amostras_ativo={_n_arm}",
+                    f"  📊 Resultado registrado: {ativo} | {'WIN' if res > 0 else 'LOSS' if res < 0 else 'EMPATE'} | "
+                    f"prob={ia_prob:.2f} | trades_ativo={_n_arm}",
                     C.B
                 ))
                 _safe_save_json(AI_STATS_FILE, hs_stats)
-                # Salvar controle de retrain SOMENTE quando IA tem amostras reais
-                if _n_arm > 0:
-                    _save_retrain_control()
 
                 # ── Estatísticas ──
                 wr = (total_wins / max(1, total_trades)) * 100
