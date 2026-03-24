@@ -20,6 +20,8 @@ SOURCE_FILES = [
     'license_manager.py',
     'backend_server.py',
     'train_neural_network.py',
+    'ws_continuation_ai.py',
+    'train_continuation_ml.py',
 ]
 
 # Localizar flet_desktop automaticamente
@@ -136,6 +138,8 @@ a = Analysis(
 
         (os.path.join(protected_dir, 'dashboard_hs_ia.py'), '.'),
         (os.path.join(protected_dir, 'ws_adaptive_brain.py'), '.'),
+        (os.path.join(protected_dir, 'ws_continuation_ai.py'), '.'),
+        (os.path.join(protected_dir, 'train_continuation_ml.py'), '.'),
         (flet_desktop_app, os.path.join('flet_desktop', 'app')),
         (flet_controls, os.path.join('flet', 'controls')),
     ] + stripe_datas + certifi_datas + xgboost_datas,
@@ -175,6 +179,7 @@ a = Analysis(
         'ws_reversal_ai',
         'numpy_pickle_compat',
         'dashboard_hs_ia', 'ws_adaptive_brain',
+        'ws_continuation_ai', 'train_continuation_ml',
         # === Backend / Licença ===
         'backend_server', 'license_manager',
         # === UI / Telas ===
