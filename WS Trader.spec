@@ -110,6 +110,7 @@ a = Analysis(
         ('backend', 'backend'),
         ('models', 'models'),
         ('models_entry_guard', 'models_entry_guard'),
+        ('candles_100k', 'candles_100k'),
         ('trade_decisions.html', '.'),
         ('ws_ai_base_training.json', '.'),
         ('version_info.txt', '.'),

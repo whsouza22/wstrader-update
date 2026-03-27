@@ -71,6 +71,7 @@ import pickle
 import logging
 import random
 import threading
+import shutil
 
 # ── Garantir que o diretório do script está no sys.path ──
 _script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1680,6 +1681,59 @@ def _copy_bundled_file_if_missing(file_name: str, folder_name: str) -> bool:
         return False
 
 
+def _count_csv_files(dir_path: str) -> int:
+    try:
+        return len([f for f in os.listdir(dir_path) if f.endswith(".csv")]) if os.path.isdir(dir_path) else 0
+    except Exception:
+        return 0
+
+
+def _copy_bundled_directory_if_missing(folder_name: str, min_csv_files: int = 3) -> str:
+    target_dir = os.path.join(_user_data_dir, folder_name)
+    if _count_csv_files(target_dir) >= min_csv_files:
+        return target_dir
+
+    bundled_dir = _bundled_data_dir(folder_name)
+    if not os.path.isdir(bundled_dir):
+        return target_dir
+
+    os.makedirs(target_dir, exist_ok=True)
+    copied = 0
+    for file_name in os.listdir(bundled_dir):
+        src = os.path.join(bundled_dir, file_name)
+        dst = os.path.join(target_dir, file_name)
+        if not os.path.isfile(src) or os.path.exists(dst):
+            continue
+        try:
+            shutil.copy2(src, dst)
+            copied += 1
+        except Exception as ex:
+            log.warning(paint(f"⚠️ Falha ao copiar candle embarcado {file_name}: {ex}", C.Y))
+
+    if copied > 0:
+        log.info(paint(f"📦 Base embarcada {folder_name} copiada para o cliente (+{copied} arquivos)", C.G))
+
+    return target_dir
+
+
+def _merge_training_csv_dirs(*csv_dirs: str) -> None:
+    merged = []
+    existing = os.getenv("WS_TRAIN_CSV_DIRS", "").strip()
+    if existing:
+        for raw_path in existing.split(";"):
+            norm = raw_path.strip()
+            if norm and norm not in merged:
+                merged.append(norm)
+
+    for csv_dir in csv_dirs:
+        norm = (csv_dir or "").strip()
+        if norm and norm not in merged:
+            merged.append(norm)
+
+    if merged:
+        os.environ["WS_TRAIN_CSV_DIRS"] = ";".join(merged)
+
+
 def _load_full_pattern_value_study() -> dict:
     global _full_pattern_study_cache
     if isinstance(_full_pattern_study_cache, dict):
@@ -1892,12 +1946,15 @@ def _seed_bundled_models() -> None:
 # ═══════════════════════════════════════════════════════════════
 # AUTO-UPDATE: atualizar CSVs + retreinar NNs ao iniciar o bot
 # ═══════════════════════════════════════════════════════════════
-_CANDLES_100K_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_100k")
+_CANDLES_100K_DIR = _copy_bundled_directory_if_missing("candles_100k", min_csv_files=3)
+_CANDLES_DEEP_DIR = os.path.join(_user_data_dir, "candles_deep")
+_CANDLES_5000_DIR = os.path.join(_user_data_dir, "candles_5000")
 _OPTIONAL_CANDLE_DIRS = [
     _CANDLES_100K_DIR,
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_deep"),
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_5000"),
+    _CANDLES_DEEP_DIR,
+    _CANDLES_5000_DIR,
 ]
+_merge_training_csv_dirs(_CANDLES_100K_DIR, _CANDLES_5000_DIR, _CANDLES_DEEP_DIR)
 _asset_candle_count_cache: Dict[str, int] = {}
 
 
@@ -1941,6 +1998,8 @@ def _update_candles_and_retrain(bx: BrokerAPI) -> bool:
 
     Retorna True se retreinou com sucesso.
     """
+    _copy_bundled_directory_if_missing("candles_100k", min_csv_files=3)
+
     if not os.path.isdir(_CANDLES_100K_DIR):
         log.info(paint("⚠️ Pasta candles_100k/ não existe — pulando atualização", C.Y))
         return False
@@ -2104,6 +2163,7 @@ def _run_auto_train(bx: BrokerAPI) -> bool:
     global _continuation_ai
 
     # Verificar se há CSVs para treinar
+    _copy_bundled_directory_if_missing("candles_100k", min_csv_files=3)
     csv_files = [f for f in os.listdir(_CANDLES_100K_DIR) if f.endswith(".csv")] if os.path.isdir(_CANDLES_100K_DIR) else []
     if len(csv_files) < 3:
         print(f">>> TREINO: Poucos CSVs ({len(csv_files)}) em candles_100k/ — usando modelo existente", flush=True)

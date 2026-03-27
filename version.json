@@ -1,6 +1,6 @@
 {
-  "version": "6.9.1",
-  "changelog": "v6.9.1 - ajustes DT live no :00, analise :50 e continuidade IA",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.9.1/WsTrader_Setup_6.9.1.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.9.1/WsTrader_Setup_6.9.1.exe"
+  "version": "6.9.2",
+  "changelog": "v6.9.2 - base candles_100k embarcada e seed persistente no cliente",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v6.9.2/WsTrader_Setup_6.9.2.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v6.9.2/WsTrader_Setup_6.9.2.exe"
 }
