@@ -169,6 +169,82 @@ def _detect_patterns(O, H, L, C, atr, min_impulse=3,
 
 
 # ======================================================================
+# S/R FEATURES (identico ao treino)
+# ======================================================================
+
+def _compute_sr_features(H, L, C, atr, j, is_put, lookback=200):
+    """Calcula features de Suporte/Resistencia usando pivots.
+    Usa APENAS dados ate o candle j (sem look-ahead).
+    """
+    atr_val = max(atr[j], 1e-10)
+    price = C[j]
+    start = max(0, j - lookback)
+
+    pivots_high = []
+    pivots_low = []
+    for i in range(start + 2, j - 1):
+        if H[i] > H[i-1] and H[i] > H[i-2] and H[i] > H[i+1] and H[i] > H[i+2]:
+            pivots_high.append(H[i])
+        if L[i] < L[i-1] and L[i] < L[i-2] and L[i] < L[i+1] and L[i] < L[i+2]:
+            pivots_low.append(L[i])
+
+    def cluster_levels(levels, tolerance):
+        if not levels:
+            return []
+        sorted_lvls = sorted(levels)
+        clusters = []
+        current = [sorted_lvls[0]]
+        for lvl in sorted_lvls[1:]:
+            if lvl - current[0] <= tolerance:
+                current.append(lvl)
+            else:
+                clusters.append((sum(current) / len(current), len(current)))
+                current = [lvl]
+        clusters.append((sum(current) / len(current), len(current)))
+        return clusters
+
+    tol = 0.5 * atr_val
+    res_zones = cluster_levels(pivots_high, tol)
+    sup_zones = cluster_levels(pivots_low, tol)
+
+    nearest_sup = None
+    sup_touches = 0
+    for lvl, touches in reversed(sup_zones):
+        if lvl < price - 0.2 * atr_val:
+            nearest_sup = lvl
+            sup_touches = touches
+            break
+
+    nearest_res = None
+    res_touches = 0
+    for lvl, touches in res_zones:
+        if lvl > price + 0.2 * atr_val:
+            nearest_res = lvl
+            res_touches = touches
+            break
+
+    dist_sup = (price - nearest_sup) / atr_val if nearest_sup else 10.0
+    dist_res = (nearest_res - price) / atr_val if nearest_res else 10.0
+
+    if is_put:
+        sr_blocking_dist = dist_sup
+        sr_room = dist_res
+        sr_blocking_touches = sup_touches
+    else:
+        sr_blocking_dist = dist_res
+        sr_room = dist_sup
+        sr_blocking_touches = res_touches
+
+    return {
+        "sr_dist_support_atr": dist_sup,
+        "sr_dist_resistance_atr": dist_res,
+        "sr_blocking_dist_atr": sr_blocking_dist,
+        "sr_room_atr": sr_room,
+        "sr_blocking_touches": float(sr_blocking_touches),
+    }
+
+
+# ======================================================================
 # EXTRACAO DE FEATURES (33 features, identico ao treino)
 # ======================================================================
 
@@ -359,7 +435,9 @@ class ContinuationAI:
             p_nb = (p_xgb + p_lgb) / 2.0
             th = self.threshold
         else:
-            return 0.5, 0.5, 0.5, 0.5, self.threshold
+            # Sem modelo para este ativo — retornar probabilidade 0
+            # para NUNCA aprovar sinais sem modelo treinado
+            return 0.0, 0.0, 0.0, 0.0, self.threshold
         return (p_xgb + p_lgb + p_nb) / 3.0, p_xgb, p_lgb, p_nb, th
 
     def scan(self, df, ativo="", max_candles_ago=2):
@@ -462,6 +540,10 @@ class ContinuationAI:
                 ) / 5.0
             else:
                 feats["body_pct_5"] = feats["directional_pct_5"] = 0.5
+
+            # S/R features
+            sr_feats = _compute_sr_features(H, L, C, atr, j, is_put_b)
+            feats.update(sr_feats)
 
             # Montar vetor de features na ordem do modelo
             x = np.array([[feats.get(col, 0) for col in self.feature_cols]], dtype=np.float32)
@@ -616,6 +698,10 @@ class ContinuationAI:
             ) / 5.0
         else:
             feats["body_pct_5"] = feats["directional_pct_5"] = 0.5
+
+        # S/R features
+        sr_feats = _compute_sr_features(H, L, C, atr, j, is_put_b)
+        feats.update(sr_feats)
 
         x = np.array([[feats.get(col, 0) for col in self.feature_cols]], dtype=np.float32)
         x = np.nan_to_num(x, nan=0.0, posinf=3.0, neginf=-3.0)

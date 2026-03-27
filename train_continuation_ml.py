@@ -36,6 +36,12 @@ from sklearn.calibration import CalibratedClassifierCV
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
 CSV_DIR = os.path.join(_BASE, "candles_100k")
+# Pastas adicionais de corretoras (se existirem, CSVs são concatenados)
+_EXTRA_CANDLE_DIRS = [
+    os.path.join(_BASE, "candles_bullex"),
+    os.path.join(_BASE, "candles_casatrader"),
+    os.path.join(_BASE, "candles_iq"),
+]
 MODEL_DIR = os.path.join(os.path.expanduser("~"), ".wstrader")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
@@ -86,6 +92,88 @@ def compute_rsi(C, period=14):
             rs = avg_gain / avg_loss
             rsi[i + 1] = 100.0 - 100.0 / (1.0 + rs)
     return rsi
+
+
+def compute_sr_features(H, L, C, atr, j, is_put, lookback=200):
+    """Calcula features de Suporte/Resistencia usando pivots.
+    Usa APENAS dados ate o candle j (sem look-ahead).
+    Retorna dict com 5 features S/R.
+    """
+    atr_val = max(atr[j], 1e-10)
+    price = C[j]
+    start = max(0, j - lookback)
+
+    # Encontrar pivot highs e pivot lows (5 candle pivots)
+    pivots_high = []
+    pivots_low = []
+    for i in range(start + 2, j - 1):  # precisa de 2 candles em cada lado
+        # Pivot high: H[i] > H dos 2 vizinhos
+        if H[i] > H[i-1] and H[i] > H[i-2] and H[i] > H[i+1] and H[i] > H[i+2]:
+            pivots_high.append(H[i])
+        # Pivot low: L[i] < L dos 2 vizinhos
+        if L[i] < L[i-1] and L[i] < L[i-2] and L[i] < L[i+1] and L[i] < L[i+2]:
+            pivots_low.append(L[i])
+
+    # Clusterizar niveis proximos (dentro de 0.5 ATR)
+    def cluster_levels(levels, tolerance):
+        if not levels:
+            return []
+        sorted_lvls = sorted(levels)
+        clusters = []
+        current = [sorted_lvls[0]]
+        for lvl in sorted_lvls[1:]:
+            if lvl - current[0] <= tolerance:
+                current.append(lvl)
+            else:
+                clusters.append((sum(current) / len(current), len(current)))
+                current = [lvl]
+        clusters.append((sum(current) / len(current), len(current)))
+        return clusters  # [(price, touches), ...]
+
+    tol = 0.5 * atr_val
+    res_zones = cluster_levels(pivots_high, tol)  # resistance zones
+    sup_zones = cluster_levels(pivots_low, tol)   # support zones
+
+    # Encontrar suporte mais proximo ABAIXO e resistencia mais proxima ACIMA
+    nearest_sup = None
+    sup_touches = 0
+    for lvl, touches in reversed(sup_zones):
+        if lvl < price - 0.2 * atr_val:
+            nearest_sup = lvl
+            sup_touches = touches
+            break
+
+    nearest_res = None
+    res_touches = 0
+    for lvl, touches in res_zones:
+        if lvl > price + 0.2 * atr_val:
+            nearest_res = lvl
+            res_touches = touches
+            break
+
+    # Calcular distancias em ATR
+    dist_sup = (price - nearest_sup) / atr_val if nearest_sup else 10.0
+    dist_res = (nearest_res - price) / atr_val if nearest_res else 10.0
+
+    # Features relativas a direcao do trade
+    if is_put:
+        # PUT: suporte BLOQUEIA (preco precisa cair alem dele), resistencia da ESPAÇO
+        sr_blocking_dist = dist_sup      # quao perto esta o suporte (bloqueador)
+        sr_room = dist_res               # espaco acima (nao importa muito para PUT)
+        sr_blocking_touches = sup_touches # forca do bloqueador
+    else:
+        # CALL: resistencia BLOQUEIA, suporte da ESPAÇO
+        sr_blocking_dist = dist_res
+        sr_room = dist_sup
+        sr_blocking_touches = res_touches
+
+    return {
+        "sr_dist_support_atr": dist_sup,
+        "sr_dist_resistance_atr": dist_res,
+        "sr_blocking_dist_atr": sr_blocking_dist,
+        "sr_room_atr": sr_room,
+        "sr_blocking_touches": float(sr_blocking_touches),
+    }
 
 
 def extract_pattern_features(O, H, L, C, atr, ema8, ema20, ema50, rsi,
@@ -349,6 +437,9 @@ def build_dataset(ativo, df, min_impulse=3, exp=2):
         thresh_list=[0.5, 0.6, 0.7]
     )
 
+    # Filtrar padroes sobrepostos (mesmo que no live)
+    patterns = filter_overlaps(patterns, exp)
+
     rows = []
     for pat in patterns:
         j = pat["j"]
@@ -366,11 +457,11 @@ def build_dataset(ativo, df, min_impulse=3, exp=2):
         else:
             label = 1 if C[exit_idx] > C[entry_idx] else 0
 
-        # Features extraidas no candle exit_idx (visao completa)
+        # Features extraidas no candle j (breakout) — SEM dados futuros!
         feats = extract_pattern_features(
             O, H, L, C, atr, ema8, ema20, ema50, rsi,
             pat["imp_start"], pat["imp_end"],
-            pat["sm_start"], exit_idx,
+            pat["sm_start"], j,
             pat["direction"], exp
         )
 
@@ -385,7 +476,7 @@ def build_dataset(ativo, df, min_impulse=3, exp=2):
 
         # --- EXTENDED FEATURES (per-asset signal) ---
         is_put_b = pat["direction"] == "PUT"
-        ei = exit_idx
+        ei = j  # usar candle de breakout, NAO exit_idx (futuro)
         atr_ei = max(atr[ei], 1e-10)
 
         # EMA slopes (5 candle lookback)
@@ -416,6 +507,10 @@ def build_dataset(ativo, df, min_impulse=3, exp=2):
         else:
             feats["body_pct_5"] = feats["directional_pct_5"] = 0.5
 
+        # --- S/R FEATURES ---
+        sr_feats = compute_sr_features(H, L, C, atr, j, is_put_b)
+        feats.update(sr_feats)
+
         rows.append(feats)
 
     return rows
@@ -437,6 +532,9 @@ FEATURE_COLS = [
     # Extended features (per-asset signal)
     "ema8_slope", "ema20_slope", "rsi_change5",
     "consecutive_aligned", "body_pct_5", "directional_pct_5",
+    # S/R features
+    "sr_dist_support_atr", "sr_dist_resistance_atr",
+    "sr_blocking_dist_atr", "sr_room_atr", "sr_blocking_touches",
 ]
 
 
@@ -452,7 +550,12 @@ def main():
     # Skip stock OTCs (too few candles for reliable training)
     SKIP_PREFIX = ("AIG", "AIRLINES", "ALIBABA", "AMAZON")
     csv_files = [f for f in csv_files if not any(f.startswith(p) for p in SKIP_PREFIX)]
-    print(f"\n  CSVs: {len(csv_files)}")
+
+    # Detectar pastas extras de corretoras
+    extra_dirs = [d for d in _EXTRA_CANDLE_DIRS if os.path.isdir(d)]
+    if extra_dirs:
+        print(f"\n  📂 Pastas extras de corretoras: {[os.path.basename(d) for d in extra_dirs]}")
+    print(f"  CSVs base: {len(csv_files)} (candles_100k/)")
 
     EXP_PROD = 2     # velas apos entrada para checar resultado
     MIN_IMP = 2      # minimo de velas de impulso
@@ -467,11 +570,36 @@ def main():
     all_importances = np.zeros(len(FEATURE_COLS))
     n_importances = 0
 
-    for csv_file in csv_files:
-        ativo = csv_file.replace(".csv", "")
-        path = os.path.join(CSV_DIR, csv_file)
-        df = load_csv(path)
-        if df is None:
+    # Coleta todos os ativos únicos de todas as pastas
+    _all_assets = set(f.replace(".csv", "") for f in csv_files)
+    for d in extra_dirs:
+        for f in os.listdir(d):
+            if f.endswith(".csv"):
+                _all_assets.add(f.replace(".csv", ""))
+    _all_assets = sorted(a for a in _all_assets if not any(a.startswith(p) for p in SKIP_PREFIX))
+    print(f"  Ativos totais (todas corretoras): {len(_all_assets)}")
+
+    for ativo in _all_assets:
+        # Concatenar CSVs de todas as pastas para o mesmo ativo
+        dfs = []
+        base_path = os.path.join(CSV_DIR, ativo + ".csv")
+        df_base = load_csv(base_path)
+        if df_base is not None:
+            dfs.append(df_base)
+
+        for d in extra_dirs:
+            extra_path = os.path.join(d, ativo + ".csv")
+            df_extra = load_csv(extra_path)
+            if df_extra is not None:
+                dfs.append(df_extra)
+
+        if not dfs:
+            continue
+
+        # Concatenar, remover duplicatas por timestamp, ordenar
+        df = pd.concat(dfs).sort_index()
+        df = df[~df.index.duplicated(keep="first")]
+        if len(df) < 500:
             continue
 
         rows = build_dataset(ativo, df, min_impulse=MIN_IMP, exp=EXP_PROD)
@@ -483,54 +611,78 @@ def main():
         y = df_a["label"].values.astype(np.int32)
         X = np.nan_to_num(X, nan=0.0, posinf=3.0, neginf=-3.0)
 
-        # 80/20 chronological split
-        nt = int(len(y) * 0.80)
+        # 60/20/20 chronological split (train / val / test)
+        n_train = int(len(y) * 0.60)
+        n_val = int(len(y) * 0.80)
         scaler = StandardScaler()
-        X_train = scaler.fit_transform(X[:nt])
-        X_test = scaler.transform(X[nt:])
-        y_train, y_test = y[:nt], y[nt:]
+        X_train = scaler.fit_transform(X[:n_train])
+        X_val = scaler.transform(X[n_train:n_val])
+        X_test = scaler.transform(X[n_val:])
+        y_train, y_val, y_test = y[:n_train], y[n_train:n_val], y[n_val:]
+
+        if len(y_val) < 20 or len(y_test) < 20:
+            continue
 
         # XGBoost
         xgb_m = xgb.XGBClassifier(
-            n_estimators=400, max_depth=5, learning_rate=0.03,
-            subsample=0.8, colsample_bytree=0.8,
-            reg_alpha=0.3, reg_lambda=1.0, min_child_weight=8,
+            n_estimators=400, max_depth=4, learning_rate=0.03,
+            subsample=0.7, colsample_bytree=0.7,
+            reg_alpha=0.5, reg_lambda=2.0, min_child_weight=10,
             eval_metric="logloss", random_state=42, verbosity=0,
         )
         xgb_m.fit(X_train, y_train, verbose=False)
-        xgb_pred = xgb_m.predict_proba(X_test)[:, 1]
 
         # LightGBM
         lgb_m = lgb.LGBMClassifier(
-            n_estimators=400, max_depth=5, learning_rate=0.03,
-            subsample=0.8, colsample_bytree=0.8,
-            reg_alpha=0.3, reg_lambda=1.0, min_child_weight=8,
+            n_estimators=400, max_depth=4, learning_rate=0.03,
+            subsample=0.7, colsample_bytree=0.7,
+            reg_alpha=0.5, reg_lambda=2.0, min_child_weight=10,
             random_state=42, verbose=-1,
         )
         lgb_m.fit(X_train, y_train)
-        lgb_pred = lgb_m.predict_proba(X_test)[:, 1]
 
         # GaussianNB (Bayesiano) com calibracao
         nb_base = GaussianNB()
         nb_m = CalibratedClassifierCV(nb_base, cv=3, method="isotonic")
         nb_m.fit(X_train, y_train)
+
+        # Otimizar threshold no VALIDATION set (nao no test!)
+        xgb_val = xgb_m.predict_proba(X_val)[:, 1]
+        lgb_val = lgb_m.predict_proba(X_val)[:, 1]
+        nb_val = nb_m.predict_proba(X_val)[:, 1]
+
+        best_t, best_val_wr, best_val_n = 0.55, 0.0, 0
+        for t in [0.50, 0.52, 0.55, 0.57, 0.60, 0.62, 0.65, 0.70]:
+            mask = (xgb_val >= t) & (lgb_val >= t) & (nb_val >= t)
+            n_sel = int(np.sum(mask))
+            if n_sel < 10:
+                continue
+            wr_sel = np.sum(y_val[mask]) / n_sel * 100
+            if wr_sel > best_val_wr:
+                best_t, best_val_wr, best_val_n = t, wr_sel, n_sel
+
+        # Avaliar no TEST set (nunca visto — WR real)
+        xgb_pred = xgb_m.predict_proba(X_test)[:, 1]
+        lgb_pred = lgb_m.predict_proba(X_test)[:, 1]
         nb_pred = nb_m.predict_proba(X_test)[:, 1]
 
-        # Ensemble (3 modelos)
         ens_pred = (xgb_pred + lgb_pred + nb_pred) / 3.0
         acc_50 = accuracy_score(y_test, (ens_pred >= 0.5).astype(int))
 
-        # Find best threshold (ALL 3 models must agree — higher WR)
-        best_t, best_wr, best_n = 0.50, acc_50 * 100, int(np.sum(ens_pred >= 0.50))
-        for t in [0.52, 0.55, 0.57, 0.60, 0.62, 0.65]:
-            # All-agree filter: XGB, LGB and Bayes above threshold
-            mask = (xgb_pred >= t) & (lgb_pred >= t) & (nb_pred >= t)
-            n_sel = int(np.sum(mask))
-            if n_sel < 20:
-                continue
-            wr_sel = np.sum(y_test[mask]) / n_sel * 100
-            if wr_sel > best_wr:
-                best_t, best_wr, best_n = t, wr_sel, n_sel
+        test_mask = (xgb_pred >= best_t) & (lgb_pred >= best_t) & (nb_pred >= best_t)
+        n_test_sel = int(np.sum(test_mask))
+
+        # Rejeitar se poucos trades no teste (dados insuficientes)
+        if n_test_sel < 30:
+            print(f"  {ativo:<18} {len(rows):>5} {acc_50:>5.1%}    --%  {best_t:>5.2f} {n_test_sel:>6}  ⚠️ REJEITADO (trades<30)")
+            continue
+
+        test_wr = np.sum(y_test[test_mask]) / n_test_sel * 100
+
+        # Rejeitar ativo se WR no teste < 54% (breakeven p/ payout 85%)
+        if test_wr < 54.0:
+            print(f"  {ativo:<18} {len(rows):>5} {acc_50:>5.1%} {test_wr:>5.1f}% {best_t:>5.2f} {n_test_sel:>6}  ⚠️ REJEITADO (WR<54%)")
+            continue
 
         per_asset_models[ativo] = {
             "xgb": xgb_m,
@@ -539,8 +691,8 @@ def main():
             "scaler": scaler,
             "threshold": best_t,
             "acc": round(acc_50 * 100, 1),
-            "wr": round(best_wr, 1),
-            "n_test": best_n,
+            "wr": round(test_wr, 1),
+            "n_test": n_test_sel,
             "n_total": len(rows),
         }
 
@@ -552,12 +704,12 @@ def main():
             "ativo": ativo,
             "patterns": len(rows),
             "acc": round(acc_50 * 100, 1),
-            "wr_sel": round(best_wr, 1),
+            "wr_sel": round(test_wr, 1),
             "thresh": best_t,
-            "n_sel": best_n,
+            "n_sel": n_test_sel,
         })
 
-        print(f"  {ativo:<18} {len(rows):>5} {acc_50:>5.1%} {best_wr:>5.1f}% {best_t:>5.2f} {best_n:>6}")
+        print(f"  {ativo:<18} {len(rows):>5} {acc_50:>5.1%} {test_wr:>5.1f}% {best_t:>5.2f} {n_test_sel:>6}")
 
     if not per_asset_models:
         print("  ERRO: Nenhum ativo treinado!")
@@ -633,6 +785,11 @@ def main():
     best_ativo = best_asset["ativo"]
     chart_candles, chart_signals = [], []
     df_full = load_csv(os.path.join(CSV_DIR, best_ativo + ".csv"))
+    if df_full is None:
+        for d in extra_dirs:
+            df_full = load_csv(os.path.join(d, best_ativo + ".csv"))
+            if df_full is not None:
+                break
     if df_full is not None:
         n_full = len(df_full)
         chart_start = max(0, n_full - 500)

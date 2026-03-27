@@ -123,7 +123,7 @@ from ws_reversal_ai import (
     get_reversal_model_persist_path,
     find_existing_reversal_model_path,
 )
-from ws_adaptive_brain import extract_features
+from ws_adaptive_brain import extract_features, extract_candle_safety_features
 
 # ═══ IA 4 — FILTRO DE CONTEXTO (tabela pré-computada do backtest) ═══
 from ws_context_filter import context_lookup, format_context_log
@@ -179,7 +179,7 @@ SHADOW_PATTERN_LIB_MAX_BAR_DISTANCE = max(1, int(os.getenv("WS_SHADOW_PATTERN_LI
 PAYOUT_MINIMO = int(os.getenv("WS_PAYOUT_MIN", "80"))   # 80%+ payout → com WR 90%+ é lucrativo
 PAYOUT_REFRESH_SEC = int(os.getenv("WS_PAYOUT_REFRESH", "180"))
 
-NUM_ATIVOS = max(1, int(os.getenv("WS_NUM_ATIVOS", "8")))
+NUM_ATIVOS = max(1, int(os.getenv("WS_NUM_ATIVOS", "4")))
 SCAN_NUM_ATIVOS = max(1, min(NUM_ATIVOS, int(os.getenv("WS_SCAN_ATIVOS", str(NUM_ATIVOS)))))
 
 # ── Expiração FIXA 2 minutos (alinhada com treino) ──
@@ -237,7 +237,7 @@ _asset_hour_cooldown = {}         # {ativo_hora} → 0/1 último resultado (cool
 
 # ── Reversal AI config ──
 CONFIDENCE_MIN = float(os.getenv('WS_CONF_MIN', "40.0"))       # Confiança mínima da IA para entrar
-ANALYZE_AT_SECOND = int(os.getenv("WS_ANALYZE_SEC", "30"))      # Analisar no segundo :30 e, se liberar, entrar direto na virada :00
+ANALYZE_AT_SECOND = int(os.getenv("WS_ANALYZE_SEC", "50"))      # Analisar no segundo :50 para entrar na virada :00 sem atraso
 COOLDOWN_AFTER_TRADE = int(os.getenv("WS_COOLDOWN", "180"))      # Cooldown global após cada trade (3 min)
 MIN_WR_ATIVO = float(os.getenv("WS_MIN_WR", "80.0"))            # WR mínimo para selecionar ativo
 MAX_ENTRY_DELAY_SEC = float(os.getenv("WS_MAX_ENTRY_DELAY_SEC", "6.0"))
@@ -305,7 +305,16 @@ def _normalize_dt_live_profile(value) -> str:
 
 DT_LIVE_PROFILE = _normalize_dt_live_profile(os.getenv("WS_DT_LIVE_PROFILE", "standard"))
 DT_NN_MIN_FLOOR = max(0.30, min(0.98, float(os.getenv("WS_DT_NN_MIN_FLOOR", "0.40"))))
-DT_RECHECK_ABS_FLOOR = max(0.50, min(0.98, float(os.getenv("WS_DT_RECHECK_ABS_FLOOR", "0.90"))))
+DT_RECHECK_ABS_FLOOR = max(0.50, min(0.98, float(os.getenv("WS_DT_RECHECK_ABS_FLOOR", "0.75"))))
+DT_RANK_MIN_SAMPLES = max(300, int(os.getenv("WS_DT_RANK_MIN_SAMPLES", "1200")))
+DT_RANK_MIN_EDGE = max(0.0, min(0.20, float(os.getenv("WS_DT_RANK_MIN_EDGE", "0.02"))))
+DT_RANK_MIN_CANDLES = max(5000, int(os.getenv("WS_DT_RANK_MIN_CANDLES", "100000")))
+DT_ASSET_REFRESH_SEC = max(60, int(os.getenv("WS_DT_ASSET_REFRESH_SEC", "900")))
+DT_ASSET_REFRESH_SEC_FALLBACK = max(60, int(os.getenv("WS_DT_ASSET_REFRESH_SEC_FALLBACK", "180")))
+DT_ENTRY_MAX_DELAY_SEC = max(0.05, min(1.0, float(os.getenv("WS_DT_ENTRY_MAX_DELAY_SEC", "0.35"))))
+DT_TURN_ENTRY_TOLERANCE_SEC = max(0.05, min(1.0, float(os.getenv("WS_DT_TURN_ENTRY_TOLERANCE_SEC", "0.35"))))
+DT_CONFLUENCE_MIN_SCORE = max(50, min(95, int(os.getenv("WS_DT_CONFLUENCE_MIN_SCORE", "80"))))
+DT_LIVE_DISABLE_EXTRA_BLOCKS = os.getenv("WS_DT_LIVE_DISABLE_EXTRA_BLOCKS", "1").strip().lower() not in {"0", "false", "no"}
 
 # ── Variáveis para Engine / IA ──
 DECIDIR_ANTES_FECHAR_SEC = int(os.getenv("WS_DECIDIR_ANTES_FECHAR", "12"))
@@ -315,6 +324,8 @@ AI_MIN_SAMPLES = 5
 AI_CONF_MIN = 0.3
 AI_MIN_PROB = 0.55  # CORRIGIDO: era 0.40 (permitia entradas com 40% prob = moeda)
 DT_BAYES_FINAL_MIN = max(0.55, min(0.95, float(os.getenv("WS_DT_BAYES_FINAL_MIN", "0.60"))))
+DT_HARD_MIN_NN_SCORE = max(0.75, min(0.98, float(os.getenv("WS_DT_HARD_MIN_NN_SCORE", "0.84"))))
+DT_REQUIRE_ENTRY_GUARD = os.getenv("WS_DT_REQUIRE_ENTRY_GUARD", "1").strip().lower() not in {"0", "false", "no"}
 HORARIO_INICIO_MIN = 90    # 1h30 da manhã (1*60 + 30)
 HORARIO_FIM_MIN    = 1080  # 18h00 (18*60)
 MAX_DIST_OMBRO_ATR = 0.5  # CORRIGIDO: era 1.0 (muito longe do ombro D = entrada ruim)
@@ -436,6 +447,111 @@ def _analyze_macro_trend(guard_df, atr_val, direcao):
     return result
 
 
+def _aggregate_m1_to_m5(df: Optional[pd.DataFrame], max_bars: int = 12) -> Optional[pd.DataFrame]:
+    if df is None or len(df) < 15:
+        return None
+    try:
+        total = len(df) // 5
+        if total < 3:
+            return None
+        use_bars = min(total, max_bars)
+        start = max(0, len(df) - (use_bars * 5))
+        rows = []
+        for idx in range(start, len(df), 5):
+            chunk = df.iloc[idx:idx + 5]
+            if len(chunk) < 5:
+                continue
+            rows.append({
+                "open": float(chunk["open"].iloc[0]),
+                "high": float(chunk["high"].max()),
+                "low": float(chunk["low"].min()),
+                "close": float(chunk["close"].iloc[-1]),
+            })
+        if len(rows) < 3:
+            return None
+        return pd.DataFrame(rows)
+    except Exception:
+        return None
+
+
+def _analyze_dt_m5_structure(pat: dict,
+                             df_m1: Optional[pd.DataFrame],
+                             atr_val: float,
+                             direction: str) -> dict:
+    m5_df = _aggregate_m1_to_m5(df_m1)
+    if m5_df is None or len(m5_df) < 5:
+        return {"ok": False, "bias": "neutral", "event": "none", "reason": "M5 insuficiente"}
+
+    try:
+        highs = m5_df["high"].astype(float).values
+        lows = m5_df["low"].astype(float).values
+        closes = m5_df["close"].astype(float).values
+        swing_highs = []
+        swing_lows = []
+        for idx in range(1, len(m5_df) - 1):
+            if highs[idx] >= highs[idx - 1] and highs[idx] >= highs[idx + 1]:
+                swing_highs.append((idx, float(highs[idx])))
+            if lows[idx] <= lows[idx - 1] and lows[idx] <= lows[idx + 1]:
+                swing_lows.append((idx, float(lows[idx])))
+
+        last_close = float(closes[-1])
+        atr_base = max(float(atr_val or 0.0), abs(last_close) * 0.0005, 1e-6)
+
+        bias = "neutral"
+        if len(swing_highs) >= 2 and len(swing_lows) >= 2:
+            prev_high, last_high = swing_highs[-2][1], swing_highs[-1][1]
+            prev_low, last_low = swing_lows[-2][1], swing_lows[-1][1]
+            if last_high > prev_high and last_low > prev_low:
+                bias = "bullish"
+            elif last_high < prev_high and last_low < prev_low:
+                bias = "bearish"
+
+        ref_high = swing_highs[-1][1] if swing_highs else float(np.max(highs[:-1]))
+        ref_low = swing_lows[-1][1] if swing_lows else float(np.min(lows[:-1]))
+        event = "none"
+        if last_close > ref_high + (atr_base * 0.05):
+            event = "bullish_bos" if bias in {"bullish", "neutral"} else "bullish_choch"
+        elif last_close < ref_low - (atr_base * 0.05):
+            event = "bearish_bos" if bias in {"bearish", "neutral"} else "bearish_choch"
+
+        if event.startswith("bullish"):
+            final_bias = "bullish"
+        elif event.startswith("bearish"):
+            final_bias = "bearish"
+        else:
+            final_bias = bias
+
+        aligned = (direction == "CALL" and final_bias == "bullish") or (direction == "PUT" and final_bias == "bearish")
+        strong_opp = (direction == "CALL" and final_bias == "bearish") or (direction == "PUT" and final_bias == "bullish")
+
+        if aligned:
+            reason = f"M5 alinhado | bias={final_bias} | evento={event}"
+        elif strong_opp:
+            reason = f"M5 contra o trade | bias={final_bias} | evento={event}"
+        else:
+            reason = f"M5 neutro | bias={final_bias} | evento={event}"
+
+        score = 0.5
+        if aligned:
+            score = 0.9 if "choch" in event or "bos" in event else 0.75
+        elif strong_opp:
+            score = 0.15 if "choch" in event or "bos" in event else 0.3
+
+        ok = aligned
+        return {
+            "ok": ok,
+            "bias": final_bias,
+            "event": event,
+            "score": round(float(score), 4),
+            "reason": reason,
+            "m5_bars": int(len(m5_df)),
+            "swing_highs": int(len(swing_highs)),
+            "swing_lows": int(len(swing_lows)),
+        }
+    except Exception:
+        return {"ok": False, "bias": "neutral", "event": "none", "reason": "falha ao analisar estrutura M5"}
+
+
 def _snapshot_pattern_point(point: Optional[dict], df_index) -> Optional[dict]:
     if not point:
         return None
@@ -457,6 +573,10 @@ def _serialize_dashboard_pattern(ativo: str, pat: dict, df, ia_prob: float,
                                  nn_pred: Optional[dict] = None,
                                  scan_ts: Optional[float] = None,
                                  market_regime: Optional[dict] = None,
+                                 quality_score: Optional[dict] = None,
+                                 m5_structure: Optional[dict] = None,
+                                 region_liquidity_gate: Optional[dict] = None,
+                                 candle_confirmation_gate: Optional[dict] = None,
                                  entry_guard_pred: Optional[dict] = None,
                                  touch_continuation: Optional[dict] = None,
                                  prediction_2m: Optional[dict] = None,
@@ -532,6 +652,18 @@ def _serialize_dashboard_pattern(ativo: str, pat: dict, df, ia_prob: float,
             "score": round(float(market_regime.get("score", 0.0) or 0.0), 3),
             "reason": str(market_regime.get("reason", "")),
         }
+
+    if quality_score is not None:
+        snap["quality_score"] = quality_score
+
+    if m5_structure is not None:
+        snap["m5_structure"] = m5_structure
+
+    if region_liquidity_gate is not None:
+        snap["region_liquidity_gate"] = region_liquidity_gate
+
+    if candle_confirmation_gate is not None:
+        snap["candle_confirmation_gate"] = candle_confirmation_gate
 
     if backtest is not None:
         bt = {
@@ -654,7 +786,7 @@ def _force_dt_entry_at_turn(timing_hint: Optional[dict], nn_pred: Optional[dict]
     forced_reason = str(timing_hint.get("reason", "timing convertido para entrada na virada"))
     current_second = float(time.time() % 60.0)
     seconds_to_turn = max(0.0, 60.0 - current_second)
-    if current_second <= max(0.8, min(MAX_ENTRY_DELAY_SEC, 2.0)):
+    if current_second <= DT_TURN_ENTRY_TOLERANCE_SEC:
         return {
             **timing_hint,
             "available": True,
@@ -1346,6 +1478,152 @@ def _dt_profile_runtime_filter(direction: str,
     }
 
 
+def _compute_dt_confluence_score(direction: str,
+                                 geom_score: Optional[float],
+                                 entry_region: Optional[dict],
+                                 touch_continuation: Optional[dict],
+                                 study_multifactor: Optional[dict],
+                                 quality_risk: Optional[dict],
+                                 macro_ctx: Optional[dict],
+                                 nn_score: Optional[float],
+                                 entry_guard_pred: Optional[dict]) -> dict:
+    entry_region = entry_region or {}
+    touch_continuation = touch_continuation or {}
+    study_multifactor = study_multifactor or {}
+    quality_risk = quality_risk or {}
+    macro_ctx = macro_ctx or {}
+    entry_guard_pred = entry_guard_pred or {}
+
+    geom_score = max(0.0, min(float(geom_score or 0.0), 1.0))
+    nn_score = max(0.0, min(float(nn_score or 0.0), 1.0))
+    entry_guard_prob = max(0.0, min(float(entry_guard_pred.get("prob_now", 0.0) or 0.0), 1.0))
+    progress_pct = float(entry_region.get("progress_pct", 0.0) or 0.0)
+    if progress_pct <= 1.0:
+        progress_pct *= 100.0
+    body_ratio = max(0.0, min(float(study_multifactor.get("body_ratio", 0.0) or 0.0), 1.0))
+    rejection_wick = max(0.0, min(float(study_multifactor.get("rejection_wick", 0.0) or 0.0), 1.0))
+    positive_hits = int(study_multifactor.get("positive_hits", 0) or 0)
+    negative_hits = int(study_multifactor.get("negative_hits", 0) or 0)
+    macro_penalty = max(0.0, float(macro_ctx.get("macro_penalty", 0.0) or 0.0))
+    signal_class = str(study_multifactor.get("signal_candle_class", "unknown") or "unknown")
+
+    structure = geom_score * 12.0
+    if positive_hits >= 3:
+        structure += 4.0
+    elif positive_hits >= 2:
+        structure += 3.0
+    elif positive_hits >= 1:
+        structure += 1.5
+    if not macro_ctx.get("block"):
+        if macro_penalty < 0.04:
+            structure += 4.0
+        elif macro_penalty < 0.08:
+            structure += 2.0
+    structure = min(structure, 20.0)
+
+    region = 0.0
+    if entry_region.get("ok"):
+        region += 8.0
+        if entry_region.get("ideal"):
+            region += 8.0
+        else:
+            region += 4.0
+    if progress_pct <= 20.0:
+        region += 4.0
+    elif progress_pct <= 35.0:
+        region += 2.0
+    region = min(region, 20.0)
+
+    setup = 0.0
+    if touch_continuation.get("matched") and not touch_continuation.get("partial"):
+        setup += 10.0
+    elif touch_continuation.get("matched"):
+        setup += 6.0
+    elif touch_continuation.get("partial"):
+        setup += 4.0
+    if quality_risk.get("ok", True):
+        setup += 6.0
+    if negative_hits == 0:
+        setup += 4.0
+    elif negative_hits == 1:
+        setup += 2.0
+    setup = min(setup, 20.0)
+
+    candle = {
+        "full_body_confirm": 12.0,
+        "body_confirm": 10.0,
+        "wick_rejection_confirm": 8.0,
+        "pin_rejection": 6.0,
+        "unknown": 5.0,
+        "weak_or_mixed": 3.0,
+        "doji_indecision": 1.0,
+    }.get(signal_class, 5.0)
+    candle += min(body_ratio * 4.0, 4.0)
+    candle += min(rejection_wick * 4.0, 4.0)
+    candle = min(candle, 20.0)
+
+    ai = 0.0
+    if nn_score >= 0.92:
+        ai += 12.0
+    elif nn_score >= 0.88:
+        ai += 10.0
+    elif nn_score >= 0.84:
+        ai += 8.0
+    elif nn_score >= 0.80:
+        ai += 6.0
+    elif nn_score >= 0.75:
+        ai += 4.0
+    if entry_guard_prob >= 0.90:
+        ai += 8.0
+    elif entry_guard_prob >= 0.84:
+        ai += 6.0
+    elif entry_guard_prob >= 0.78:
+        ai += 4.0
+    elif entry_guard_prob >= 0.72:
+        ai += 2.0
+    ai = min(ai, 20.0)
+
+    total = int(round(structure + region + setup + candle + ai))
+    no_trade_reasons = []
+    if macro_ctx.get("block"):
+        no_trade_reasons.append(f"macro contra: {macro_ctx.get('reason', 'tendencia forte contra')}")
+    if not entry_region.get("ok"):
+        no_trade_reasons.append("regiao invalida")
+    if not quality_risk.get("ok", True):
+        no_trade_reasons.append(str(quality_risk.get("reason", "quality_risk bloqueou")))
+    if signal_class in {"weak_or_mixed", "doji_indecision"} and not entry_region.get("ideal"):
+        no_trade_reasons.append(f"vela fraca fora da zona ideal ({signal_class})")
+    if not touch_continuation.get("matched") and not touch_continuation.get("partial"):
+        no_trade_reasons.append("sem confirmacao de pullback/continuidade")
+
+    ok = total >= DT_CONFLUENCE_MIN_SCORE and not no_trade_reasons
+    reason = (
+        f"confluencia={total}/100 | estrutura={structure:.0f} regiao={region:.0f} "
+        f"setup={setup:.0f} vela={candle:.0f} ia={ai:.0f}"
+    )
+    if no_trade_reasons:
+        reason += " | bloqueios=" + "; ".join(no_trade_reasons[:3])
+    elif not ok:
+        reason += f" | abaixo do minimo {DT_CONFLUENCE_MIN_SCORE}"
+
+    return {
+        "ok": ok,
+        "score": total,
+        "min_score": DT_CONFLUENCE_MIN_SCORE,
+        "structure": round(structure, 2),
+        "region": round(region, 2),
+        "setup": round(setup, 2),
+        "candle": round(candle, 2),
+        "ai": round(ai, 2),
+        "signal_candle_class": signal_class,
+        "macro_block": bool(macro_ctx.get("block")),
+        "no_trade": bool(no_trade_reasons),
+        "no_trade_reasons": no_trade_reasons,
+        "reason": reason,
+        "direction": direction,
+    }
+
+
 # ── Ativos fixos — melhores ativos (OTC + REAL com volume) ──
 # Ranking: EURJPY-OTC 56.7% | AUDCAD-OTC 56.1% | EURGBP 55.0%
 # EURUSD 50.8% | USDCHF 50.7% | EURGBP-OTC 50.0% | EURJPY 50.0%
@@ -1612,9 +1890,212 @@ def _seed_bundled_models() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════
-# AUTO-TREINO: treinar modelo ML com CSVs locais na inicialização
+# AUTO-UPDATE: atualizar CSVs + retreinar NNs ao iniciar o bot
 # ═══════════════════════════════════════════════════════════════
 _CANDLES_100K_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_100k")
+_OPTIONAL_CANDLE_DIRS = [
+    _CANDLES_100K_DIR,
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_deep"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "candles_5000"),
+]
+_asset_candle_count_cache: Dict[str, int] = {}
+
+
+def _count_csv_rows_fast(csv_path: str) -> int:
+    try:
+        with open(csv_path, "rb") as fh:
+            row_count = 0
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                row_count += chunk.count(b"\n")
+        return max(0, row_count - 1)
+    except Exception:
+        return 0
+
+
+def _get_asset_historical_candle_count(asset: str) -> int:
+    cached = _asset_candle_count_cache.get(asset)
+    if cached is not None:
+        return cached
+
+    best = 0
+    for base_dir in _OPTIONAL_CANDLE_DIRS:
+        if not os.path.isdir(base_dir):
+            continue
+        csv_path = os.path.join(base_dir, f"{asset}.csv")
+        if not os.path.exists(csv_path):
+            continue
+        best = max(best, _count_csv_rows_fast(csv_path))
+
+    _asset_candle_count_cache[asset] = best
+    return best
+
+
+def _update_candles_and_retrain(bx: BrokerAPI) -> bool:
+    """Atualiza candles até o momento atual e retreina DT + Continuation.
+
+    Fluxo:
+      1. Para cada CSV em candles_100k/, detecta a última vela salva
+      2. Baixa candles faltantes do broker (de last_ts até agora)
+      3. Appende ao CSV existente
+      4. Retreina a rede neural DT (train_neural_network.py)
+
+    Retorna True se retreinou com sucesso.
+    """
+    if not os.path.isdir(_CANDLES_100K_DIR):
+        log.info(paint("⚠️ Pasta candles_100k/ não existe — pulando atualização", C.Y))
+        return False
+
+    csv_files = sorted([f for f in os.listdir(_CANDLES_100K_DIR) if f.endswith(".csv")])
+    if len(csv_files) < 3:
+        log.info(paint(f"⚠️ Poucos CSVs ({len(csv_files)}) — pulando atualização", C.Y))
+        return False
+
+    print("", flush=True)
+    print("=" * 60, flush=True)
+    print("  📡 WS TRADER — ATUALIZANDO CANDLES DO BROKER", flush=True)
+    print(f"  {len(csv_files)} ativos para verificar", flush=True)
+    print("=" * 60, flush=True)
+    print("", flush=True)
+
+    now_ts = int(time.time())
+    total_new = 0
+    updated_assets = 0
+
+    for i, csv_file in enumerate(csv_files, 1):
+        asset = csv_file.replace(".csv", "")
+        csv_path = os.path.join(_CANDLES_100K_DIR, csv_file)
+
+        try:
+            # Ler última linha do CSV para pegar o timestamp mais recente
+            df_existing = pd.read_csv(csv_path)
+            if df_existing.empty or "time" not in df_existing.columns:
+                continue
+
+            last_time_str = str(df_existing["time"].iloc[-1]).strip()
+            last_dt = pd.to_datetime(last_time_str, utc=True)
+            last_ts = int(last_dt.timestamp())
+
+            gap_minutes = (now_ts - last_ts) // 60
+            if gap_minutes < 5:
+                # CSV já está quase atualizado — pular
+                continue
+
+            # Limitar a 50.000 candles (~34 dias) para não demorar
+            max_candles = min(50_000, gap_minutes + 10)
+
+            print(f"  [{i}/{len(csv_files)}] {asset}: "
+                  f"faltam ~{gap_minutes:,} min — baixando...",
+                  end="", flush=True)
+
+            # Baixar candles faltantes
+            rows_by_ts = {}
+            end_ts = float(now_ts)
+            stagnant = 0
+            chunk_size = 1000
+
+            while len(rows_by_ts) < max_candles:
+                remaining = max_candles - len(rows_by_ts)
+                batch = min(chunk_size, remaining)
+                try:
+                    raw = bx.get_candles(asset, 60, batch, end_ts)
+                except Exception:
+                    break
+
+                if not raw or isinstance(raw, int):
+                    stagnant += 1
+                    if stagnant >= 3:
+                        break
+                    time.sleep(0.5)
+                    continue
+
+                stagnant = 0
+                batch_ts = []
+                for c in raw:
+                    ts_val = c.get("from", c.get("time"))
+                    if ts_val is None:
+                        continue
+                    ts_int = int(ts_val)
+                    if ts_int <= last_ts:
+                        # Já temos este candle — parar
+                        batch_ts = []
+                        break
+                    low = c.get("low", c.get("min"))
+                    high = c.get("high", c.get("max"))
+                    o = c.get("open")
+                    cl = c.get("close")
+                    if None in (o, high, low, cl):
+                        continue
+                    rows_by_ts[ts_int] = {
+                        "time": pd.Timestamp(ts_int, unit="s", tz="UTC")
+                                  .strftime("%Y-%m-%d %H:%M:%S"),
+                        "open": float(o),
+                        "high": float(high),
+                        "low": float(low),
+                        "close": float(cl),
+                    }
+                    batch_ts.append(ts_int)
+
+                if not batch_ts:
+                    break
+
+                end_ts = float(min(batch_ts) - 1)
+                time.sleep(0.2)
+
+            if not rows_by_ts:
+                print(" sem novos candles", flush=True)
+                continue
+
+            # Filtrar: só candles DEPOIS do último existente
+            new_rows = [rows_by_ts[ts] for ts in sorted(rows_by_ts) if ts > last_ts]
+            if not new_rows:
+                print(" já atualizado", flush=True)
+                continue
+
+            # Append ao CSV
+            df_new = pd.DataFrame(new_rows)
+            df_new.to_csv(csv_path, mode="a", header=False, index=False)
+            total_new += len(new_rows)
+            updated_assets += 1
+            print(f" +{len(new_rows)} candles ✅", flush=True)
+
+        except Exception as e:
+            print(f" erro: {e}", flush=True)
+            log.debug(f"Erro atualizando {asset}: {e}")
+            continue
+
+    print("", flush=True)
+    if total_new > 0:
+        print(f"  📊 {updated_assets} ativos atualizados, "
+              f"+{total_new:,} candles novos", flush=True)
+    else:
+        print("  ✅ Todos os CSVs já estão atualizados", flush=True)
+
+    # ── Retreinar DT (Double Touch) com dados atualizados ──
+    print("", flush=True)
+    print("=" * 60, flush=True)
+    print("  🧠 RETREINANDO REDE NEURAL DT (dados frescos)", flush=True)
+    print("=" * 60, flush=True)
+    print("", flush=True)
+
+    t0 = time.time()
+    try:
+        import train_neural_network
+        train_neural_network.main()
+        elapsed = time.time() - t0
+        print(f"\n  ✅ DT retreinada em {elapsed:.0f}s", flush=True)
+        log.info(paint(f"✅ DT retreinada com dados frescos em {elapsed:.0f}s", C.G))
+    except Exception as e:
+        log.error(paint(f"❌ Retreino DT falhou: {e}", C.R))
+        print(f"  ❌ Retreino DT falhou: {e}", flush=True)
+        print("  Usando modelos anteriores", flush=True)
+
+    print("", flush=True)
+    return True
+
+
+# ═══════════════════════════════════════════════════════════════
+# AUTO-TREINO: treinar modelo ML com CSVs locais na inicialização
+# ═══════════════════════════════════════════════════════════════
 
 
 def _run_auto_train(bx: BrokerAPI) -> bool:
@@ -2424,6 +2905,81 @@ def _detect_dt_counter_barrier(pat: dict,
         }
     except Exception:
         return {"near": False, "reason": "falha ao mapear barreira"}
+
+
+def _validate_dt_region_liquidity_gate(entry_region: Optional[dict],
+                                       counter_barrier: Optional[dict]) -> dict:
+    entry_region = entry_region or {}
+    counter_barrier = counter_barrier or {}
+
+    if not entry_region.get("ok"):
+        return {
+            "ok": False,
+            "reason": entry_region.get("reason", "regiao invalida"),
+        }
+
+    if not entry_region.get("ideal"):
+        return {
+            "ok": False,
+            "reason": entry_region.get("reason", "fora da zona ideal do DT"),
+        }
+
+    if counter_barrier.get("near"):
+        return {
+            "ok": False,
+            "reason": counter_barrier.get("reason", "liquidez/barreira muito proxima contra a entrada"),
+        }
+
+    return {
+        "ok": True,
+        "reason": (
+            f"regiao ideal ok | touch={float(entry_region.get('dist_touch_atr', 0.0) or 0.0):.2f}ATR | "
+            f"progress={float(entry_region.get('progress_pct', 0.0) or 0.0):.0%}"
+        ),
+    }
+
+
+def _validate_dt_candle_confirmation_gate(study_multifactor: Optional[dict],
+                                          touch_continuation: Optional[dict],
+                                          entry_region: Optional[dict]) -> dict:
+    study_multifactor = study_multifactor or {}
+    touch_continuation = touch_continuation or {}
+    entry_region = entry_region or {}
+
+    signal_class = str(study_multifactor.get("signal_candle_class", "unknown") or "unknown")
+    touch_matched = bool(touch_continuation.get("matched"))
+    partial = bool(touch_continuation.get("partial"))
+    ideal = bool(entry_region.get("ideal"))
+
+    if signal_class in {"doji_indecision", "weak_or_mixed"}:
+        return {
+            "ok": False,
+            "reason": f"vela sem confirmacao ({signal_class})",
+        }
+
+    if not touch_matched:
+        return {
+            "ok": False,
+            "reason": "sem confirmacao de continuidade no M1",
+        }
+
+    if partial and not ideal:
+        return {
+            "ok": False,
+            "reason": "continuidade parcial fora da zona ideal",
+        }
+
+    if signal_class == "pin_rejection" and not ideal:
+        return {
+            "ok": False,
+            "reason": "pin bar fora da zona ideal nao confirma entrada",
+        }
+
+    return {
+        "ok": True,
+        "reason": study_multifactor.get("reason", f"vela confirmou ({signal_class})"),
+        "signal_candle_class": signal_class,
+    }
 
 
 def _build_dt_graph_timing_hint(pat: dict,
@@ -3500,8 +4056,9 @@ def backtest_pattern(pat, C, O, H, L, n):
     Regra: entra no CLOSE da vela do ombro direito (delay=0).
     Verifica o close EXP candles depois: exit = C[entry_idx + EXP].
     EXP_FIXA=2 → checa 2 candles à frente (alinhado com treino original).
-    PUT: WIN se close < entry_price
-    CALL: WIN se close > entry_price
+    PUT: WIN se close < entry_price - slippage
+    CALL: WIN se close > entry_price + slippage
+    Slippage simula spread/latência reais (~30% do ATR local).
     Retorna None se padrão é LIVE (sem resultado ainda)."""
     entry_idx = pat.get("entry_idx", pat["right_shoulder"]["idx"])
     if entry_idx >= n or entry_idx < 0:
@@ -3515,14 +4072,21 @@ def backtest_pattern(pat, C, O, H, L, n):
     entry_price = float(C[entry_idx])
     exit_price = float(C[exit_idx])
     head_price = pat["head"]["price"]
+    # ── Slippage: simular spread + latência reais ──
+    # ATR local das últimas 14 velas antes da entrada
+    _bt_start = max(0, entry_idx - 14)
+    _bt_ranges = [float(H[k] - L[k]) for k in range(_bt_start, entry_idx + 1) if k < n]
+    _bt_atr = float(np.mean(_bt_ranges)) if _bt_ranges else abs(entry_price) * 0.001
+    # Slippage = 30% do ATR (cobre ~2-3 pips de spread em pares OTC)
+    _slippage = _bt_atr * 0.30
     if pat["direction"] == "PUT":
         if entry_price >= head_price:
             return {"result": "skip", "reason": "acima_cabeca"}
-        win = exit_price < entry_price
+        win = exit_price < (entry_price - _slippage)
     else:  # CALL
         if entry_price <= head_price:
             return {"result": "skip", "reason": "abaixo_cabeca"}
-        win = exit_price > entry_price
+        win = exit_price > (entry_price + _slippage)
     return {
         "result": "win" if win else "loss",
         "entry_price": round(entry_price, 6),
@@ -3530,6 +4094,7 @@ def backtest_pattern(pat, C, O, H, L, n):
         "entry_idx": entry_idx,
         "exit_idx": exit_idx,
         "pips": round(abs(exit_price - entry_price), 6),
+        "slippage": round(_slippage, 6),
     }
 
 
@@ -4061,9 +4626,12 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
         _market_regime = {}
         _dashboard_assets[ativo]["market_regime"] = {}
 
-        # ═══ SOMENTE CONTINUATION ML (DT/Geometria removidos) ═══
-        _dashboard_assets[ativo]["patterns"] = []
-        patterns = []
+        # ═══ DT (Double Touch) + CONTINUATION ML ═══
+        ph, pl = detect_pivots(H, L, window=5)
+        all_dt = detect_double_touch(H, L, C_arr, O, ph, pl, atr, n,
+                                     max_candles_ago=MAX_LIVE_SIGNAL_CANDLES, training=False)
+        patterns = all_dt
+        _dashboard_assets[ativo]["patterns"] = patterns
 
         _detected_recent = len(patterns)
 
@@ -4454,6 +5022,28 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                     C.G if _timing_hint.get("action") == "now" else C.Y
                 ))
 
+            _m5_structure_scan = _analyze_dt_m5_structure(pat, df, atr, direction)
+            log.info(paint(
+                f"  🧭 ESTRUTURA M5: {ativo} {direction} | {_m5_structure_scan.get('reason')}",
+                C.G if _m5_structure_scan.get("ok") else C.Y
+            ))
+
+            _confluence_scan = _compute_dt_confluence_score(
+                direction,
+                _pq,
+                _entry_region,
+                _touch_continuation,
+                _study_multifactor,
+                _quality_risk,
+                None,
+                _nn_pre_score,
+                _entry_guard_pre_pred,
+            )
+            log.info(paint(
+                f"  🎯 SCORE CONFLUENCIA: {ativo} {direction} | {_confluence_scan.get('reason')}",
+                C.G if _confluence_scan.get("ok") else C.Y
+            ))
+
             setup = {
                 "dir": direction,
                 "type": pat_type,
@@ -4479,6 +5069,10 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                 "touch_continuation": _touch_continuation,
                 "prediction_2m": _prediction_2m,
                 "timing_hint": _timing_hint,
+                "quality_score": _confluence_scan,
+                "m5_structure": _m5_structure_scan,
+                "region_liquidity_gate": None,
+                "candle_confirmation_gate": None,
                 "shadow_pattern_lib": _shadow_pattern_lib,
                 "gpt_pre_result": _gpt_scan_result,
                 "ai_consensus": _ai_consensus,
@@ -4501,6 +5095,10 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
                     nn_pred=_nn_pre_pred,
                     scan_ts=_scan_start,
                     market_regime=None,
+                    quality_score=_confluence_scan,
+                    m5_structure=_m5_structure_scan,
+                    region_liquidity_gate=None,
+                    candle_confirmation_gate=None,
                     entry_guard_pred=_entry_guard_pre_pred,
                     touch_continuation=_touch_continuation,
                     prediction_2m=_prediction_2m,
@@ -4535,52 +5133,7 @@ def escolher_melhor_setup_local(bx, cooldown_map: dict, hs_stats: dict,
             if best_trade is None or score > best_trade[0]:
                 best_trade = (score, ativo, setup, atr)
 
-        # ═══ CONTINUATION SCAN (Compressão + Breakout ML) ═══
-        if _continuation_ai.loaded:
-            try:
-                _cont_signals = _continuation_ai.scan_live(df, ativo, max_candles_ago=MAX_LIVE_SIGNAL_CANDLES)
-                for _cs in _cont_signals:
-                    _cont_score = float(_cs["ml_prob"])
-                    _cont_setup = {
-                        "dir": _cs["direction"],
-                        "type": "CONTINUATION",
-                        "mode": "continuation",
-                        "confidence": _cs["confidence"],
-                        "pattern": _cs.get("pattern", {}),
-                        "continuation_signal": _cs,
-                        "last_close": float(C_arr[-1]),
-                        "ml_prob": _cs["ml_prob"],
-                        "exp_candles": _cs.get("exp_candles", 2),
-                    }
-                    all_candidates.append((_cont_score, ativo, _cont_setup, atr))
-                    _total_patterns += 1
-
-                    # Dashboard live signal
-                    _dashboard_live_signals.append(_cs)
-
-                    log.info(paint(
-                        f"  📊 CONTINUATION: {ativo} | {_cs['direction']} | ML={_cs['ml_prob']:.2f} | "
-                        f"candles_ago={_cs['candles_ago']}",
-                        C.B
-                    ))
-
-                    if best_any is None or _cont_score > best_any[0]:
-                        best_any = (_cont_score, ativo, _cont_setup, atr)
-                    if best_trade is None or _cont_score > best_trade[0]:
-                        best_trade = (_cont_score, ativo, _cont_setup, atr)
-            except Exception as _cont_scan_err:
-                log.debug(f"  ⚠️ Continuation scan erro {ativo}: {_cont_scan_err}")
-
-        # Dashboard: incluir padrões de continuação (backtest) para visualização
-        if _continuation_ai.loaded:
-            try:
-                _cont_all = _continuation_ai.scan(df, ativo, max_candles_ago=9999)
-                _cont_visible_start = max(0, n - 120)
-                for _ca in _cont_all:
-                    if _ca.get("breakout_idx", 0) >= _cont_visible_start and _ca.get("backtest"):
-                        _dashboard_assets[ativo].setdefault("patterns", []).append(_ca)
-            except Exception:
-                pass
+        # ═══ CONTINUATION SCAN DESATIVADO — só DT opera ═══
 
     if _total_patterns > 0:
         log.info(paint(f"  🔍 Scan local: {_total_patterns} padrão(ões) encontrado(s)", C.G))
@@ -5222,7 +5775,7 @@ def _estimate_dt_nn_score(ativo: str, pat: dict, df: Optional[pd.DataFrame], atr
         _rs_idx = max(0, min(_rs_idx, _n - 1))
 
         _win_start = max(0, _rs_idx - _dt_context_candles)
-        _win_end = min(_n, _rs_idx + 2)  # Inclui até 1 vela pós-RS para features RE-CHECK
+        _win_end = min(_n, _rs_idx + 1)  # Sem vela pós-RS — alinha com treino offline
         _H_win = _H[_win_start:_win_end]
         _L_win = _L[_win_start:_win_end]
         _C_win = _C[_win_start:_win_end]
@@ -5254,10 +5807,24 @@ def _estimate_dt_nn_score(ativo: str, pat: dict, df: Optional[pd.DataFrame], atr
             "ai1_val": round(float(getattr(_rai, "_ai1_val", 0.0) or 0.0), 4) if getattr(_rai, "_ai1_ready", False) else None,
             "ai2_val": round(float(getattr(_rai, "_ai2_val", 0.0) or 0.0), 4) if getattr(_rai, "_ai2_ready", False) else None,
             "ai3_val": round(float(getattr(_rai, "_ai3_val", 0.0) or 0.0), 4) if getattr(_rai, "_ai3_ready", False) else None,
+            "ai4_val": round(float(getattr(_rai, "_ai4_val", 0.0) or 0.0), 4) if getattr(_rai, "_ai4_ready", False) else None,
             "n_samples": int(getattr(_rai, "_loaded_n_samples", 0) or 0),
             "n_features": int(getattr(_rai, "_n_features_trained", len(_feats)) or len(_feats)),
             "context_candles": _dt_context_candles,
         }
+
+        # ── IA 4: Candle Safety (20 features de microestrutura) ──
+        _cs_feats = extract_candle_safety_features(
+            _pat_copy, _H_win, _L_win, _C_win, _O_win, _n_win, _atr_local
+        )
+        _ia4_result = None
+        if _cs_feats is not None and getattr(_rai, "_ai4_ready", False):
+            _ia4_result = _rai.predict_candle_safety(_cs_feats.tolist())
+        _pred["ia4_candle_safety"] = _ia4_result
+
+        # ── Guardar features brutas para live learning ──
+        _pred["_raw_dt_feats"] = list(_feats) if _feats is not None else None
+        _pred["_raw_cs_feats"] = _cs_feats.tolist() if _cs_feats is not None else None
 
         return (_pred.get("nn_score"), _pred, None) if return_reason else (_pred.get("nn_score"), _pred)
     except Exception as ex:
@@ -5316,55 +5883,202 @@ def _ensure_reversal_model_loaded(reversal_ai_map: Optional[dict], ativo: str) -
 _cache_ativos: List[str] = []
 _cache_ativos_ts: float = 0.0
 _top_dt_assets: List[str] = []  # TOP N ativos DT (N definido por benchmark)
+_top_dt_asset_metrics: Dict[str, Dict[str, Any]] = {}
+_top_dt_pool_mode: str = "strict"
+
+
+def _should_ignore_dt_rank_asset(asset_name: str, file_name: str = "") -> bool:
+    raw_asset = str(asset_name or "").strip()
+    raw_file = str(file_name or "").strip()
+    lowered = f"{raw_asset} {raw_file}".lower()
+
+    if not raw_asset:
+        return True
+    if "backup" in lowered or "unified" in lowered:
+        return True
+    return False
+
+
+def _classify_dt_asset_pool_tier(samples: int, edge_vs_baseline: float, candles_hist: int) -> Tuple[int, str, bool]:
+    if (
+        samples >= DT_RANK_MIN_SAMPLES
+        and edge_vs_baseline >= DT_RANK_MIN_EDGE
+        and candles_hist >= DT_RANK_MIN_CANDLES
+    ):
+        return 4, "strict", True
+
+    if (
+        samples >= DT_RANK_MIN_SAMPLES
+        and edge_vs_baseline >= max(0.0, DT_RANK_MIN_EDGE * 0.5)
+        and candles_hist >= max(75000, int(DT_RANK_MIN_CANDLES * 0.90))
+    ):
+        return 3, "soft_strong", False
+
+    if (
+        samples >= DT_RANK_MIN_SAMPLES
+        and edge_vs_baseline >= 0.0
+        and candles_hist >= max(70000, int(DT_RANK_MIN_CANDLES * 0.85))
+    ):
+        return 2, "soft_ok", False
+
+    if (
+        samples >= DT_RANK_MIN_SAMPLES
+        and edge_vs_baseline >= -0.005
+        and candles_hist >= max(65000, int(DT_RANK_MIN_CANDLES * 0.80))
+    ):
+        return 1, "soft_guarded", False
+
+    return 0, "fallback", False
+
+
+def _dt_asset_rank_key(item: Dict[str, Any]) -> Tuple[float, float, int, int]:
+    return (
+        float(item.get("edge_vs_baseline", 0.0) or 0.0),
+        float(item.get("best_acc", 0.0) or 0.0),
+        int(item.get("samples", 0) or 0),
+        int(item.get("candles_hist", 0) or 0),
+    )
+
+
+def _compute_dt_asset_selection_score(metric: Optional[Dict[str, Any]], payout: int) -> float:
+    if not metric:
+        return round(min(max(float(payout) / 100.0, 0.0), 1.0) * 0.10, 4)
+
+    tier_rank = int(metric.get("tier_rank", 0) or 0)
+    edge_vs_baseline = float(metric.get("edge_vs_baseline", 0.0) or 0.0)
+    best_acc = float(metric.get("best_acc", 0.0) or 0.0)
+    samples = int(metric.get("samples", 0) or 0)
+    candles_hist = int(metric.get("candles_hist", 0) or 0)
+
+    payout_norm = max(0.0, min(float(payout) / 100.0, 1.0))
+    edge_norm = max(0.0, min((edge_vs_baseline + 0.03) / 0.06, 1.0))
+    sample_norm = max(0.0, min(samples / max(float(DT_RANK_MIN_SAMPLES * 2), 1.0), 1.0))
+    candle_norm = max(0.0, min(candles_hist / max(float(DT_RANK_MIN_CANDLES), 1.0), 1.0))
+
+    score = (
+        tier_rank * 0.22
+        + edge_norm * 0.34
+        + best_acc * 0.24
+        + sample_norm * 0.12
+        + candle_norm * 0.04
+        + payout_norm * 0.04
+    )
+    return round(score, 4)
 
 
 def _pick_top_dt_assets(hs_stats: dict, n_top: int = 4) -> List[str]:
-    """Retorna o pool ranqueado pela acurácia/WR do modelo Continuation ML per-asset."""
-    # Usar modelo continuation ML (per-asset) como fonte primária
-    if _continuation_ai.loaded and hasattr(_continuation_ai, 'per_asset') and _continuation_ai.per_asset:
-        ranked = []
-        for ativo, data in _continuation_ai.per_asset.items():
-            wr = float(data.get("wr", 0))
-            acc = float(data.get("acc", 0))
-            n_test = int(data.get("n_test", 0))
-            threshold = float(data.get("threshold", 0.55))
-            ranked.append((ativo, wr, acc, threshold, n_test))
-        # Ordenar por WR descendente
-        ranked.sort(key=lambda x: (x[1], x[2], x[4]), reverse=True)
+    """Retorna o pool ranqueado pelos modelos DT reversal (reversal_tf_*.pkl)."""
+    import pickle as _pkl_pool
 
-        # Filtro: WR >= 70% e pelo menos 50 trades de teste
-        _MIN_WR = 70.0
-        _MIN_TRADES = 50
-        filtered = [item for item in ranked if item[1] >= _MIN_WR and item[4] >= _MIN_TRADES]
+    global _top_dt_asset_metrics, _top_dt_pool_mode
+    _top_dt_asset_metrics = {}
+    _top_dt_pool_mode = "strict"
 
-        if not filtered:
-            # Fallback: usar todos com WR >= 60%
-            filtered = [item for item in ranked if item[1] >= 60.0]
-            if filtered:
-                log.warning(paint(
-                    f"⚠️ Nenhum ativo com WR>={_MIN_WR}% — usando pool relaxado (WR>=60%): {len(filtered)} ativos",
-                    C.Y
-                ))
+    # ── Fonte primária: modelos DT reversal treinados no disco ──
+    ranked_dt = []
+    try:
+        for fname in os.listdir(_user_data_dir):
+            if not (fname.startswith("reversal_tf_") and fname.endswith(".pkl")):
+                continue
+            ativo = fname[len("reversal_tf_"):-4]
+            if _should_ignore_dt_rank_asset(ativo, fname):
+                continue
+            fpath = os.path.join(_user_data_dir, fname)
+            try:
+                with open(fpath, "rb") as _fp:
+                    bundle = _pkl_pool.load(_fp)
+                samples = int(bundle.get("n_samples", 0) or 0)
+                ia1 = float(bundle.get("ai1_val", 0) or 0)
+                ia2 = float(bundle.get("ai2_val", 0) or 0)
+                ia3 = float(bundle.get("ai3_val", 0) or 0)
+                baseline_wr = float(bundle.get("baseline_wr", 0) or 0)
+                candles_hist = _get_asset_historical_candle_count(ativo)
+                if candles_hist <= 0:
+                    continue
+                core_best = max(ia1, ia2)
+                best_acc = max(ia1, ia2, ia3)
+                edge_vs_baseline = (core_best - baseline_wr) if baseline_wr > 0 else (core_best - 0.50)
+                tier_rank, tier_label, eligible = _classify_dt_asset_pool_tier(
+                    samples,
+                    edge_vs_baseline,
+                    candles_hist,
+                )
+                metric = {
+                    "asset": ativo,
+                    "best_acc": best_acc,
+                    "ia1": ia1,
+                    "ia2": ia2,
+                    "ia3": ia3,
+                    "samples": samples,
+                    "baseline_wr": baseline_wr,
+                    "edge_vs_baseline": edge_vs_baseline,
+                    "eligible": eligible,
+                    "candles_hist": candles_hist,
+                    "tier_rank": tier_rank,
+                    "tier_label": tier_label,
+                }
+                ranked_dt.append(metric)
+                _top_dt_asset_metrics[ativo] = metric
+            except Exception:
+                continue
+    except Exception:
+        pass
 
-        if not filtered:
-            filtered = ranked[:n_top]
-            log.warning(paint("⚠️ Usando todos os ativos disponíveis (sem filtro de WR)", C.Y))
+    if ranked_dt:
+        eligible_dt = [item for item in ranked_dt if item.get("eligible")]
+        if eligible_dt:
+            source_dt = sorted(eligible_dt, key=_dt_asset_rank_key, reverse=True)
+            _top_dt_pool_mode = "strict"
+        else:
+            source_dt = []
+            chosen_mode = "fallback"
+            for tier_label in ("soft_strong", "soft_ok", "soft_guarded", "fallback"):
+                tier_items = sorted(
+                    [item for item in ranked_dt if item.get("tier_label") == tier_label],
+                    key=_dt_asset_rank_key,
+                    reverse=True,
+                )
+                if tier_items and not source_dt:
+                    chosen_mode = tier_label
+                source_dt.extend(tier_items)
+                if len(source_dt) >= max(n_top, _ENTRY_GUARD_POOL_SIZE) and chosen_mode != "fallback":
+                    break
+            _top_dt_pool_mode = chosen_mode
 
-        pool_size = min(len(filtered), max(n_top, _ENTRY_GUARD_POOL_SIZE))
-        top = [item[0] for item in filtered[:pool_size]]
-
+        pool_size = min(len(source_dt), max(n_top, _ENTRY_GUARD_POOL_SIZE))
+        top = [item["asset"] for item in source_dt[:pool_size]]
         log.info(paint(
-            f"🎯 Pool Continuation ML: {len(filtered)} ativo(s) com WR>={_MIN_WR}%",
+            f"🎯 Pool DT Reversal: {len(ranked_dt)} ativo(s) com modelo treinado | "
+            f"elegiveis={len(eligible_dt)} (min_n={DT_RANK_MIN_SAMPLES}, edge>={DT_RANK_MIN_EDGE:.0%}, candles>={DT_RANK_MIN_CANDLES})",
             C.G
         ))
-        for i, (asset, wr, acc, threshold, n_test) in enumerate(filtered[:pool_size]):
+        if not eligible_dt:
+            log.warning(paint(
+                f"⚠️ Nenhum modelo passou no filtro completo — usando pool { _top_dt_pool_mode } com edge/qualidade priorizados",
+                C.Y
+            ))
+        for i, item in enumerate(source_dt[:pool_size]):
+            asset = item["asset"]
+            best = item["best_acc"]
+            a1 = item["ia1"]
+            a2 = item["ia2"]
+            a3 = item["ia3"]
+            ns = item["samples"]
+            bwr = item["baseline_wr"]
+            edge = item["edge_vs_baseline"]
+            ok = item["eligible"]
+            candles_hist = item["candles_hist"]
+            tier_label = item.get("tier_label", "fallback")
             log.info(paint(
-                f"🎯 ASSET #{i+1}: {asset} | WR={wr:.1f}% | acc={acc:.1f}% | thr={threshold:.2f} | trades={n_test}",
-                C.G
+                f"🎯 ASSET #{i+1}: {asset} | IA1={a1:.1%} IA2={a2:.1%}"
+                + (f" IA3={a3:.1%}" if a3 > 0 else "")
+                + (f" | baseline={bwr:.1%}" if bwr > 0 else "")
+                + f" | edge={edge:.1%} | n={ns} | candles={candles_hist} | tier={tier_label}",
+                C.G if ok else C.Y
             ))
         return top
 
-    # Fallback: entry-guard ranking (legado)
+    # Fallback: entry-guard ranking
     ranked = _rank_assets_by_entry_guard()
     if ranked:
         chosen_rank = [
@@ -5388,11 +6102,20 @@ def _pick_top_dt_assets(hs_stats: dict, n_top: int = 4) -> List[str]:
 
 def obter_top_ativos_otc(bx: BrokerAPI) -> List[str]:
     global _cache_ativos, _cache_ativos_ts, _top_dt_assets
-    # Congela os ativos escolhidos no boot para evitar rotação durante a sessão.
-    if _cache_ativos:
+
+    _now_ts = time.time()
+    _refresh_ttl = DT_ASSET_REFRESH_SEC if _top_dt_pool_mode == "strict" else DT_ASSET_REFRESH_SEC_FALLBACK
+    if _cache_ativos and (_now_ts - _cache_ativos_ts) < _refresh_ttl:
         return _cache_ativos
 
-    if not _top_dt_assets:
+    if _cache_ativos:
+        log.info(paint(
+            f"♻️ Renovando pool DT após {int(_now_ts - _cache_ativos_ts)}s | modo={_top_dt_pool_mode}",
+            C.B
+        ))
+        _cache_ativos = []
+
+    if not _top_dt_assets or (_now_ts - _cache_ativos_ts) >= _refresh_ttl:
         _top_dt_assets = _pick_top_dt_assets({}, n_top=max(NUM_ATIVOS, _ENTRY_GUARD_POOL_SIZE))
 
     # Verificar quais estão abertos na corretora
@@ -5431,24 +6154,18 @@ def obter_top_ativos_otc(bx: BrokerAPI) -> List[str]:
         for t in good_targets:
             payouts_map.setdefault(t, 0)
 
-    # Ranquear por WR do modelo continuation ML
+    # Ranquear por acurácia do modelo DT reversal
     dynamic_rank = []
     for asset in good_targets:
-        wr = 0.0
-        acc = 0.0
-        if _continuation_ai.loaded and hasattr(_continuation_ai, 'per_asset'):
-            asset_data = _continuation_ai.per_asset.get(asset, {})
-            wr = float(asset_data.get("wr", 0))
-            acc = float(asset_data.get("acc", 0))
         payout = payouts_map.get(asset, 0)
-        # Score: 70% WR + 20% acc + 10% payout
-        score = wr / 100.0 * 0.70 + acc / 100.0 * 0.20 + min(payout / 100.0, 1.0) * 0.10
+        _metric = _top_dt_asset_metrics.get(asset)
+        score = _compute_dt_asset_selection_score(_metric, payout)
         dynamic_rank.append({
             "asset": asset,
             "selection_score": round(score, 4),
-            "wr": round(wr, 1),
-            "accuracy": round(acc, 1),
             "payout": int(payout),
+            "edge": round(float((_metric or {}).get("edge_vs_baseline", 0.0) or 0.0), 4),
+            "tier": (_metric or {}).get("tier_label", "fallback"),
         })
 
     dynamic_rank.sort(key=lambda item: item["selection_score"], reverse=True)
@@ -5458,13 +6175,12 @@ def obter_top_ativos_otc(bx: BrokerAPI) -> List[str]:
     _cache_ativos_ts = time.time()
     if dynamic_rank:
         log.info(paint(
-            f"🎯 Rotação dinâmica: pool={len(dynamic_rank)} | selecionando {len(_cache_ativos)} ativo(s) por WR+acc",
+            f"🎯 Rotação dinâmica: pool={len(dynamic_rank)} | selecionando {len(_cache_ativos)} ativo(s) | modo={_top_dt_pool_mode}",
             C.G
         ))
         for idx, item in enumerate(dynamic_rank[:len(_cache_ativos)]):
             log.info(paint(
-                f"🎯 SCAN #{idx+1}: {item['asset']} | sel={item['selection_score']:.3f} | WR={item['wr']:.1f}% | "
-                f"acc={item['accuracy']:.1f}% | payout={item['payout']}%",
+                f"🎯 SCAN #{idx+1}: {item['asset']} | sel={item['selection_score']:.3f} | edge={item['edge']:.1%} | tier={item['tier']} | payout={item['payout']}%",
                 C.G
             ))
     log.info(paint(f"🎯 ATIVOS EM VARREDURA ({len(_cache_ativos)}): {_cache_ativos}", C.G))
@@ -5592,6 +6308,93 @@ def _log_live_trade(ativo: str, direcao: str, resultado: Optional[float],
         urllib.request.urlopen(req, timeout=2)
     except Exception:
         pass  # Dashboard pode não estar rodando
+
+
+# ═══════════════════════════════════════════════════════════════
+# LIMPEZA DIÁRIA: Limpa logs de trades do dia anterior ao iniciar
+# ═══════════════════════════════════════════════════════════════
+_DAILY_RESET_FILE = os.path.join(_user_data_dir, "ws_last_daily_reset.json")
+
+
+def _reset_daily_trade_logs():
+    """Limpa JSONs de operações se o último reset foi em dia anterior.
+    Garante que o dashboard sempre mostra apenas trades do dia atual."""
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Verificar se já resetamos hoje
+    if os.path.exists(_DAILY_RESET_FILE):
+        try:
+            with open(_DAILY_RESET_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("date") == today:
+                return  # Já resetou hoje
+        except Exception:
+            pass
+
+    log.info(paint("🧹 Reset diário: limpando trade logs do dia anterior", C.B))
+    print(">>> Reset diário: limpando operações do dia anterior...", flush=True)
+
+    # Limpar logs de trades dos 3 brokers
+    for suffix in ("iq", "bullex", "casatrader"):
+        fpath = os.path.join(_user_data_dir, f"ws_live_trades_{suffix}.json")
+        try:
+            if os.path.exists(fpath):
+                with open(fpath, "w", encoding="utf-8") as f:
+                    json.dump({"trades": [], "updated": time.time()}, f)
+        except Exception:
+            pass
+
+    # Limpar log de decisões
+    decisions_path = os.path.join(_user_data_dir, "ws_trade_decisions.json")
+    try:
+        if os.path.exists(decisions_path):
+            with open(decisions_path, "w", encoding="utf-8") as f:
+                json.dump([], f)
+    except Exception:
+        pass
+
+    # Limpar daily log (wins/losses/profit por dia)
+    daily_log_path = os.path.join(_user_data_dir, "ws_daily_log.json")
+    try:
+        if os.path.exists(daily_log_path):
+            with open(daily_log_path, "w", encoding="utf-8") as f:
+                json.dump({"version": 2, "days": {}}, f)
+    except Exception:
+        pass
+
+    # Limpar dashboard cache
+    dash_cache = os.path.join(_user_data_dir, "ws_dashboard_cache.json")
+    try:
+        if os.path.exists(dash_cache):
+            os.remove(dash_cache)
+    except Exception:
+        pass
+
+    # Limpar stats do dashboard IA
+    ia_stats = os.path.join(_user_data_dir, "hs_ia_dashboard_stats.json")
+    try:
+        if os.path.exists(ia_stats):
+            os.remove(ia_stats)
+    except Exception:
+        pass
+
+    # Limpar stats AI por ativo (ws_ai_stats_*.json)
+    for fname in os.listdir(_user_data_dir):
+        if fname.startswith("ws_ai_stats_") and fname.endswith(".json"):
+            try:
+                os.remove(os.path.join(_user_data_dir, fname))
+            except Exception:
+                pass
+
+    # Salvar timestamp do reset
+    try:
+        os.makedirs(_user_data_dir, exist_ok=True)
+        with open(_DAILY_RESET_FILE, "w", encoding="utf-8") as f:
+            json.dump({"date": today, "ts": time.time()}, f)
+    except Exception:
+        pass
+
+    print(">>> Reset diário: ✅ Logs limpos — dashboard pronto para novo dia", flush=True)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -5760,17 +6563,19 @@ def wait_until_second(target_second: int = 45):
 
 def wait_candle_open():
     """Espera até a virada da vela (:00) para executar ordem.
-    Se já estamos nos primeiros 15s do candle novo, entra IMEDIATAMENTE
-    (scan pode atrasar — melhor entrar 10s atrasado que 1min atrasado).
+    Se já estamos na janela exata da virada, entra IMEDIATAMENTE.
+    Se passou da tolerância, espera a próxima virada para evitar entrada tardia.
     Usa spin-lock fino nos últimos 50ms para precisão."""
     now = time.time()
     sec_in_candle = now % 60
     s = 60 - sec_in_candle
-    # Se já estamos nos primeiros 15s do candle, entra DIRETO (não espera +55s)
-    if sec_in_candle < 15:
-        if sec_in_candle > 2:
-            log.info(paint(f"  ⚡ Entrando {sec_in_candle:.0f}s após virada (scan demorou)", C.Y))
+    if sec_in_candle <= DT_TURN_ENTRY_TOLERANCE_SEC:
         return
+    if sec_in_candle < 15:
+        log.info(paint(
+            f"  ⏭️ Fora da tolerância da virada ({sec_in_candle:.2f}s); aguardando próximo candle para entrar no :00 limpo",
+            C.Y
+        ))
     log.info(paint(f"  ⏱️ Aguardando virada :00 ({s:.0f}s)...", C.B))
     # Sleep grosso até 50ms antes
     if s > 0.05:
@@ -5779,6 +6584,10 @@ def wait_candle_open():
     target = now + s
     while time.time() < target:
         pass
+
+
+def _dt_live_blocks_disabled(setup: Optional[dict]) -> bool:
+    return bool(DT_LIVE_DISABLE_EXTRA_BLOCKS and isinstance(setup, dict) and setup.get("mode") == "double_touch")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -5802,10 +6611,17 @@ def _main_inner():
     bx: Optional[BrokerAPI] = None
     _ensure_dashboard_server()
     _seed_bundled_models()
+
+    # ═══ LIMPEZA DIÁRIA: reset trade logs do dia anterior ═══
+    _reset_daily_trade_logs()
+
     bx = ensure_connected(bx)
 
-    # ═══ TREINO AUTOMÁTICO: Baixar velas + treinar ML antes de operar ═══
-    _run_auto_train(bx)
+    # ═══ ATUALIZAR CANDLES + RETREINAR NNs COM DADOS FRESCOS ═══
+    _update_candles_and_retrain(bx)
+
+    # ═══ TREINO AUTOMÁTICO: Continuation ML DESATIVADO ═══
+    # _run_auto_train(bx)  — ML continuation removido; só DT opera
 
     if _ENTRY_GUARD_ENABLED:
         _sync_entry_guard_models_from_github()
@@ -5884,17 +6700,23 @@ def _main_inner():
     log.info(paint("✅ Modo 100% NN — modelos pré-treinados (sem retreino)", C.G))
 
     log.info("=" * 60)
-    log.info(paint(f"🚀 WS TRADER — Continuation ML / Multi-Asset ({_BROKER_LABEL})", C.G))
+    log.info(paint(f"🚀 WS TRADER — DT Reversal / Multi-Asset ({_BROKER_LABEL})", C.G))
     log.info("=" * 60)
 
-    # ── SELECIONAR MELHOR ATIVO DT (baseado nos entry-guard models) ──
-    global _top_dt_assets
-    _top_dt_assets = _pick_top_dt_assets(hs_stats, n_top=max(SCAN_NUM_ATIVOS, _ENTRY_GUARD_POOL_SIZE))
+    # ── SELECIONAR ATIVOS DT (lista final do cache, já filtrada por corretora/payout) ──
+    global _top_dt_assets, _cache_ativos, _cache_ativos_ts
+    _top_dt_assets = []
+    _cache_ativos = []
+    _cache_ativos_ts = 0.0
+    _boot_selected_assets = obter_top_ativos_otc(bx)
 
-    log.info(f"✅ Estratégia: Continuation ML (Compressão + Breakout)")
-    log.info(f"✅ Modelo: XGBoost + LightGBM | WF={_continuation_ai.stats.get('walk_forward_wr', 0):.1f}%" if _continuation_ai.loaded else "")
-    log.info(f"✅ Pool ranqueado de ativos: {_top_dt_assets}")
-    log.info(f"✅ Varredura simultânea de ativos: {SCAN_NUM_ATIVOS}")
+    # ── Pré-carregar modelos NN só para os ativos realmente selecionados no scan ──
+    for _preload_asset in _boot_selected_assets[:SCAN_NUM_ATIVOS]:
+        _ensure_reversal_model_loaded(reversal_ai_map, _preload_asset)
+
+    log.info(f"✅ Estratégia: DT Reversal (Double Touch)")
+    log.info(f"✅ Pool ranqueado de ativos: {len(_top_dt_assets)} ativos")
+    log.info(f"✅ Varredura simultânea de ativos: {len(_boot_selected_assets[:SCAN_NUM_ATIVOS])}")
     log.info(f"✅ Live scan candles: {LIVE_SCAN_N_M1}")
     log.info(f"✅ Corretora: {_BROKER_LABEL} ({BROKER_TYPE})")
     log.info(f"✅ Expiração: {EXP_FIXA} minuto(s)")
@@ -6115,11 +6937,11 @@ def _main_inner():
                 elif _new_streams > 0:
                     log.info(paint(f"  ✅ Streams atualizados: {len(_stream_subscribed)} ativos inscritos", C.G))
 
-            # ═══ SCAN CONTINUATION ML — no segundo :50 ═══
+            # ═══ SCAN DT REVERSAL — no segundo :50 ═══
             wait_until_second(ANALYZE_AT_SECOND)
 
             log.info(paint(
-                f"\n🔍 Scan Continuation em {_target_ativo} ({len(_target_ativo) if isinstance(_target_ativo, list) else 1} ativos, segundo :{ANALYZE_AT_SECOND:02d})...",
+                f"\n🔍 Scan DT em {len(_target_ativo) if isinstance(_target_ativo, list) else 1} ativos (segundo :{ANALYZE_AT_SECOND:02d})...",
                 C.B
             ))
             all_candidates, best_any = escolher_melhor_setup_local(
@@ -6168,7 +6990,7 @@ def _main_inner():
                         f"(mín={_min_trade_interval}s) — aguardar {_wait_remain}s",
                         C.Y
                     ))
-                    break  # TIME DEDUP bloqueia TODOS os candidatos
+                    continue
 
                 if _entry_key == _last_entry_key or _entry_key_simple == _last_key_simple:
                     log.info(paint(
@@ -6177,9 +6999,11 @@ def _main_inner():
                     ))
                     continue  # tentar próximo candidato
 
-                # ── CONTRA SINAL: ADVISORY (no treino cada padrão é
-                # avaliado independentemente, sem conceito de direção anterior).
-                if _is_contra_signal(ativo, direcao):
+                # ── CONTRA SINAL: se NN está em bypass, hard block ──
+                _is_contra = _is_contra_signal(ativo, direcao)
+                if _is_contra:
+                    # Armazena para checar após saber se NN está em bypass
+                    setup["_contra_sinal"] = True
                     log.info(paint(
                         f"  ⚠️ CONTRA SINAL ADVISORY: {ativo} {direcao} — NN decide",
                         C.Y
@@ -6354,7 +7178,17 @@ def _main_inner():
                 _geo = None
                 _wick_pct = 0.0
                 _nn_pred = None
+                _ia4_prob = None
                 _nn_score = float(setup.get("nn_pre_score") or 0.0)
+                _nn_prob = None
+                _nn_penalty = None
+                _nn_p1 = None
+                _nn_p2 = None
+                _nn_p3 = None
+                _nn_p3_str = ""
+                _train_suffix = ""
+                _nn_approved = False
+                _smart_exp = EXP_FIXA
                 _entry_guard_pred = setup.get("entry_guard_pre_pred")
                 _guard_block_reason = None
                 _head_price = setup["pattern"]["head"]["price"]
@@ -6444,6 +7278,69 @@ def _main_inner():
                         C.G if _progress_pct < 50 else C.Y
                     ))
 
+                    _live_entry_region = _validate_dt_entry_region(pat_data, float(_cur), atr_val)
+                    _live_touch_continuation = _detect_dt_touch_continuation_signal(pat_data, _guard_df, atr_val) if _guard_df is not None else {}
+                    _live_study_multifactor = _dt_multifactor_study_profile(
+                        pat_data,
+                        _guard_df,
+                        _live_entry_region,
+                        _live_touch_continuation,
+                        _entry_guard_pred,
+                    )
+                    _live_m5_structure = _analyze_dt_m5_structure(
+                        pat_data,
+                        _guard_df,
+                        atr_val,
+                        direcao,
+                    )
+                    _live_counter_barrier = _detect_dt_counter_barrier(
+                        pat_data,
+                        _guard_df,
+                        atr_val,
+                        current_price=float(_cur),
+                    ) if _guard_df is not None else {}
+                    _region_liquidity_gate = _validate_dt_region_liquidity_gate(
+                        _live_entry_region,
+                        _live_counter_barrier,
+                    )
+                    _candle_confirmation_gate = _validate_dt_candle_confirmation_gate(
+                        _live_study_multifactor,
+                        _live_touch_continuation,
+                        _live_entry_region,
+                    )
+                    setup["entry_region"] = _live_entry_region
+                    setup["touch_continuation"] = _live_touch_continuation
+                    setup["study_multifactor"] = _live_study_multifactor
+                    setup["m5_structure"] = _live_m5_structure
+                    setup["region_liquidity_gate"] = _region_liquidity_gate
+                    setup["candle_confirmation_gate"] = _candle_confirmation_gate
+
+                    log.info(paint(
+                        f"  🧭 ESTRUTURA M5 LIVE: {ativo} {direcao} | {_live_m5_structure.get('reason')}",
+                        C.G if _live_m5_structure.get("ok") else C.R
+                    ))
+
+                    if not _live_m5_structure.get("ok"):
+                        _guard_block_reason = _live_m5_structure.get("reason") or "estrutura M5 desalinhada"
+                        _all_guards_ok = False
+
+                    log.info(paint(
+                        f"  📍 REGIAO/LIQUIDEZ: {ativo} {direcao} | {_region_liquidity_gate.get('reason')}",
+                        C.G if _region_liquidity_gate.get("ok") else C.R
+                    ))
+                    log.info(paint(
+                        f"  🕯️ VELA CONFIRMACAO: {ativo} {direcao} | {_candle_confirmation_gate.get('reason')}",
+                        C.G if _candle_confirmation_gate.get("ok") else C.R
+                    ))
+
+                    if not _region_liquidity_gate.get("ok"):
+                        _guard_block_reason = _region_liquidity_gate.get("reason") or "regiao/liquidez bloqueou"
+                        _all_guards_ok = False
+
+                    if _all_guards_ok and not _candle_confirmation_gate.get("ok"):
+                        _guard_block_reason = _candle_confirmation_gate.get("reason") or "vela sem confirmacao"
+                        _all_guards_ok = False
+
                     print(
                         f">>> DT: {ativo} {direcao} | Preço={_cur:.6f} RS={_rs_price:.6f} "
                         f"Neck={_neckline:.6f} Target={_target_price:.6f} | "
@@ -6455,6 +7352,7 @@ def _main_inner():
                     # Sem NN = sem entrada. NN 2/3 ≥ dinâmico = APROVADO.
                     _dyn_params = _get_session_params(_guard_df, atr_val)
                     _smart_exp = _dyn_params["exp_minutes"]
+                    _NN_MIN_PROB = _dyn_params["nn_min_prob"]
                     _nn_approved = False
                     log.info(paint(
                         f"  ⚙️ SESSÃO DINÂMICA: NN_min={_dyn_params['nn_min_prob']:.0%} | "
@@ -6494,7 +7392,10 @@ def _main_inner():
                             setup["nn_live_reason"] = _nn_live_reason
 
                     if _all_guards_ok and _is_dt_mode and _nn_pred is not None:
+                        _is_bypass = (_nn_pred.get("consensus_mode") == "baseline_bypass")
                         _NN_MIN_PROB = _dyn_params["nn_min_prob"]
+                        if _NN_MIN_PROB < DT_HARD_MIN_NN_SCORE:
+                            _NN_MIN_PROB = DT_HARD_MIN_NN_SCORE
                         _nn_prob = float(_nn_pred.get("prob_win", _nn_score) or 0)
                         _nn_penalty = float(_nn_pred.get("consensus_penalty", 0) or 0)
                         _nn_p1 = float(_nn_pred.get("p1", 0) or 0)
@@ -6513,6 +7414,8 @@ def _main_inner():
                                 _train_parts.append(f"IA2={float(_nn_trained.get('ai2_val')):.0%}")
                             if _nn_trained.get("ai3_val") is not None:
                                 _train_parts.append(f"IA3={float(_nn_trained.get('ai3_val')):.0%}")
+                            if _nn_trained.get("ai4_val") is not None:
+                                _train_parts.append(f"IA4={float(_nn_trained.get('ai4_val')):.0%}")
                             if _train_samples > 0:
                                 _train_parts.append(f"n={_train_samples}")
                             if _train_ctx > 0:
@@ -6522,18 +7425,53 @@ def _main_inner():
                         # ═══ IA DECIDE: score >= threshold → APROVADO, senão BLOQUEADO ═══
                         if _nn_score >= _NN_MIN_PROB:
                             _nn_approved = True
-                            log.info(paint(
-                                f"  ✅ NN APROVADO ({_nn_source}): score={_nn_score:.0%} >= {_NN_MIN_PROB:.0%} "
-                                f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
-                                f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}{_train_suffix}",
-                                C.G
-                            ))
+                            if _is_bypass:
+                                _bwr_info = _nn_pred.get("baseline_wr", 0)
+                                log.info(paint(
+                                    f"  🔀 NN BYPASS: {ativo} | modelo abaixo baseline ({_bwr_info:.0%}) "
+                                    f"→ NN transparente, Bayes+padrão decidem",
+                                    C.G
+                                ))
+                            else:
+                                log.info(paint(
+                                    f"  ✅ NN APROVADO ({_nn_source}): score={_nn_score:.0%} >= {_NN_MIN_PROB:.0%} "
+                                    f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
+                                    f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}{_train_suffix}",
+                                    C.G
+                                ))
                         else:
                             _nn_approved = False
                             log.info(paint(
                                 f"  🚫 NN BLOQUEOU ({_nn_source}): score={_nn_score:.0%} < {_NN_MIN_PROB:.0%} "
                                 f"(prob={_nn_prob:.0%} consenso=-{_nn_penalty:.2f}) | "
                                 f"p1={_nn_p1:.2f} p2={_nn_p2:.2f}{_nn_p3_str}{_train_suffix}",
+                                C.R
+                            ))
+
+                        # ═══ IA 4 — CANDLE SAFETY (veto gate, threshold 65%) ═══
+                        _IA4_MIN_SAFE = 0.65
+                        _ia4_data = _nn_pred.get("ia4_candle_safety") if _nn_pred else None
+                        _ia4_prob = float(_ia4_data.get("prob_safe", 0.5)) if _ia4_data else None
+                        _ia4_safe = (_ia4_prob >= _IA4_MIN_SAFE) if _ia4_prob is not None else None
+                        if _ia4_data is not None:
+                            if not _ia4_safe and _nn_approved:
+                                _nn_approved = False
+                                log.info(paint(
+                                    f"  🛡️ IA4 BLOQUEOU: candle_safety={_ia4_prob:.0%} < {_IA4_MIN_SAFE:.0%} → velas não suportam entrada",
+                                    C.R
+                                ))
+                            elif _ia4_safe:
+                                log.info(paint(
+                                    f"  🛡️ IA4 OK: candle_safety={_ia4_prob:.0%}",
+                                    C.G
+                                ))
+
+                        # ═══ CONTRA SINAL + NN BYPASS → HARD BLOCK ═══
+                        # Se NN bypass (modelo não agrega valor), contra sinal deve bloquear
+                        if setup.get("_contra_sinal") and _is_bypass and _nn_approved:
+                            _nn_approved = False
+                            log.info(paint(
+                                f"  🚫 CONTRA SINAL + BYPASS: {ativo} {direcao} — NN bypass não pode override contra sinal",
                                 C.R
                             ))
 
@@ -6566,11 +7504,19 @@ def _main_inner():
                                         C.G
                                     ))
                                 else:
-                                    log.info(paint(
-                                        f"  ⚠️ DIRECAO 2M ADVISORY (scan): prob={_entry_guard_pred['prob_now']:.0%} < {_entry_guard_pred['threshold']:.0%} | "
-                                        f"delay={_entry_guard_pred['delay_candles']} velas | acc={_entry_guard_pred['accuracy']:.1%} | {_direction_alignment_2m.get('reason', 'entry_guard rejeitou')} | Bayes decide",
-                                        C.Y
-                                    ))
+                                    if DT_REQUIRE_ENTRY_GUARD:
+                                        _nn_approved = False
+                                        log.info(paint(
+                                            f"  🚫 ENTRY GUARD BLOQUEOU (scan): prob={_entry_guard_pred['prob_now']:.0%} < {_entry_guard_pred['threshold']:.0%} | "
+                                            f"delay={_entry_guard_pred['delay_candles']} velas | acc={_entry_guard_pred['accuracy']:.1%} | {_direction_alignment_2m.get('reason', 'entry_guard rejeitou')}",
+                                            C.R
+                                        ))
+                                    else:
+                                        log.info(paint(
+                                            f"  ⚠️ DIRECAO 2M ADVISORY (scan): prob={_entry_guard_pred['prob_now']:.0%} < {_entry_guard_pred['threshold']:.0%} | "
+                                            f"delay={_entry_guard_pred['delay_candles']} velas | acc={_entry_guard_pred['accuracy']:.1%} | {_direction_alignment_2m.get('reason', 'entry_guard rejeitou')} | Bayes decide",
+                                            C.Y
+                                        ))
                             else:
                                 log.info(paint(
                                     f"  ⚠️ ENTRY GUARD (scan): pré-score indisponível para {ativo} — mantendo decisão NN",
@@ -6589,18 +7535,20 @@ def _main_inner():
                         if setup.get("nn_live_reason"):
                             _nn_reason_parts.append(f"live={setup.get('nn_live_reason')}")
                         _nn_reason_suffix = f" ({'; '.join(_nn_reason_parts)})" if _nn_reason_parts else ""
-                        if DT_GRAPH_SIGNAL_ENTRY:
-                            _nn_approved = True  # Bayes decide
+                        if _dt_live_blocks_disabled(setup):
+                            _nn_approved = True
                             log.info(paint(
-                                f"  ⚠️ NN: indisponível para {ativo} no modo grafico{_nn_reason_suffix} | Bayes decide",
+                                f"  ⚠️ NN INDISPONIVEL: {ativo}{_nn_reason_suffix} | DT live sem bloqueio extra, mantendo entrada na virada",
                                 C.Y
                             ))
                         else:
-                            _nn_approved = True
+                            _nn_approved = False
                             log.info(paint(
-                                f"  ⚠️ NN: indisponível para {ativo}{_nn_reason_suffix} | Bayes decide",
-                                C.Y
+                                f"  🚫 NN INDISPONIVEL: {ativo}{_nn_reason_suffix} | DT sem validacao de NN nao entra",
+                                C.R
                             ))
+                            print(f">>> IA: NN indisponivel bloqueou {ativo} {direcao}", flush=True)
+                            continue
                     elif _all_guards_ok:
                         _nn_approved = True  # Bayes decide
                         log.info(paint(
@@ -6698,12 +7646,32 @@ def _main_inner():
                             C.G if _ai_consensus_live.get("gpt_ok") is not False else C.Y
                         ))
 
-                    _counter_barrier = _detect_dt_counter_barrier(
-                        pat_data,
-                        _guard_df,
-                        atr_val,
-                        current_price=float(_cur) if _cur is not None else None,
-                    )
+                    if _all_guards_ok and _nn_approved and _is_dt_mode:
+                        _confluence_live = _compute_dt_confluence_score(
+                            direcao,
+                            setup.get("geometry_score"),
+                            setup.get("entry_region"),
+                            setup.get("touch_continuation"),
+                            setup.get("study_multifactor"),
+                            setup.get("quality_risk"),
+                            _macro_ctx,
+                            _nn_score,
+                            setup.get("entry_guard_pre_pred"),
+                        )
+                        setup["quality_score"] = _confluence_live
+                        _confluence_color = C.G if _confluence_live.get("ok") else C.R
+                        log.info(paint(
+                            f"  🎯 SCORE FINAL DT: {ativo} {direcao} | {_confluence_live.get('reason')}",
+                            _confluence_color
+                        ))
+                        if not _confluence_live.get("ok"):
+                            _guard_block_reason = _confluence_live.get("reason") or "score de confluencia insuficiente"
+                            _all_guards_ok = False
+                            log.info(paint(
+                                f"  🚫 SCORE BLOQUEOU: {_guard_block_reason}",
+                                C.R
+                            ))
+
                     setup["live_metrics"] = {
                         "geometry": _geo if _geo else _extract_geometry(pat_data, atr_val),
                         "wick_pct": float(_wick_pct or 0),
@@ -6711,7 +7679,8 @@ def _main_inner():
                         "entry_guard_prob": float(_entry_guard_pred.get("prob_now", 0)) if isinstance(_entry_guard_pred, dict) else float(setup.get("entry_guard_pre_score") or 0),
                         "progress_pct": round(float(_progress_pct), 2),
                         "target_room_atr": round(float(_target_room_atr), 3),
-                        "counter_barrier": _counter_barrier,
+                        "counter_barrier": _live_counter_barrier,
+                        "m5_structure": _live_m5_structure,
                     }
 
                     if _all_guards_ok and _nn_approved and _is_dt_mode and DT_GRAPH_SIGNAL_ENTRY:
@@ -6739,11 +7708,18 @@ def _main_inner():
                         setup["timing_hint"] = _graph_timing_live
 
                         if not _graph_entry_region.get("ok"):
-                            log.info(paint(
-                                f"  ⚠️ DT GRAFICO — REGIÃO ADVISORY: {_graph_entry_region.get('reason', 'regiao invalida')} — NN decide",
-                                C.Y
-                            ))
-                            # Advisory — não bloqueia (treino não filtra por região)
+                            _graph_dist = float(_graph_entry_region.get("dist_touch_atr", 0) or 0)
+                            if _graph_dist > 0.80:
+                                log.info(paint(
+                                    f"  🚫 REGIÃO HARD BLOCK: {ativo} {direcao} | dist={_graph_dist:.2f}ATR > 0.80 → longe demais do RS",
+                                    C.R
+                                ))
+                                _all_guards_ok = False
+                            else:
+                                log.info(paint(
+                                    f"  ⚠️ DT GRAFICO — REGIÃO ADVISORY: {_graph_entry_region.get('reason', 'regiao invalida')} — NN decide",
+                                    C.Y
+                                ))
                         else:
                             log.info(paint(
                                 f"  ✅ DT GRAFICO: Bayes decide — sem bloqueios de timing/regiao/falso movimento",
@@ -6754,11 +7730,18 @@ def _main_inner():
                         _entry_region_live = _validate_dt_entry_region(pat_data, float(_cur), atr_val)
                         setup["entry_region"] = _entry_region_live
                         if not _entry_region_live.get("ok"):
-                            log.info(paint(
-                                f"  ⚠️ REGIÃO ADVISORY (LIVE): {ativo} {direcao} | {_entry_region_live.get('reason')} — NN decide",
-                                C.Y
-                            ))
-                            # Advisory — não bloqueia (treino não filtra por região)
+                            _live_dist = float(_entry_region_live.get("dist_touch_atr", 0) or 0)
+                            if _live_dist > 0.80:
+                                log.info(paint(
+                                    f"  🚫 REGIÃO HARD BLOCK (LIVE): {ativo} {direcao} | dist={_live_dist:.2f}ATR > 0.80 → longe demais do RS",
+                                    C.R
+                                ))
+                                _all_guards_ok = False
+                            else:
+                                log.info(paint(
+                                    f"  ⚠️ REGIÃO ADVISORY (LIVE): {ativo} {direcao} | {_entry_region_live.get('reason')} — NN decide",
+                                    C.Y
+                                ))
 
                     if _all_guards_ok and _nn_approved and _is_dt_mode and not DT_GRAPH_SIGNAL_ENTRY:
                         _win_geometry_alignment = setup.get("win_geometry_alignment")
@@ -6826,6 +7809,14 @@ def _main_inner():
                     if _all_guards_ok:
                         log.info(paint(f"  ✅ GUARDS OK: Preço={_cur:.6f} | Head={_head_price:.6f} | RS={_rs_price:.6f}", C.G))
 
+                if _dt_live_blocks_disabled(setup) and not _all_guards_ok and _cur is not None:
+                    log.info(paint(
+                        f"  ⚠️ DT LIVE: bloqueios extras ignorados — {_guard_block_reason or 'guarda virou advisory'}",
+                        C.Y
+                    ))
+                    _all_guards_ok = True
+                    _guard_block_reason = None
+
                 if not _all_guards_ok:
                     if _guard_block_reason:
                         print(f">>> IA: GUARD bloqueou {ativo} {direcao} — {_guard_block_reason}", flush=True)
@@ -6845,17 +7836,14 @@ def _main_inner():
                 _is_dt = setup.get("mode") == "double_touch"
                 _candles_ago = pat_data.get("candles_ago", 99)
 
-                # ═══ SHADOW EARLY CHECK: não esperar :00 se shadow já diverge ═══
+                # ═══ SHADOW EARLY CHECK: advisory — shadow diverge não bloqueia ═══
                 _shadow_lib_early = setup.get("shadow_pattern_lib", {})
                 if _shadow_lib_early.get("agreement") is False:
                     log.info(paint(
-                        f"  🚫 SHADOW BLOCK (scan): {ativo} {direcao} | "
-                        f"biblioteca diverge → skip (sem esperar :00)",
-                        C.R
+                        f"  ⚠️ SHADOW ADVISORY (scan): {ativo} {direcao} | "
+                        f"biblioteca diverge → Bayes decide",
+                        C.Y
                     ))
-                    print(f">>> IA: shadow bloqueou {ativo} {direcao} — "
-                          f"biblioteca diverge", flush=True)
-                    continue
 
                 _graph_scan_ts = float(pat_data.get("scan_ts", 0.0) or 0.0)
                 _graph_signal_age_sec = max(0.0, time.time() - _graph_scan_ts) if _graph_scan_ts > 0 else None
@@ -6905,11 +7893,18 @@ def _main_inner():
                                 _nn2_p3 = _nn2_pred.get("p3")
                                 _nn2_p3s = f" p3={_nn2_p3:.2f}" if _nn2_p3 is not None else ""
                                 _nn2_pen = float(_nn2_pred.get("consensus_penalty", 0) or 0)
-                                log.info(paint(
-                                    f"  🔄 NN RE-CHECK (vela fechada): score={_nn2_s:.0%} "
-                                    f"(anterior={_nn_score:.0%}) | p1={_nn2_p1:.2f} p2={_nn2_p2:.2f}{_nn2_p3s} consenso=-{_nn2_pen:.2f}",
-                                    C.G if _nn2_s >= _NN_MIN_PROB else C.R
-                                ))
+                                _nn2_bypass = (_nn2_pred.get("consensus_mode") == "baseline_bypass")
+                                if _nn2_bypass:
+                                    log.info(paint(
+                                        f"  🔀 NN RE-CHECK BYPASS: modelo abaixo baseline → transparente",
+                                        C.G
+                                    ))
+                                else:
+                                    log.info(paint(
+                                        f"  🔄 NN RE-CHECK (vela fechada): score={_nn2_s:.0%} "
+                                        f"(anterior={_nn_score:.0%}) | p1={_nn2_p1:.2f} p2={_nn2_p2:.2f}{_nn2_p3s} consenso=-{_nn2_pen:.2f}",
+                                        C.G if _nn2_s >= _NN_MIN_PROB else C.R
+                                    ))
                                 # Atualizar predição com dados da vela fechada
                                 _nn_pred = _nn2_pred
                                 _nn_score = _nn2_s
@@ -6920,12 +7915,16 @@ def _main_inner():
                                 _nn_p3 = _nn2_p3
                                 _nn_source = "recheck"
                                 # Re-avaliar aprovação com novo score
-                                # Usar o MAIOR entre _NN_MIN_PROB, context table e piso absoluto
+                                # DT já passou por múltiplos filtros no scan;
+                                # re-check é safety net, não gate principal
                                 _recheck_min = _NN_MIN_PROB
                                 _recheck_ctx_label = ""
+                                # CTX pode sugerir threshold maior, mas cap em 80% para DT
                                 if _ctx_nn_threshold is not None and _ctx_nn_threshold / 100.0 > _recheck_min:
-                                    _recheck_min = _ctx_nn_threshold / 100.0
-                                    _recheck_ctx_label = f" (CTX exige ≥{_ctx_nn_threshold:.0f}%)"
+                                    _ctx_capped = min(_ctx_nn_threshold / 100.0, 0.80)
+                                    if _ctx_capped > _recheck_min:
+                                        _recheck_min = _ctx_capped
+                                        _recheck_ctx_label = f" (CTX exige ≥{_ctx_capped:.0%})"
                                 # Piso absoluto: nenhuma entrada com NN < 75% no RE-CHECK
                                 if _recheck_min < DT_RECHECK_ABS_FLOOR:
                                     _recheck_min = DT_RECHECK_ABS_FLOOR
@@ -6942,6 +7941,18 @@ def _main_inner():
                                         f"  🚫 NN RE-CHECK BLOQUEOU: {_nn2_s:.0%} < {_recheck_min:.0%}{_recheck_ctx_label}",
                                         C.R
                                     ))
+                                # IA4 re-check veto (threshold 65%)
+                                _ia4_recheck = _nn2_pred.get("ia4_candle_safety") if _nn2_pred else None
+                                if _ia4_recheck is not None:
+                                    _ia4_data = _ia4_recheck
+                                    _ia4_prob = float(_ia4_recheck.get("prob_safe", 0.5))
+                                    _ia4_safe = _ia4_prob >= 0.65
+                                    if not _ia4_safe and _nn_approved:
+                                        _nn_approved = False
+                                        log.info(paint(
+                                            f"  🛡️ IA4 RE-CHECK BLOQUEOU: candle_safety={_ia4_prob:.0%} < 65%",
+                                            C.R
+                                        ))
                                 # Atualizar preço atual com dado fresco
                                 _cur = float(_fresh_df["close"].values[-1])
                             else:
@@ -6985,34 +7996,59 @@ def _main_inner():
 
                 if _shadow_bad:
                     log.info(paint(
-                        f"  🚫 SHADOW BLOCK: {ativo} {direcao} | "
-                        f"biblioteca diverge → bloqueio total",
-                        C.R
+                        f"  ⚠️ SHADOW ADVISORY: {ativo} {direcao} | "
+                        f"biblioteca diverge → Bayes decide",
+                        C.Y
                     ))
-                    print(f">>> IA: shadow bloqueou {ativo} {direcao} — "
-                          f"biblioteca diverge", flush=True)
-                    continue
 
                 # ═══ BAYES GATE: prob deve ser > moeda (>=60%) ═══
                 _bayes_p = float(ia_prob or 0.0)
                 if _bayes_p < DT_BAYES_FINAL_MIN:
-                    log.info(paint(
-                        f"  🚫 BAYES BLOCK: {ativo} {direcao} | "
-                        f"prob={_bayes_p:.0%} < {DT_BAYES_FINAL_MIN:.0%} — sem convicção",
-                        C.R
-                    ))
-                    print(f">>> IA: Bayes bloqueou {ativo} {direcao} — "
-                          f"prob={_bayes_p:.0%}", flush=True)
-                    continue
+                    if _dt_live_blocks_disabled(setup):
+                        log.info(paint(
+                            f"  ⚠️ BAYES ADVISORY: {ativo} {direcao} | prob={_bayes_p:.0%} < {DT_BAYES_FINAL_MIN:.0%} — entrada mantida",
+                            C.Y
+                        ))
+                    else:
+                        log.info(paint(
+                            f"  🚫 BAYES BLOCK: {ativo} {direcao} | "
+                            f"prob={_bayes_p:.0%} < {DT_BAYES_FINAL_MIN:.0%} — sem convicção",
+                            C.R
+                        ))
+                        print(f">>> IA: Bayes bloqueou {ativo} {direcao} — "
+                              f"prob={_bayes_p:.0%}", flush=True)
+                        continue
+
+                if _shadow_bad:
+                    if _dt_live_blocks_disabled(setup):
+                        log.info(paint(
+                            f"  ⚠️ SHADOW ADVISORY: {ativo} {direcao} | biblioteca divergiu, mas entrada foi mantida",
+                            C.Y
+                        ))
+                    else:
+                        log.info(paint(
+                            f"  🚫 SHADOW DIVERGENTE: {ativo} {direcao} | biblioteca marcou direcao oposta — CANCELADO",
+                            C.R
+                        ))
+                        print(f">>> IA: Shadow divergente bloqueou {ativo} {direcao}", flush=True)
+                        continue
 
                 if _study_bad:
-                    _STUDY_NN_MIN = 0.92
-                    if _session_threshold < _STUDY_NN_MIN:
-                        _session_threshold = _STUDY_NN_MIN
-                    log.info(paint(
-                        f"  🔴 STUDY DANGER: loss_hits={_loss_h} win_hits={_win_h} → NN mín={_STUDY_NN_MIN:.0%}",
-                        C.Y
-                    ))
+                    if _dt_live_blocks_disabled(setup):
+                        log.info(paint(
+                            f"  ⚠️ STUDY ADVISORY: loss_hits={_loss_h} win_hits={_win_h} | entrada mantida no DT live",
+                            C.Y
+                        ))
+                    else:
+                        log.info(paint(
+                            f"  🚫 STUDY DANGER: loss_hits={_loss_h} win_hits={_win_h} | perfil historico de loss dominante — CANCELADO",
+                            C.R
+                        ))
+                        print(f">>> IA: Study danger bloqueou {ativo} {direcao}", flush=True)
+                        continue
+
+                if _is_dt_mode and _session_threshold < DT_HARD_MIN_NN_SCORE:
+                    _session_threshold = DT_HARD_MIN_NN_SCORE
 
                 # Re-avaliar aprovação com threshold adaptado
                 if _nn_pred is not None and _nn_score < _session_threshold:
@@ -7031,12 +8067,19 @@ def _main_inner():
 
                 # ═══ BLOQUEIO FINAL: se NN não aprovou, cancelar entrada ═══
                 if _is_dt_mode and not _nn_approved and _nn_pred is not None:
-                    log.info(paint(
-                        f"  🚫 IA BLOQUEOU ENTRADA: {ativo} {direcao} | NN score={_nn_score:.0%} < {_session_threshold:.0%}",
-                        C.R
-                    ))
-                    print(f">>> IA: NN bloqueou {ativo} {direcao} — score={_nn_score:.0%} (min={_session_threshold:.0%})", flush=True)
-                    continue  # próximo candidato
+                    if _dt_live_blocks_disabled(setup):
+                        _nn_approved = True
+                        log.info(paint(
+                            f"  ⚠️ NN ADVISORY: {ativo} {direcao} | score={_nn_score:.0%} < {_session_threshold:.0%}, mas entrada foi mantida",
+                            C.Y
+                        ))
+                    else:
+                        log.info(paint(
+                            f"  🚫 IA BLOQUEOU ENTRADA: {ativo} {direcao} | NN score={_nn_score:.0%} < {_session_threshold:.0%}",
+                            C.R
+                        ))
+                        print(f">>> IA: NN bloqueou {ativo} {direcao} — score={_nn_score:.0%} (min={_session_threshold:.0%})", flush=True)
+                        continue  # próximo candidato
 
                 if _is_dt and DT_GRAPH_SIGNAL_ENTRY and isinstance(setup.get("timing_hint"), dict) and setup["timing_hint"].get("available"):
                     _timing_hint = setup["timing_hint"]
@@ -7137,8 +8180,16 @@ def _main_inner():
                         _all_guards_ok = False
 
                 if not _all_guards_ok:
-                    print(f">>> IA: FINAL CHECK cancelou {ativo} {direcao}", flush=True)
-                    continue  # tentar próximo candidato
+                    if _dt_live_blocks_disabled(setup) and _cur is not None:
+                        log.info(paint(
+                            f"  ⚠️ DT LIVE: cancelamento final ignorado — {_guard_block_reason or 'bounce/guard virou advisory'}",
+                            C.Y
+                        ))
+                        _all_guards_ok = True
+                        _guard_block_reason = None
+                    else:
+                        print(f">>> IA: FINAL CHECK cancelou {ativo} {direcao}", flush=True)
+                        continue  # tentar próximo candidato
 
                 _nn_entry_data = None
                 if _nn_pred is not None:
@@ -7152,6 +8203,7 @@ def _main_inner():
                         "nn_score": round(_nn_score, 3),
                         "consensus_penalty": round(_nn_penalty, 3),
                         "trained_metrics": _nn_pred.get("trained_metrics"),
+                        "ia4_candle_safety": _nn_pred.get("ia4_candle_safety"),
                     }
                 _decision_id = f"{int(time.time() * 1000)}_{ativo}_{direcao}_{random.randint(1000, 9999)}"
                 _decision_conf_pct = (_nn_score * 100) if _nn_pred is not None else (ia_prob * 100)
@@ -7218,6 +8270,7 @@ def _main_inner():
                         "consensus_penalty": round(_nn_penalty, 4) if _nn_pred else None,
                         "approved": _nn_approved,
                         "trained_metrics": _nn_pred.get("trained_metrics") if _nn_pred else None,
+                        "ia4_candle_safety": _nn_pred.get("ia4_candle_safety") if _nn_pred else None,
                     },
                     "entry_guard": {
                         "approved": _entry_guard_pred.get("approved") if _entry_guard_pred else None,
@@ -7275,13 +8328,19 @@ def _main_inner():
                 if _consecutive_losses >= 2 and _nn_score is not None:
                     _streak_nn_min = 0.90  # exigir 90% após streak
                     if _nn_score < _streak_nn_min:
-                        log.info(paint(
-                            f"  🚫 STREAK GUARD: {ativo} {direcao} | {_consecutive_losses} losses consecutivos "
-                            f"→ NN={_nn_score*100:.0f}% < {_streak_nn_min*100:.0f}% mínimo anti-streak — CANCELADO",
-                            C.R
-                        ))
-                        print(f">>> IA: STREAK GUARD bloqueou {ativo} {direcao} — {_consecutive_losses} losses, NN={_nn_score*100:.0f}%", flush=True)
-                        continue
+                        if _dt_live_blocks_disabled(setup):
+                            log.info(paint(
+                                f"  ⚠️ STREAK ADVISORY: {ativo} {direcao} | {_consecutive_losses} losses consecutivos, mas entrada foi mantida",
+                                C.Y
+                            ))
+                        else:
+                            log.info(paint(
+                                f"  🚫 STREAK GUARD: {ativo} {direcao} | {_consecutive_losses} losses consecutivos "
+                                f"→ NN={_nn_score*100:.0f}% < {_streak_nn_min*100:.0f}% mínimo anti-streak — CANCELADO",
+                                C.R
+                            ))
+                            print(f">>> IA: STREAK GUARD bloqueou {ativo} {direcao} — {_consecutive_losses} losses, NN={_nn_score*100:.0f}%", flush=True)
+                            continue
                     else:
                         log.info(paint(
                             f"  ⚠️ STREAK MODE: {ativo} {direcao} | {_consecutive_losses} losses consecutivos "
@@ -7294,17 +8353,43 @@ def _main_inner():
                 if _shadow_lib.get("available") and not _shadow_lib.get("agreement", True):
                     _shadow_nn_min = 0.85
                     if _nn_score is not None and _nn_score < _shadow_nn_min:
-                        log.info(paint(
-                            f"  🚫 SHADOW DIVERGE BLOQUEOU: {ativo} {direcao} | "
-                            f"biblioteca diverge + NN={_nn_score*100:.0f}% < {_shadow_nn_min*100:.0f}% — CANCELADO",
-                            C.R
-                        ))
-                        print(f">>> IA: SHADOW DIVERGE bloqueou {ativo} {direcao} — NN={_nn_score*100:.0f}%", flush=True)
-                        continue
+                        if _dt_live_blocks_disabled(setup):
+                            log.info(paint(
+                                f"  ⚠️ SHADOW+NN ADVISORY: {ativo} {direcao} | divergência mantida só como alerta",
+                                C.Y
+                            ))
+                        else:
+                            log.info(paint(
+                                f"  🚫 SHADOW DIVERGE BLOQUEOU: {ativo} {direcao} | "
+                                f"biblioteca diverge + NN={_nn_score*100:.0f}% < {_shadow_nn_min*100:.0f}% — CANCELADO",
+                                C.R
+                            ))
+                            print(f">>> IA: SHADOW DIVERGE bloqueou {ativo} {direcao} — NN={_nn_score*100:.0f}%", flush=True)
+                            continue
 
                 _use_exp = EXP_EARLY if _is_early else _smart_exp
                 # ═══ SMART EXP: 1 min se velocidade + NN permitem ═══
-                if not _is_early and _is_dt_mode and _nn_score is not None and _guard_df is not None:
+                # NÃO reduzir para bypass (95% é artificial, não confiança real)
+                _is_nn_bypass = (_nn_pred or {}).get("consensus_mode") == "baseline_bypass"
+                if _is_dt_mode and _is_nn_bypass:
+                    _bwr = float((_nn_pred or {}).get("baseline_wr", 0.0) or 0.0)
+                    if _dt_live_blocks_disabled(setup):
+                        log.info(paint(
+                            f"  ⚠️ NN BYPASS ADVISORY: {ativo} {direcao} | baseline={_bwr:.0%}, entrada mantida no DT live",
+                            C.Y
+                        ))
+                    else:
+                        log.info(paint(
+                            f"  🚫 NN BYPASS BLOQUEOU: {ativo} {direcao} | modelo abaixo do baseline "
+                            f"({(_nn_score or 0.0):.0%} artificial | baseline={_bwr:.0%}) — CANCELADO",
+                            C.R
+                        ))
+                        print(
+                            f">>> IA: NN BYPASS bloqueou {ativo} {direcao} — baseline={_bwr:.0%}",
+                            flush=True
+                        )
+                        continue
+                if not _is_early and _is_dt_mode and _nn_score is not None and _guard_df is not None and not _is_nn_bypass:
                     _smart_computed = _compute_smart_exp(
                         _g_C, _g_H, _g_L, _g_n, atr_val, _nn_score, pat_data
                     )
@@ -7330,9 +8415,9 @@ def _main_inner():
                             f"  ⏱️ DT GRAFICO: ordem enviada {(_graph_signal_age_sec):.2f}s após o inicio do scan ({_timing_note})",
                             C.G
                         ))
-                elif _is_dt_mode and _send_delay_sec > MAX_ENTRY_DELAY_SEC:
+                elif _is_dt_mode and _send_delay_sec > DT_TURN_ENTRY_TOLERANCE_SEC:
                     log.info(paint(
-                        f"  🚫 DT ATRASADO: ordem seria enviada {_send_delay_sec:.2f}s após a virada > {MAX_ENTRY_DELAY_SEC:.2f}s",
+                        f"  🚫 DT ATRASADO: ordem seria enviada {_send_delay_sec:.2f}s após a virada > {DT_TURN_ENTRY_TOLERANCE_SEC:.2f}s",
                         C.R
                     ))
                     print(
@@ -7372,13 +8457,19 @@ def _main_inner():
                                 C.G
                             ))
                         else:
-                            # NN baixo + ativo não confiável nessa faixa
-                            log.info(paint(
-                                f"  🚫 NN BAIXO SKIP: {ativo} {direcao} | NN={_nn_pct:.0f}% | WR_orig={_low_wr:.0%} n={_low_n} → pular",
-                                C.R
-                            ))
-                            print(f">>> IA: Skip {ativo} {direcao} — NN={_nn_pct:.0f}% baixo (WR={_low_wr:.0%})", flush=True)
-                            continue
+                            if _dt_live_blocks_disabled(setup):
+                                log.info(paint(
+                                    f"  ⚠️ NN BAIXO ADVISORY: {ativo} {direcao} | NN={_nn_pct:.0f}% | WR_orig={_low_wr:.0%} n={_low_n} — entrada mantida",
+                                    C.Y
+                                ))
+                            else:
+                                # NN baixo + ativo não confiável nessa faixa
+                                log.info(paint(
+                                    f"  🚫 NN BAIXO SKIP: {ativo} {direcao} | NN={_nn_pct:.0f}% | WR_orig={_low_wr:.0%} n={_low_n} → pular",
+                                    C.R
+                                ))
+                                print(f">>> IA: Skip {ativo} {direcao} — NN={_nn_pct:.0f}% baixo (WR={_low_wr:.0%})", flush=True)
+                                continue
 
                 # ═══ ATUALIZAR DASHBOARD COM DIREÇÃO REAL ═══
                 _was_inverted = (direcao != _direcao_original)
@@ -7431,6 +8522,7 @@ def _main_inner():
                     f"  ✅ ENTRADA: {ativo} {direcao} @ {_live_entry_price or 0:.6f} | Stake={stake:.2f} | "
                     f"Tipo={op_type} | EXP={_use_exp}min | Modo={'EARLY' if _is_early else ('DT' if _is_dt else 'CLASSIC')} | "
                     f"NN={_fmt_pct(_nn_score) if _nn_pred is not None else 'indisponível'}"
+                    f"{f' | IA4={_fmt_pct(_ia4_prob)}' if _ia4_prob is not None else ''}"
                     f"{f' [{_nn_reason_text}]' if _nn_reason_text and _nn_pred is None else ''} | Amostras={ia_samples}",
                     C.G if direcao == "CALL" else C.R
                 ))
@@ -7474,6 +8566,36 @@ def _main_inner():
 
                 # ── IA: aprender com o resultado ──
                 ai_update(ativo, setup, res, hs_stats)
+
+                # ── IA LIVE LEARNING: alimentar IAs com resultado real ──
+                if _is_dt_mode and _nn_pred is not None and _live_status in ("win", "loss"):
+                    _live_result_01 = 1 if _live_status == "win" else 0
+                    _rai_live = reversal_ai_map.get(ativo)
+                    if _rai_live is not None:
+                        _raw_dt = _nn_pred.get("_raw_dt_feats")
+                        _raw_cs = _nn_pred.get("_raw_cs_feats")
+                        if _raw_dt is not None:
+                            _fed_dt = _rai_live.feed_dt_features(_raw_dt, _live_result_01)
+                            if _fed_dt:
+                                log.info(paint(
+                                    f"  🧠 LIVE LEARNING: {ativo} | DT features alimentadas | resultado={'WIN' if _live_result_01 else 'LOSS'} | total={len(_rai_live._train_data)}",
+                                    C.B
+                                ))
+                        if _raw_cs is not None:
+                            _fed_cs = _rai_live.feed_candle_safety_features(_raw_cs, _live_result_01)
+                            if _fed_cs:
+                                log.info(paint(
+                                    f"  🧠 LIVE LEARNING: {ativo} | Candle Safety features alimentadas | total={len(_rai_live._ai4_train_data)}",
+                                    C.B
+                                ))
+                        # Retreinar a cada 50 novos trades live
+                        _new = getattr(_rai_live, '_new_samples', 0)
+                        if _new >= 50 and _new % 50 == 0:
+                            log.info(paint(
+                                f"  🔄 LIVE RETRAIN: {ativo} | {_new} novas amostras live → retreinando...",
+                                C.G
+                            ))
+                            _rai_live.force_retrain()
 
                 # ── Resultado: tracking ──
                 _trade_result_01 = 1 if res > 0 else 0

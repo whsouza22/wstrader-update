@@ -1,13 +1,12 @@
 """
-dashboard_hs_ia.py — Dashboard IA Double Touch (Duplo Toque) — SOMENTE LEITURA
+dashboard_hs_ia.py — Dashboard IA Continuation (Compressão + Breakout ML)
 ============================================================================
 Servidor HTTP local que:
   1. Lê dados de velas do cache do bot (ws_dashboard_cache.json)
-  2. NÃO conecta ao broker — apenas visualiza sinais
-  3. Detecta TODOS os padrões Double Touch históricos nos dados do cache
-  4. Backtest: verifica se cada padrão deu WIN ou LOSS (3 velas após entrada)
-  5. Treina a IA com os resultados (aprende quais setups são bons)
-  6. Mostra: gráfico, padrões, sinais, win rate
+  2. Fallback: conecta ao broker diretamente se não há cache
+  3. Detecta padrões de Continuação (Impulso + Compressão + Breakout) via ML
+  4. Backtest: verifica se cada padrão deu WIN ou LOSS
+  5. Mostra: gráfico, padrões, sinais, win rate
 
 IMPORTANTE: O dashboard NÃO faz trades. O bot (WS_AUTO_AI_BULLEX.py) é
 a ÚNICA fonte de dados e a ÚNICA conexão ao broker.
@@ -42,6 +41,12 @@ try:
     _HAS_NN = True
 except ImportError:
     _HAS_NN = False
+
+try:
+    from ws_continuation_ai import ContinuationAI
+    _HAS_CONT = True
+except ImportError:
+    _HAS_CONT = False
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -739,6 +744,45 @@ def detect_double_touch(H, L, C_arr, O, pivot_highs, pivot_lows, atr, n,
 # ══════════════════════════════════════════════════════════════════
 # BACKTEST: verificar WIN/LOSS de cada padrão
 # ══════════════════════════════════════════════════════════════════
+def _find_sr_levels(H, L, C, n, atr, exclude_prices=None):
+    """Encontra níveis de suporte/resistência (swing highs/lows com 3+ toques).
+    exclude_prices: lista de preços a ignorar (ex: nível do próprio padrão DT)."""
+    levels = []
+    tol = atr * 0.4
+    excl = exclude_prices or []
+    lookback = min(80, n - 2)
+    start = max(2, n - 1 - lookback)
+    end = n - 1
+    for i in range(start + 1, end):
+        if float(L[i]) <= float(L[i-1]) and float(L[i]) <= float(L[i+1]):
+            levels.append({"type": "S", "price": float(L[i])})
+        if float(H[i]) >= float(H[i-1]) and float(H[i]) >= float(H[i+1]):
+            levels.append({"type": "R", "price": float(H[i])})
+    # Cluster levels that are within tolerance
+    clusters = []
+    used = [False] * len(levels)
+    for i, lv in enumerate(levels):
+        if used[i]:
+            continue
+        grp = [lv]
+        used[i] = True
+        for j in range(i + 1, len(levels)):
+            if not used[j] and abs(levels[j]["price"] - lv["price"]) <= tol:
+                grp.append(levels[j])
+                used[j] = True
+        if len(grp) >= 3:  # Exigir 3+ toques para ser S/R forte
+            avg_price = sum(g["price"] for g in grp) / len(grp)
+            # Excluir níveis que coincidem com o próprio padrão
+            skip = False
+            for ep in excl:
+                if abs(avg_price - ep) <= tol:
+                    skip = True
+                    break
+            if not skip:
+                clusters.append({"price": avg_price, "touches": len(grp)})
+    return clusters
+
+
 def backtest_pattern(pat, C, O, H, L, n):
     """Verifica se o padrão H&S resultaria em WIN ou LOSS.
     
@@ -750,6 +794,7 @@ def backtest_pattern(pat, C, O, H, L, n):
     Também verifica guards do bot:
     - Preço não pode estar acima da cabeça (PUT) ou abaixo (CALL)
     - Preço não pode estar longe demais do ombro D
+    - DT não pode entrar contra um nível forte de S/R
     """
     entry_idx = pat.get("entry_idx", pat["right_shoulder"]["idx"])
     
@@ -777,8 +822,10 @@ def backtest_pattern(pat, C, O, H, L, n):
         if entry_price <= head_price:
             return {"result": "skip", "reason": "abaixo_cabeca"}
         win = exit_price > entry_price
+
+    # ── S/R proximity awareness para DT (informativo, não bloqueia) ──
     
-    return {
+    result = {
         "result": "win" if win else "loss",
         "entry_price": round(entry_price, 6),
         "exit_price": round(exit_price, 6),
@@ -786,13 +833,14 @@ def backtest_pattern(pat, C, O, H, L, n):
         "exit_idx": exit_idx - 1,
         "pips": round(abs(exit_price - entry_price), 6),
     }
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════
 # IA SIMPLES: aprende quais setups dão WIN
 # ══════════════════════════════════════════════════════════════════
 class HS_IA:
-    """IA que aprende padrões DT por ativo e tipo."""
+    """IA que aprende padrões Continuation por ativo e tipo."""
     
     def __init__(self):
         self.stats = {}  # {ativo: {type: {wins, total, features...}}}
@@ -804,7 +852,9 @@ class HS_IA:
         if result["result"] not in ("win", "loss"):
             return
         
-        key = f"{ativo}_{pat['type']}_{pat['mode']}"
+        pat_type = pat.get("type", "CONTINUATION")
+        pat_mode = pat.get("mode", "breakout_confirmation")
+        key = f"{ativo}_{pat_type}_{pat_mode}"
         if key not in self.stats:
             self.stats[key] = {"wins": 0, "total": 0, "patterns": []}
         
@@ -817,45 +867,24 @@ class HS_IA:
         if result["result"] == "win":
             self.global_stats["wins"] += 1
         
-        t = pat["type"]
+        t = pat_type
         if t not in self.global_stats["by_type"]:
             self.global_stats["by_type"][t] = {"wins": 0, "total": 0}
         self.global_stats["by_type"][t]["total"] += 1
         if result["result"] == "win":
             self.global_stats["by_type"][t]["wins"] += 1
-        
-        # Guardar features para análise
-        depth_atr = pat.get("depth", 0)
-        self.stats[key]["patterns"].append({
-            "result": result["result"],
-            "depth": depth_atr,
-            "mode": pat["mode"],
-            "entry_price": result.get("entry_price", 0),
-            "exit_price": result.get("exit_price", 0),
-        })
-
-        # ── IA: armazenar geometria para aprendizado contínuo ──
-        geo = _extract_geometry(pat, atr_val)
-        if geo is not None:
-            geo["result"] = 1 if result["result"] == "win" else 0
-            geo["ativo"] = ativo
-            geo["type"] = pat.get("type", "DOUBLE_TOP")
-            geo["source"] = "backtest"  # marcado como backtest (learn vem do treino)
-            self.geometry_history.append(geo)
-            if len(self.geometry_history) > 300:
-                self.geometry_history = self.geometry_history[-300:]
     
     def predict(self, ativo, pat):
         """Prediz probabilidade de WIN para um setup — com fallback hierárquico ponderado."""
-        key = f"{ativo}_{pat.get('type', 'DOUBLE_TOP')}_{pat.get('mode', 'double_touch')}"
+        key = f"{ativo}_{pat.get('type', 'CONTINUATION')}_{pat.get('mode', 'breakout_confirmation')}"
         item = self.stats.get(key)
         if item and item.get("total", 0) > 0:
             wins = item.get("wins", 0)
             total = item.get("total", 0)
             return round((wins + 2) / (total + 4), 4)
 
-        pat_type = pat.get("type", "DOUBLE_TOP")
-        pat_mode = pat.get("mode", "double_touch")
+        pat_type = pat.get("type", "CONTINUATION")
+        pat_mode = pat.get("mode", "breakout_confirmation")
         candidates = []
 
         same_mode_wins = 0
@@ -1011,8 +1040,13 @@ def _get_ia_level(n_total: int) -> dict:
 # ══════════════════════════════════════════════════════════════════
 _BROKER_TYPE = os.getenv("BROKER_TYPE", "bullex").strip().lower()
 _LIVE_ASSETS = [
-    "EURNZD-OTC", "GBPCHF-OTC", "EURAUD-OTC",
-    "USDCAD-OTC", "AUDNZD-OTC", "GBPAUD-OTC",
+    "AUDCAD-OTC", "AUDCHF-OTC", "AUDJPY-OTC", "AUDNZD-OTC", "AUDUSD-OTC",
+    "CADCHF-OTC", "CADJPY-OTC", "CHFJPY-OTC",
+    "EURAUD-OTC", "EURCAD-OTC", "EURCHF-OTC", "EURGBP-OTC", "EURJPY-OTC",
+    "EURNZD-OTC", "EURUSD-OTC",
+    "GBPAUD-OTC", "GBPCAD-OTC", "GBPCHF-OTC", "GBPJPY-OTC", "GBPNZD-OTC", "GBPUSD-OTC",
+    "NZDCAD-OTC", "NZDJPY-OTC", "NZDUSD-OTC",
+    "USDCAD-OTC", "USDCHF-OTC", "USDJPY-OTC",
 ]
 _LIVE_TF = 60  # M1
 _LIVE_N_CANDLES = 100  # candles para exibir no gráfico
@@ -1119,10 +1153,13 @@ def _read_live_candles_from_file():
 
 def _live_broker_thread():
     """Thread que alimenta o dashboard com dados de velas.
-    Lê EXCLUSIVAMENTE dos arquivos escritos pelo bot.
-    NUNCA abre conexão própria ao broker (evita conflito de WebSocket).
+    Prioridade 1: lê arquivos escritos pelo bot.
+    Fallback: conecta ao broker diretamente se bot não estiver rodando.
     """
     _last_log_ts = 0
+    _broker_fallback = None
+    _broker_fallback_tried = False
+    _broker_last_fetch = 0
 
     while True:
         try:
@@ -1202,7 +1239,71 @@ def _live_broker_thread():
                                 _df = _df.tail(120)  # manter últimas 120 velas
                                 _cache["assets_data"][_la_ativo] = _df
 
-            # ── 3. Atualizar status de conexão ──
+            # ── 3. Fallback: conectar ao broker diretamente se não há ativos carregados ──
+            with _lock:
+                _no_assets = not _cache["assets_data"]
+            if _no_assets and not _broker_fallback:
+                # Retry broker fallback every 10s until data arrives
+                if not _broker_fallback_tried or (time.time() - _broker_last_fetch > 10):
+                    _broker_fallback_tried = True
+                    _broker_last_fetch = time.time()
+                    log.info("Dashboard: sem cache do bot — tentando conexão direta ao broker...")
+                    _broker_fallback = _connect_live_broker()
+                    if _broker_fallback:
+                        _LIVE_BROKER_REF[0] = _broker_fallback
+                        _LIVE_CONNECTED.set()
+                        _broker_last_fetch = 0  # trigger immediate fetch
+
+            if _broker_fallback and (time.time() - _broker_last_fetch > 55):
+                _broker_last_fetch = time.time()
+                try:
+                    # Buscar payouts
+                    _fb_payouts = {}
+                    try:
+                        _all_profit = _broker_fallback.get_all_profit()
+                        for _a in _LIVE_ASSETS:
+                            _p = _all_profit.get(_a, {}).get("turbo", 0)
+                            _fb_payouts[_a] = int(_p * 100) if _p else 0
+                    except Exception:
+                        pass
+
+                    _fb_assets = {}
+                    for _fb_ativo in _LIVE_ASSETS:
+                        try:
+                            _candles_raw = _broker_fallback.get_candles(_fb_ativo, _LIVE_TF, _LIVE_N_CANDLES, time.time())
+                            if not _candles_raw or len(_candles_raw) < 20:
+                                continue
+                            _rows = []
+                            for _c in _candles_raw:
+                                _rows.append({
+                                    "time": pd.Timestamp(_c.get("from", _c.get("time", 0)), unit="s"),
+                                    "open": _c.get("open", 0),
+                                    "high": _c.get("max", _c.get("high", 0)),
+                                    "low": _c.get("min", _c.get("low", 0)),
+                                    "close": _c.get("close", 0),
+                                    "volume": _c.get("volume", 0),
+                                })
+                            _df = pd.DataFrame(_rows)
+                            _df.set_index("time", inplace=True)
+                            _df.sort_index(inplace=True)
+                            _fb_assets[_fb_ativo] = _df
+                        except Exception as _ea:
+                            log.debug(f"Broker fallback candle error {_fb_ativo}: {_ea}")
+                            continue
+
+                    if _fb_assets:
+                        with _lock:
+                            _cache["assets_data"] = _fb_assets
+                            _cache["payouts"] = _fb_payouts
+                            _cache["connected"] = True
+                            _cache["error"] = None
+                            _cache["analysis_source"] = "dashboard"
+                        _has_data = True
+                        log.info(f"Dashboard broker fallback: {len(_fb_assets)} ativos carregados diretamente")
+                except Exception as _be:
+                    log.debug(f"Broker fallback error: {_be}")
+
+            # ── 4. Atualizar status de conexão ──
             with _lock:
                 if _has_data or _cache["assets_data"]:
                     _cache["connected"] = True
@@ -1229,6 +1330,7 @@ def _live_broker_thread():
 _lock = threading.Lock()
 _scanning = False  # True durante o scan pesado
 _ia = HS_IA()
+_cont_ai = ContinuationAI() if _HAS_CONT else None
 _selected_ativo = ""  # ativo selecionado no frontend
 _cache = {
     "assets_data": {},          # {ativo: DataFrame}
@@ -1333,18 +1435,20 @@ def _load_bot_trade_logs() -> list:
         except Exception:
             pass
     # Deduplicar: se há um resultado (win/loss/tie) para um entry do mesmo ativo, manter só o resultado
+    # Coleta resultados com janela de 600s (não mais bucket exato de 5min)
+    _resolved_list = [(e["ativo"], e.get("dir", ""), float(e.get("ts", 0))) for e in entries if e["result"] in ("win", "loss", "tie")]
     deduped = []
-    seen_results = set()  # (ativo+dir, ts_approx) já resolvidos
-    # Primeiro pass: coletar todos os resultados
-    for e in entries:
-        if e["result"] in ("win", "loss", "tie"):
-            seen_results.add(e["ativo"] + "_" + e.get("dir", "") + "_" + str(int(e.get("ts", 0) // 300)))
-    # Segundo pass: filtrar entries que já têm resultado
+    _entry_seen = []  # (ativo, dir, ts) para dedup de entries duplicados
     for e in entries:
         if e["result"] == "entry":
-            key = e["ativo"] + "_" + e.get("dir", "") + "_" + str(int(e.get("ts", 0) // 300))
-            if key in seen_results:
-                continue  # pular entry duplicado — já temos o resultado
+            _ats, _adir, _ets = e["ativo"], e.get("dir", ""), float(e.get("ts", 0))
+            # Remover entry se já existe resultado para mesmo ativo+dir dentro de 600s
+            if any(ra == _ats and rd == _adir and abs(rt - _ets) < 600 for ra, rd, rt in _resolved_list):
+                continue
+            # Remover entry duplicado (mesmo ativo+dir dentro de 120s)
+            if any(sa == _ats and sd == _adir and abs(st - _ets) < 120 for sa, sd, st in _entry_seen):
+                continue
+            _entry_seen.append((_ats, _adir, _ets))
         deduped.append(e)
     # Ordenar por timestamp decrescente
     deduped.sort(key=lambda x: x.get("ts", 0), reverse=True)
@@ -1413,18 +1517,28 @@ def _select_primary_chart_patterns(patterns: list) -> list:
 
     def _rank_key(pat: dict):
         is_live = 1 if pat and not pat.get("backtest") else 0
+        # Prefer winning patterns (faithful to what IA learned)
+        is_win = 1 if not is_live and (pat.get("backtest") or {}).get("result") == "win" else 0
         is_active = 1 if pat and pat.get("signal_active") is not False else 0
         ts = _pattern_reference_ts(pat if isinstance(pat, dict) else {})
         ia_prob = float((pat or {}).get("ia_prob", 0.0) or 0.0)
         nn_approved = 1 if (pat or {}).get("nn_approved") is True else 0
-        return (is_live, is_active, nn_approved, ts, ia_prob)
+        return (is_live, is_win, is_active, nn_approved, ts, ia_prob)
 
-    ranked = sorted(
-        [pat for pat in patterns if isinstance(pat, dict)],
-        key=_rank_key,
-        reverse=True,
-    )
-    return ranked[:1]
+    # Keep best pattern per type category (CONTINUATION + DT can coexist)
+    by_cat = {}
+    for pat in patterns:
+        if not isinstance(pat, dict):
+            continue
+        ptype = pat.get("type", "")
+        cat = "DT" if ptype in ("DOUBLE_TOP", "DOUBLE_BOTTOM") else ptype or "OTHER"
+        by_cat.setdefault(cat, []).append(pat)
+
+    result = []
+    for cat, pats in by_cat.items():
+        best = max(pats, key=_rank_key)
+        result.append(best)
+    return result
 
 
 def _load_dashboard_cache_snapshot() -> dict:
@@ -1432,8 +1546,18 @@ def _load_dashboard_cache_snapshot() -> dict:
         if not os.path.exists(_DASHBOARD_CACHE_FILE):
             return {}
         with open(_DASHBOARD_CACHE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            raw = f.read()
+        if not raw or not raw.strip():
+            return {}
+        data = json.loads(raw)
         return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError as e:
+        log.warning(f"Cache corrompido (JSON truncado): {e} — removendo arquivo")
+        try:
+            os.remove(_DASHBOARD_CACHE_FILE)
+        except Exception:
+            pass
+        return {}
     except Exception as e:
         log.debug(f"Erro ao ler snapshot do bot: {e}")
         return {}
@@ -1476,7 +1600,9 @@ def _count_visible_patterns_in_tail(patterns: list, total_candles: int, tail_siz
     visible = 0
     for pat in patterns:
         rs_idx = (pat.get("right_shoulder") or {}).get("idx", -1)
-        if tail_start <= rs_idx < total_candles:
+        entry_idx = pat.get("entry_idx", -1)
+        idx = rs_idx if rs_idx >= 0 else entry_idx
+        if tail_start <= idx < total_candles:
             visible += 1
     return visible
 
@@ -1494,6 +1620,10 @@ def _signal_scan_thread():
                 time.sleep(5)
                 continue
 
+            if not _cont_ai or not _cont_ai.loaded:
+                time.sleep(10)
+                continue
+
             # Esperar até segundo :35 do minuto (sinal pronto antes de :45)
             now_s = time.time() % 60
             wait_to_35 = (35 - now_s) % 60
@@ -1503,7 +1633,6 @@ def _signal_scan_thread():
 
             with _lock:
                 ad_copy = dict(_cache["assets_data"])
-                payouts = dict(_cache.get("payouts", {}))
 
             if not ad_copy:
                 continue  # nenhum dado ainda — aguardar heavy scan
@@ -1511,62 +1640,12 @@ def _signal_scan_thread():
             fresh_signals = []
 
             for ativo, df in ad_copy.items():
-                if df is None or len(df) < 20:
+                if df is None or len(df) < 80:
                     continue
-
-                H = df["high"].values
-                L = df["low"].values
-                C = df["close"].values
-                O = df["open"].values
-                n = len(C)
-
-                # ATR
-                atr_vals = [float(H[k] - L[k]) for k in range(max(0, n - 14), n)]
-                atr = float(np.mean(atr_vals)) if atr_vals else 0.001
-
-                # Detectar pivots e Double Touch (somente DT)
-                ph, pl = detect_pivots(H, L, PIVOT_WINDOW)
-                all_hs = detect_double_touch(H, L, C, O, ph, pl, atr, n, max_candles_ago=3)
-
-                for pat in all_hs:
-                    bt = backtest_pattern(pat, C, O, H, L, n)
-                    if bt is None:
-                        # Padrão recente sem resultado = sinal LIVE
-                        entry_idx = pat.get("entry_idx", pat["right_shoulder"]["idx"] + 1)
-                        pat["entry_pending"] = entry_idx >= n
-                        rs_idx = pat["right_shoulder"]["idx"]
-                        pat["candles_ago"] = max(0, n - 1 - rs_idx)
-                        pat["scan_ts"] = time.time()  # timestamp FRESCO
-                        ia_prob = _ia.predict(ativo, pat)
-                        _pq = ia_pattern_quality(pat, atr, _ia.geometry_history)
-                        ia_prob = round(ia_prob * _pq, 3)
-                        pat["ia_prob"] = ia_prob
-                        pat["ativo"] = ativo
-                        # NN prediction
-                        _nn_res = _nn_predict_pattern(ativo, pat, H, L, C, O, n, atr)
-                        if _nn_res is not None:
-                            pat["nn_approved"] = _nn_res["approved"]
-                            pat["nn_count"] = _nn_res["count_above"]
-                            pat["nn_score"] = _nn_res.get("nn_score", 0)
-                            pat["nn_p1"] = _nn_res["p1"]
-                            pat["nn_p2"] = _nn_res["p2"]
-                            pat["nn_p3"] = _nn_res["p3"]
-                        else:
-                            pat["nn_approved"] = None
-                        # Previsão de preço-alvo + duração inteligente
-                        pat["prediction_2m"] = _build_price_prediction(pat, C, H, L, atr, n, _nn_res)
-                        # Gravar timestamps nos pontos-chave
-                        _sig_df_index = df.index
-                        _sig_df_len = len(_sig_df_index)
-                        for _sk in ("left_shoulder", "head", "right_shoulder", "valley1", "valley2"):
-                            _sp = pat.get(_sk)
-                            if _sp and "idx" in _sp and 0 <= _sp["idx"] < _sig_df_len:
-                                _sp["ts"] = int(_sig_df_index[_sp["idx"]].value // 10**9) if hasattr(_sig_df_index[_sp["idx"]], 'value') else 0
-                        if "entry_idx" in pat and 0 <= pat["entry_idx"] < _sig_df_len:
-                            pat["entry_ts"] = int(_sig_df_index[pat["entry_idx"]].value // 10**9) if hasattr(_sig_df_index[pat["entry_idx"]], 'value') else 0
-                        # 100% IA: só mostra sinais aprovados pela rede neural
-                        if pat.get("nn_approved") is True:
-                            fresh_signals.append(pat)
+                live_sigs = _cont_ai.scan_live(df, ativo, max_candles_ago=3)
+                for sig in live_sigs:
+                    sig["scan_ts"] = time.time()
+                    fresh_signals.append(sig)
 
             # Atualizar cache com sinais frescos
             with _lock:
@@ -1574,7 +1653,7 @@ def _signal_scan_thread():
 
             n_sig = len(fresh_signals)
             if n_sig > 0:
-                log.info(f"[SIGNAL-SCAN] {n_sig} sinais frescos detectados (scan_ts atualizado)")
+                log.info(f"[SIGNAL-SCAN] {n_sig} sinais continuation detectados (scan_ts atualizado)")
             else:
                 log.debug("[SIGNAL-SCAN] Nenhum sinal live neste minuto")
 
@@ -1690,86 +1769,78 @@ def _update_thread():
             _scanning = True
 
             for ativo, df in current_assets.items():
-                if df is None or len(df) < 20:
+                if df is None or len(df) < 80:
                     continue
 
-                H = df["high"].values
-                L = df["low"].values
-                C = df["close"].values
-                O = df["open"].values
-                n = len(C)
+                n = len(df)
 
-                atr_vals = [float(H[k] - L[k]) for k in range(max(0, n-14), n)]
-                atr = np.mean(atr_vals) if atr_vals else 0.001
+                # ── Continuation AI scan (todos os padrões) ──
+                if not _cont_ai or not _cont_ai.loaded:
+                    continue
 
-                ph, pl = detect_pivots(H, L, PIVOT_WINDOW)
-                all_hs = detect_double_touch(H, L, C, O, ph, pl, atr, n, max_candles_ago=9999, training=True)
+                all_signals = _cont_ai.scan(df, ativo, max_candles_ago=9999)
+
+                # ── DT (Double Touch) scan ──
+                dt_signals = []
+                try:
+                    _H = df["high"].values
+                    _L = df["low"].values
+                    _C = df["close"].values
+                    _O = df["open"].values
+                    _ph, _pl = detect_pivots(_H, _L)
+                    _tr = np.maximum(_H[1:] - _L[1:],
+                                     np.maximum(np.abs(_H[1:] - _C[:-1]),
+                                                np.abs(_L[1:] - _C[:-1])))
+                    _atr_val = float(np.mean(_tr[-14:])) if len(_tr) >= 14 else (float(np.mean(_tr)) if len(_tr) > 0 else 0.001)
+                    _dt_raw = detect_double_touch(_H, _L, _C, _O, _ph, _pl, _atr_val, n,
+                                                  max_candles_ago=9999, training=True)
+                    for _dp in _dt_raw:
+                        _dp["ativo"] = ativo
+                        for _k in ["left_shoulder", "head", "right_shoulder", "valley1", "valley2"]:
+                            if _k in _dp and _dp[_k] and "idx" in _dp[_k]:
+                                _di = _dp[_k]["idx"]
+                                if 0 <= _di < n:
+                                    _dp[_k]["ts"] = int(pd.Timestamp(df.index[_di]).value // 10**9)
+                        if "entry_idx" in _dp and 0 <= _dp["entry_idx"] < n:
+                            _dp["entry_ts"] = int(pd.Timestamp(df.index[_dp["entry_idx"]]).value // 10**9)
+                        _bt = backtest_pattern(_dp, _C, _O, _H, _L, n)
+                        if _bt and _bt.get("result") in ("win", "loss"):
+                            _dp["backtest"] = _bt
+                        elif _bt is None:
+                            _dp["backtest"] = None
+                        else:
+                            continue
+                        dt_signals.append(_dp)
+                except Exception as _dt_err:
+                    log.debug(f"  {ativo}: DT scan error: {_dt_err}")
 
                 patterns_with_results = []
-                for pat in all_hs:
-                    bt = backtest_pattern(pat, C, O, H, L, n)
+                for sig in all_signals:
+                    bt = sig.get("backtest")
                     if bt is None:
-                        entry_idx = pat.get("entry_idx", pat["right_shoulder"]["idx"] + 1)
-                        pat["entry_pending"] = entry_idx >= n
-                        rs_idx = pat["right_shoulder"]["idx"]
-                        pat["candles_ago"] = max(0, n - 1 - rs_idx)
-                        pat["scan_ts"] = time.time()
-                        ia_prob = _ia.predict(ativo, pat)
-                        _pq = ia_pattern_quality(pat, atr, _ia.geometry_history)
-                        ia_prob = round(ia_prob * _pq, 3)
-                        pat["ia_prob"] = ia_prob
-                        pat["ativo"] = ativo
-                        # NN prediction for live signal
-                        _nn_res = _nn_predict_pattern(ativo, pat, H, L, C, O, n, atr)
-                        if _nn_res is not None:
-                            pat["nn_approved"] = _nn_res["approved"]
-                            pat["nn_count"] = _nn_res["count_above"]
-                            pat["nn_score"] = _nn_res.get("nn_score", 0)
-                            pat["nn_p1"] = _nn_res["p1"]
-                            pat["nn_p2"] = _nn_res["p2"]
-                            pat["nn_p3"] = _nn_res["p3"]
-                        else:
-                            pat["nn_approved"] = None
-                        # Previsão de preço-alvo + duração inteligente
-                        pat["prediction_2m"] = _build_price_prediction(pat, C, H, L, atr, n, _nn_res)
-                        # 100% IA: só mostra sinais aprovados pela rede neural
-                        if pat.get("nn_approved") is True:
-                            live_signals.append(pat)
-                        patterns_with_results.append({**pat, "backtest": None, "ia_prob": ia_prob})
+                        # Sinal live (sem resultado ainda)
+                        if sig.get("ml_approved"):
+                            live_signals.append(sig)
+                        patterns_with_results.append(sig)
                     elif bt["result"] in ("win", "loss"):
-                        _ia_new.learn(ativo, pat, bt, atr)
-                        ia_prob = _ia.predict(ativo, pat)
-                        patterns_with_results.append({**pat, "backtest": bt, "ia_prob": round(ia_prob, 3)})
+                        _ia_new.learn(ativo, sig, bt)
+                        patterns_with_results.append(sig)
 
-                # ── Gravar timestamps nos pontos-chave para mapeamento estável ──
-                _df_index = df.index
-                _df_len = len(_df_index)
-                for _pr in patterns_with_results:
-                    for _pkey in ("left_shoulder", "head", "right_shoulder", "valley1", "valley2"):
-                        _pt = _pr.get(_pkey)
-                        if _pt and "idx" in _pt:
-                            _pi = _pt["idx"]
-                            if 0 <= _pi < _df_len:
-                                _pt["ts"] = int(_df_index[_pi].value // 10**9) if hasattr(_df_index[_pi], 'value') else 0
-                    if "entry_idx" in _pr:
-                        _ei = _pr["entry_idx"]
-                        if 0 <= _ei < _df_len:
-                            _pr["entry_ts"] = int(_df_index[_ei].value // 10**9) if hasattr(_df_index[_ei], 'value') else 0
-                    _bt = _pr.get("backtest")
-                    if _bt:
-                        for _bk in ("entry_idx", "exit_idx"):
-                            _bi = _bt.get(_bk, -1)
-                            if 0 <= _bi < _df_len:
-                                _bt[_bk.replace("idx", "ts")] = int(_df_index[_bi].value // 10**9) if hasattr(_df_index[_bi], 'value') else 0
+                # Merge DT patterns
+                for _dp in dt_signals:
+                    _bt = _dp.get("backtest")
+                    if _bt and _bt.get("result") in ("win", "loss"):
+                        _ia_new.learn(ativo, _dp, _bt)
+                    patterns_with_results.append(_dp)
 
                 if patterns_with_results:
                     assets_patterns[ativo] = patterns_with_results
                     _w = sum(1 for p in patterns_with_results if (p.get('backtest') or {}).get('result') == 'win')
                     _l = sum(1 for p in patterns_with_results if (p.get('backtest') or {}).get('result') == 'loss')
                     _lv = sum(1 for p in patterns_with_results if p.get('backtest') is None)
-                    _visible = _count_visible_patterns_in_tail(patterns_with_results, n, _LIVE_N_CANDLES)
+                    _dt_count = sum(1 for p in patterns_with_results if (p.get('type') or '') in ('DOUBLE_TOP', 'DOUBLE_BOTTOM'))
                     log.info(
-                        f"  {ativo}: total={len(all_hs)} | visíveis={_visible} | {_w}W / {_l}L | Live: {_lv}"
+                        f"  {ativo}: total={len(all_signals)+len(dt_signals)} | {_w}W / {_l}L | Live: {_lv} | DT: {_dt_count}"
                     )
 
             _scanning = False
@@ -1808,6 +1879,7 @@ class NpEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, (np.integer,)): return int(obj)
         if isinstance(obj, (np.floating,)): return float(obj)
+        if isinstance(obj, (np.bool_,)): return bool(obj)
         if isinstance(obj, np.ndarray): return obj.tolist()
         if isinstance(obj, pd.Timestamp): return obj.isoformat()
         return super().default(obj)
@@ -1923,10 +1995,18 @@ def build_api_data():
         candles = [_candles_by_ts[_cts] for _cts in sorted(_candles_by_ts.keys())]
 
         _asset_live_patterns = [dict(_item) for _item in _live_by_asset.get(ativo, []) if isinstance(_item, dict)]
-        if _asset_live_patterns:
-            pats_data = _asset_live_patterns
+        if _authoritative_live:
+            # Fonte unica de verdade no live: sinais emitidos pelo bot.
+            # Misturar DT recalculado localmente com o live do bot faz o
+            # padrao "andar" no grafico e desenhar pontos inconsistentes.
+            if _asset_live_patterns:
+                pats_data = list(_asset_live_patterns)
+            elif _history_by_asset.get(ativo, []):
+                pats_data = [dict(_item) for _item in _history_by_asset.get(ativo, []) if isinstance(_item, dict)]
+            else:
+                pats_data = []
         else:
-            pats_data = _history_by_asset.get(ativo, []) if _authoritative_live else ap.get(ativo, [])
+            pats_data = ap.get(ativo, [])
         _active_signal_keys = {_signal_identity_key(_sig) for _sig in _live_by_asset.get(ativo, [])}
 
         # ── Lookup: epoch → chart_idx ──
@@ -1960,9 +2040,11 @@ def build_api_data():
                 _bxt = mp["backtest"].get("exit_ts", 0)
                 mp["backtest"]["entry_chart_idx"] = _ts_to_ci.get(int(_bet), -1) if _bet else -1
                 mp["backtest"]["exit_chart_idx"] = _ts_to_ci.get(int(_bxt), -1) if _bxt else -1
-            # Só incluir padrões com Toque 2 visível no gráfico
+            # Só incluir padrões visíveis no gráfico
             rs_ci = mp.get("right_shoulder", {}).get("chart_idx", -1)
-            if rs_ci >= 0 and rs_ci < len(candles):
+            entry_ci = mp.get("entry_chart_idx", -1)
+            visible_ci = rs_ci if rs_ci >= 0 else entry_ci
+            if visible_ci >= 0 and visible_ci < len(candles):
                 mapped_pats.append(mp)
         if _authoritative_live and mapped_pats:
             mapped_pats = _select_primary_chart_patterns(mapped_pats)
@@ -2026,15 +2108,15 @@ def build_api_data():
                 lm["nn_p2"] = _be_match.get("nn_p2")
                 lm["nn_p3"] = _be_match.get("nn_p3")
     # Mesclar com trades recebidos via POST (tempo real), sem duplicar
-    # Dedup por decision_id/order_id (primário) + ativo+dir bucket (fallback)
+    # Dedup por decision_id/order_id (primário) + ativo+dir janela 120s (fallback)
     _seen_ids = set()
-    _seen_keys = set()
+    _seen_trades = []  # (ativo, dir, ts) para match por janela
     for be in broker_entries:
         if be.get("decision_id"):
             _seen_ids.add(be["decision_id"])
         if be.get("order_id") is not None:
             _seen_ids.add(str(be["order_id"]))
-        _seen_keys.add((be.get("ativo",""), be.get("dir",""), int(be.get("ts", 0) // 300)))
+        _seen_trades.append((be.get("ativo",""), be.get("dir",""), float(be.get("ts", 0))))
     with _real_trades_lock:
         for rt in _real_trades:
             # Skip se já temos este trade por ID
@@ -2042,20 +2124,60 @@ def build_api_data():
                 continue
             if rt.get("order_id") is not None and str(rt["order_id"]) in _seen_ids:
                 continue
-            key = (rt.get("ativo",""), rt.get("dir",""), int(rt.get("ts", 0) // 300))
-            if key not in _seen_keys:
-                broker_entries.append(rt)
-                _seen_keys.add(key)
-                if rt.get("decision_id"):
-                    _seen_ids.add(rt["decision_id"])
-    # Consolidar: se há win/loss para um ativo+dir, remover entry duplicado
-    _resolved = set()
+            _ra, _rd, _rt = rt.get("ativo",""), rt.get("dir",""), float(rt.get("ts", 0))
+            if any(sa == _ra and sd == _rd and abs(st - _rt) < 120 for sa, sd, st in _seen_trades):
+                continue
+            broker_entries.append(rt)
+            _seen_trades.append((_ra, _rd, _rt))
+            if rt.get("decision_id"):
+                _seen_ids.add(rt["decision_id"])
+    # Consolidar: se há win/loss para um ativo+dir, remover entry duplicado (janela 600s)
+    _resolved_list = [(be.get("ativo",""), be.get("dir",""), float(be.get("ts", 0))) for be in broker_entries if be.get("result") in ("win", "loss", "tie")]
+    _kept = []
+    _entry_seen = []
     for be in broker_entries:
-        if be.get("result") in ("win", "loss", "tie"):
-            _resolved.add((be.get("ativo",""), be.get("dir",""), int(be.get("ts", 0) // 300)))
-    broker_entries = [be for be in broker_entries if not (be.get("result") == "entry" and (be.get("ativo",""), be.get("dir",""), int(be.get("ts", 0) // 300)) in _resolved)]
+        if be.get("result") == "entry":
+            _ba, _bd, _bt = be.get("ativo",""), be.get("dir",""), float(be.get("ts", 0))
+            # Pular se já existe resultado dentro de 600s
+            if any(ra == _ba and rd == _bd and abs(rt - _bt) < 600 for ra, rd, rt in _resolved_list):
+                continue
+            # Pular entry duplicado (mesmo ativo+dir dentro de 120s)
+            if any(sa == _ba and sd == _bd and abs(st - _bt) < 120 for sa, sd, st in _entry_seen):
+                continue
+            _entry_seen.append((_ba, _bd, _bt))
+        _kept.append(be)
+    broker_entries = _kept
     broker_entries.sort(key=lambda x: x.get("ts", 0), reverse=True)
     broker_entries = broker_entries[:50]
+
+    real_trade_summary = {
+        "entries": 0,
+        "wins": 0,
+        "losses": 0,
+        "ties": 0,
+        "resolved_total": 0,
+        "total": 0,
+        "wr": 0.0,
+    }
+    for be in broker_entries:
+        _result = str(be.get("result", "") or "").lower()
+        if _result == "entry":
+            real_trade_summary["entries"] += 1
+        elif _result == "win":
+            real_trade_summary["wins"] += 1
+            real_trade_summary["resolved_total"] += 1
+        elif _result == "loss":
+            real_trade_summary["losses"] += 1
+            real_trade_summary["resolved_total"] += 1
+        elif _result == "tie":
+            real_trade_summary["ties"] += 1
+            real_trade_summary["resolved_total"] += 1
+    real_trade_summary["total"] = real_trade_summary["entries"] + real_trade_summary["resolved_total"]
+    if real_trade_summary["resolved_total"] > 0:
+        real_trade_summary["wr"] = round(
+            (real_trade_summary["wins"] / real_trade_summary["resolved_total"]) * 100,
+            1,
+        )
 
     # IA training stats para o bot importar no startup
     ia_training_stats = {}
@@ -2089,6 +2211,7 @@ def build_api_data():
     return {
         "charts": charts,
         "summary": summary,
+        "real_trade_summary": real_trade_summary,
         "live_signals": live_mapped,
         "selected_assets": list(_cache.get("selected_assets", []) or []),
         "broker_entries": broker_entries,
@@ -2113,31 +2236,31 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WS Trader — IA Double Touch</title>
+<title>WS Trader — IA Continuation</title>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-    --bg-primary:#020617;--bg-secondary:#07101d;--bg-card:#0b1628;--bg-hover:#112038;
-    --border:rgba(148,163,184,0.16);--border-light:rgba(148,163,184,0.24);
-    --text-primary:#e5eefb;--text-secondary:#9fb0c8;--text-muted:#6f819b;
-    --accent:#f97316;--accent-glow:rgba(249,115,22,0.22);
+    --bg-primary:#020a18;--bg-secondary:#071422;--bg-card:#0c1a2e;--bg-hover:#132a44;
+    --border:rgba(100,160,220,0.16);--border-light:rgba(100,160,220,0.24);
+    --text-primary:#dce8f8;--text-secondary:#9cb8d6;--text-muted:#6889ab;
+    --accent:#5ba8e6;--accent-glow:rgba(91,168,230,0.22);
   --green:#00e676;--green-bg:rgba(0,230,118,0.10);--green-glow:rgba(0,230,118,0.25);
   --red:#ff3d57;--red-bg:rgba(255,61,87,0.10);--red-glow:rgba(255,61,87,0.25);
     --orange:#fb923c;--orange-bg:rgba(251,146,60,0.12);--orange-glow:rgba(251,146,60,0.24);
     --purple:#7c93ff;--purple-bg:rgba(124,147,255,0.12);
-    --cyan:#38bdf8;--cyan-bg:rgba(56,189,248,0.12);
-    --glass:rgba(10,16,29,0.68);
+    --cyan:#5bb8f0;--cyan-bg:rgba(91,184,240,0.12);
+    --glass:rgba(8,14,26,0.68);
     --radius:14px;--radius-sm:10px;--radius-full:9999px;
 }
-body{background:radial-gradient(circle at 12% -8%,rgba(56,189,248,0.16),transparent 28%),radial-gradient(circle at 88% 0%,rgba(249,115,22,0.12),transparent 26%),linear-gradient(180deg,#020617 0%,#050b16 48%,#030712 100%);color:var(--text-primary);font-family:'IBM Plex Sans',system-ui,sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+body{background:radial-gradient(circle at 12% -8%,rgba(91,168,230,0.14),transparent 30%),radial-gradient(circle at 88% 0%,rgba(91,184,240,0.10),transparent 28%),linear-gradient(180deg,#020a18 0%,#061020 48%,#030a14 100%);color:var(--text-primary);font-family:'IBM Plex Sans',system-ui,sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column}
 .icon-svg{display:inline-block;vertical-align:middle;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* ── HEADER ── */
-.top-bar{background:linear-gradient(135deg,rgba(8,16,30,0.94) 0%,rgba(10,18,33,0.9) 55%,rgba(15,24,42,0.86) 100%);padding:12px 24px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--border);flex-shrink:0;backdrop-filter:blur(18px)}
+.top-bar{background:linear-gradient(135deg,rgba(8,16,30,0.94) 0%,rgba(10,18,33,0.9) 55%,rgba(15,24,42,0.86) 100%);padding:8px 24px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--border);flex-shrink:0;backdrop-filter:blur(18px)}
 .logo{display:flex;align-items:center;gap:10px}
-.logo-icon{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#f97316,#38bdf8);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;box-shadow:0 10px 30px rgba(56,189,248,0.18)}
+.logo-icon{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#4a9ad8,#7ec8f0);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;box-shadow:0 10px 30px rgba(91,168,230,0.22)}
 .logo h1{font-size:15px;font-weight:700;color:var(--text-primary);letter-spacing:-0.3px;font-family:'Sora',sans-serif}
 .logo .sub{font-size:10px;color:var(--text-muted);font-weight:400;letter-spacing:0.5px}
 .top-badges{display:flex;gap:8px;margin-left:20px}
@@ -2159,20 +2282,23 @@ body{background:radial-gradient(circle at 12% -8%,rgba(56,189,248,0.16),transpar
 .candle-timer.urgent .ct-ring-fg{stroke:var(--red)}
 .candle-timer.urgent{color:var(--red);animation:tblink 1s infinite}
 
-/* ── STATS ROW ── */
-.stats-row{display:flex;gap:10px;padding:10px 24px;background:var(--bg-secondary);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
-.st{display:flex;flex-direction:column;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 16px;min-width:100px;position:relative;overflow:hidden}
-.st::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
-.st.blue::before{background:linear-gradient(90deg,var(--accent),#ff8c33)}
-.st.green::before{background:var(--green)}
-.st.red::before{background:var(--red)}
-.st.yellow::before{background:var(--orange)}
-.st .lbl{font-size:9px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:2px;display:flex;align-items:center;gap:4px}
-.st .val{font-size:22px;font-weight:800;letter-spacing:-0.5px}
-.st .val.blue{color:var(--accent)}
+/* ── IA ACCURACY BAR (slim) ── */
+.ia-bar{display:flex;align-items:center;gap:10px;padding:6px 24px;background:var(--bg-secondary);border-bottom:1px solid var(--border);flex-shrink:0;font-size:11px;overflow-x:auto}
+.ia-bar .ia-bar-label{color:var(--text-muted);font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.ia-bar .ia-bar-items{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ia-bar .ia-bar-items span{white-space:nowrap}
+.ia-bar .ia-sep{color:var(--border-light);font-size:9px}
+
+/* ── STATS ROW (8 boxes) ── */
+.stats-row{display:flex;gap:6px;padding:6px 12px;background:var(--bg-secondary);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto}
+.st{flex:1;min-width:0;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.st .lbl{font-size:9px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;white-space:nowrap}
+.st .val{font-size:14px;font-weight:700;white-space:nowrap}
 .st .val.green{color:var(--green)}
 .st .val.red{color:var(--red)}
-.st .val.yellow{color:var(--orange)}
+.st .val.cyan{color:var(--cyan)}
+.st .val.purple{color:#a855f7}
+.st .val.accent{color:var(--accent)}
 
 /* ── LAYOUT ── */
 .content{display:flex;flex:1;overflow:hidden;min-height:0}
@@ -2208,7 +2334,7 @@ body{background:radial-gradient(circle at 12% -8%,rgba(56,189,248,0.16),transpar
 
 /* ── CENTER: CHART ── */
 .main-area{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:12px 14px 14px;background:linear-gradient(180deg,rgba(6,10,20,0.48),rgba(6,10,20,0.18))}
-.chart-toolbar{padding:14px 18px;background:linear-gradient(180deg,rgba(10,18,32,0.94),rgba(10,18,32,0.82));border:1px solid rgba(56,189,248,0.12);border-bottom:none;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;border-radius:22px 22px 0 0;backdrop-filter:blur(16px);box-shadow:0 18px 44px rgba(2,6,23,0.34)}
+.chart-toolbar{padding:14px 18px;background:linear-gradient(180deg,rgba(10,18,32,0.94),rgba(10,18,32,0.82));border:1px solid rgba(91,168,230,0.12);border-bottom:none;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;border-radius:22px 22px 0 0;backdrop-filter:blur(16px);box-shadow:0 18px 44px rgba(2,6,23,0.34)}
 .chart-toolbar .ct-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .chart-toolbar .ct-name{font-weight:800;color:var(--text-primary);font-size:20px;letter-spacing:-0.5px;font-family:'Sora',sans-serif}
 .chart-toolbar .ct-payout{background:rgba(0,230,118,0.12);color:var(--green);padding:5px 12px;border-radius:var(--radius-full);font-size:12px;font-weight:700;border:1px solid rgba(0,230,118,0.18)}
@@ -2219,11 +2345,11 @@ body{background:radial-gradient(circle at 12% -8%,rgba(56,189,248,0.16),transpar
 .ct-info,.ct-chip{font-size:11px;color:var(--text-secondary);display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:var(--radius-full);background:rgba(255,255,255,0.03);border:1px solid rgba(148,163,184,0.12)}
 .ct-chip.good{color:#86efac;border-color:rgba(0,230,118,0.18);background:rgba(0,230,118,0.08)}
 .ct-chip.warn{color:#fdba74;border-color:rgba(249,115,22,0.18);background:rgba(249,115,22,0.08)}
-.ia-entry-icon{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,#f97316,#fb923c);color:#fff;padding:8px 14px;border-radius:var(--radius-full);font-size:12px;font-weight:700;box-shadow:0 10px 26px rgba(249,115,22,0.24)}
-#main-chart-box{flex:1;min-height:0;position:relative;background:linear-gradient(180deg,rgba(7,17,31,0.98),rgba(4,9,18,0.98));border-left:1px solid rgba(56,189,248,0.12);border-right:1px solid rgba(56,189,248,0.12);overflow:hidden}
-#main-chart-box::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at top right,rgba(56,189,248,0.10),transparent 28%),radial-gradient(circle at bottom left,rgba(249,115,22,0.10),transparent 32%);pointer-events:none;z-index:0}
+.ia-entry-icon{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,#4a9ad8,#7ec8f0);color:#fff;padding:8px 14px;border-radius:var(--radius-full);font-size:12px;font-weight:700;box-shadow:0 10px 26px rgba(91,168,230,0.24)}
+#main-chart-box{flex:1;min-height:0;position:relative;background:linear-gradient(180deg,rgba(7,17,31,0.98),rgba(4,9,18,0.98));border-left:1px solid rgba(91,168,230,0.12);border-right:1px solid rgba(91,168,230,0.12);overflow:hidden}
+#main-chart-box::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at top right,rgba(91,168,230,0.08),transparent 28%),radial-gradient(circle at bottom left,rgba(91,184,240,0.06),transparent 32%);pointer-events:none;z-index:0}
 #main-chart-box::after{content:'';position:absolute;inset:0;border:1px solid rgba(255,255,255,0.03);pointer-events:none;z-index:0}
-.pat-footer{padding:10px 20px;background:linear-gradient(180deg,rgba(9,15,28,0.98),rgba(7,12,23,0.98));border:1px solid rgba(56,189,248,0.12);border-top:none;max-height:126px;overflow-y:auto;font-size:11px;flex-shrink:0;border-radius:0 0 22px 22px;box-shadow:0 18px 44px rgba(2,6,23,0.34)}
+.pat-footer{padding:10px 20px;background:linear-gradient(180deg,rgba(9,15,28,0.98),rgba(7,12,23,0.98));border:1px solid rgba(91,168,230,0.12);border-top:none;max-height:126px;overflow-y:auto;font-size:11px;flex-shrink:0;border-radius:0 0 22px 22px;box-shadow:0 18px 44px rgba(2,6,23,0.34)}
 .pat-row{display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)}
 .pat-row:last-child{border:none}
 .pat-row .pr-type{color:var(--text-secondary);font-weight:500;display:flex;align-items:center;gap:4px}
@@ -2231,7 +2357,7 @@ body{background:radial-gradient(circle at 12% -8%,rgba(56,189,248,0.16),transpar
 .pat-row .pr-res{font-weight:700;display:flex;align-items:center;gap:4px}
 .pr-res.win{color:var(--green)} .pr-res.loss{color:var(--red)} .pr-res.live{color:var(--orange)} .pr-res.skip{color:var(--text-muted)}
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:var(--text-muted);gap:16px;position:relative;z-index:1}
-.empty-state .e-icon{opacity:.32;filter:drop-shadow(0 0 18px rgba(56,189,248,0.16))}
+.empty-state .e-icon{opacity:.32;filter:drop-shadow(0 0 18px rgba(91,168,230,0.16))}
 .empty-state .e-text{font-size:17px;font-weight:600;color:#d9e7fb;font-family:'Sora',sans-serif}
 .empty-state .e-sub{font-size:12px;max-width:340px;text-align:center;line-height:1.7;color:var(--text-secondary)}
 
@@ -2254,7 +2380,7 @@ body{background:radial-gradient(circle at 12% -8%,rgba(56,189,248,0.16),transpar
 .signal-card .sc-type{font-size:10px;color:var(--text-muted)}
 .signal-card .sc-prob{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--purple)}
 .prob-bar{width:40px;height:4px;border-radius:2px;background:var(--bg-primary);overflow:hidden}
-.prob-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent),#ff8c33)}
+.prob-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent),#7ec8f0)}
 .result-row{display:flex;align-items:center;padding:8px 10px;border-radius:var(--radius-sm);margin:3px 0;font-size:11px;background:var(--bg-card);border:1px solid var(--border);gap:8px}
 .result-row .rr-ativo{flex:1;font-weight:600;color:var(--text-primary)}
 .result-row .rr-dir{font-size:10px;font-weight:700}
@@ -2367,7 +2493,7 @@ body{background:radial-gradient(circle at 12% -8%,rgba(56,189,248,0.16),transpar
     <div class="logo-icon">W</div>
     <div>
       <h1>WS Trader</h1>
-      <div class="sub">IA Double Touch</div>
+      <div class="sub">IA Continuation</div>
     </div>
   </div>
   <div class="top-badges">
@@ -2387,16 +2513,22 @@ body{background:radial-gradient(circle at 12% -8%,rgba(56,189,248,0.16),transpar
   </div>
 </div>
 
-<!-- STATS ROW — REMOVIDO -->
-<div class="stats-row" id="stats-bar" style="display:none">
-  <div class="st blue"><div class="val blue" id="st-total">-</div></div>
-  <div class="st"><div class="val" id="st-wr">0%</div></div>
-  <div class="st"><div class="val" id="st-wins">0</div></div>
-  <div class="st"><div class="val" id="st-losses">0</div></div>
-  <div class="st"><div class="val" id="st-hs">-</div></div>
-  <div class="st"><div class="val" id="st-ihs">-</div></div>
-  <div class="st"><div class="val" id="st-live">0</div></div>
-  <div class="st" id="st-ia-level-box"><div class="val" id="st-ia-level">-</div></div>
+<!-- IA ACCURACY BAR -->
+<div class="ia-bar" id="ia-bar">
+  <span class="ia-bar-label">🧠 IA Modelos</span>
+  <div class="ia-bar-items" id="ia-bar-items">-</div>
+</div>
+
+<!-- STATS ROW -->
+<div class="stats-row" id="stats-bar">
+  <div class="st"><div class="lbl">Win Rate</div><div class="val" id="st-wr">0%</div></div>
+  <div class="st"><div class="lbl">Wins</div><div class="val green" id="st-wins">0</div></div>
+  <div class="st"><div class="lbl">Losses</div><div class="val red" id="st-losses">0</div></div>
+  <div class="st"><div class="lbl">Total</div><div class="val" id="st-total">0</div></div>
+  <div class="st"><div class="lbl">Sinais</div><div class="val cyan" id="st-live">0</div></div>
+  <div class="st"><div class="lbl">Ativos</div><div class="val" id="st-assets">0</div></div>
+  <div class="st"><div class="lbl">Padrões</div><div class="val" id="st-hs" style="font-size:11px">-</div></div>
+  <div class="st" id="st-ia-level-box"><div class="lbl">IA</div><div class="val" id="st-ia-level" style="font-size:11px">-</div></div>
 </div>
 
 <!-- MAIN CONTENT -->
@@ -2462,7 +2594,7 @@ body{background:radial-gradient(circle at 12% -8%,rgba(56,189,248,0.16),transpar
 
 </div>
 
-<div class="footer"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> WS Trader v5.6 — IA Double Touch — Velas ao vivo a cada 1s</div>
+<div class="footer"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> WS Trader v5.6 — IA Continuation — Velas ao vivo a cada 1s</div>
 
 <script>
 let mainChart = null, mainSeries = null, selectedAtivo = null, latestData = null, candleData = [], allAtivos = [];
@@ -2513,16 +2645,16 @@ function initChart() {
   document.getElementById('empty-state').style.display = 'none';
   mainChart = LightweightCharts.createChart(el, {
     width: el.clientWidth, height: el.clientHeight,
-        layout: { background: { color: '#07111f' }, textColor: '#90a4bf', fontFamily: 'IBM Plex Sans, system-ui, sans-serif' },
-        grid: { vertLines: { color: 'rgba(56,189,248,0.06)' }, horzLines: { color: 'rgba(255,255,255,0.045)' } },
+        layout: { background: { color: '#071422' }, textColor: '#94b4d0', fontFamily: 'IBM Plex Sans, system-ui, sans-serif' },
+        grid: { vertLines: { color: 'rgba(91,168,230,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
         crosshair: {
             mode: 1,
-            vertLine: { color: 'rgba(56,189,248,0.24)', width: 1, labelBackgroundColor: '#0f172a' },
-            horzLine: { color: 'rgba(249,115,22,0.22)', width: 1, labelBackgroundColor: '#111827' }
+            vertLine: { color: 'rgba(91,168,230,0.24)', width: 1, labelBackgroundColor: '#0c1a2e' },
+            horzLine: { color: 'rgba(91,184,240,0.22)', width: 1, labelBackgroundColor: '#0c1a2e' }
         },
-        timeScale: { timeVisible: true, secondsVisible: false, borderColor: 'rgba(56,189,248,0.14)', rightOffset: 6, barSpacing: 11, minBarSpacing: 7, lockVisibleTimeRangeOnResize: true },
-        rightPriceScale: { borderColor: 'rgba(56,189,248,0.14)', scaleMargins: { top: 0.08, bottom: 0.08 } },
-        watermark: { visible: true, text: selectedAtivo ? selectedAtivo.replace('-OTC', '') : 'WS Trader', color: 'rgba(56,189,248,0.07)', fontSize: 34, horzAlign: 'left', vertAlign: 'top' },
+        timeScale: { timeVisible: true, secondsVisible: false, borderColor: 'rgba(91,168,230,0.14)', rightOffset: 6, barSpacing: 11, minBarSpacing: 7, lockVisibleTimeRangeOnResize: true },
+        rightPriceScale: { borderColor: 'rgba(91,168,230,0.14)', scaleMargins: { top: 0.08, bottom: 0.08 } },
+        watermark: { visible: true, text: selectedAtivo ? selectedAtivo.replace('-OTC', '') : 'WS Trader', color: 'rgba(91,168,230,0.06)', fontSize: 34, horzAlign: 'left', vertAlign: 'top' },
   });
   mainSeries = mainChart.addCandlestickSeries({
         upColor: '#22c55e', downColor: '#fb7185',
@@ -2557,6 +2689,7 @@ function renderChart(data) {
   if (!selectedAtivo || !mainChart || !mainSeries) return;
   var cdata = (data.charts || {})[selectedAtivo];
   if (!cdata) return;
+  try {
 
   // Toolbar
   document.getElementById('chart-toolbar').style.display = '';
@@ -2564,13 +2697,14 @@ function renderChart(data) {
   document.getElementById('ct-payout').textContent = cdata.payout + '%';
   document.getElementById('ct-info').innerHTML = '<svg class="icon-svg" style="width:12px;height:12px"><use href="#i-candlestick"/></svg> ' + cdata.n_candles + ' velas';
     if (mainChart) {
-        mainChart.applyOptions({ watermark: { visible: true, text: selectedAtivo.replace('-OTC', ''), color: 'rgba(56,189,248,0.07)', fontSize: 34, horzAlign: 'left', vertAlign: 'top' } });
+        mainChart.applyOptions({ watermark: { visible: true, text: selectedAtivo.replace('-OTC', ''), color: 'rgba(91,168,230,0.06)', fontSize: 34, horzAlign: 'left', vertAlign: 'top' } });
     }
 
   // IA entry badge
     var assetLiveSignals = (data.live_signals || []).filter(function(sig) { return sig.ativo === selectedAtivo; });
     var livePats = assetLiveSignals.length > 0 ? assetLiveSignals : [];
-        var visiblePatterns = (cdata.patterns || []).filter(function(p) { return p.right_shoulder && p.right_shoulder.chart_idx >= 0; });
+        var authoritativeOverlay = cdata.overlay_mode === 'bot_live_only';
+        var visiblePatterns = (cdata.patterns || []).filter(function(p) { return (p.right_shoulder && p.right_shoulder.chart_idx >= 0) || p.type === 'CONTINUATION'; });
         function patternRankTs(pat) {
             var candidates = [
                 pat && pat.broker_ts,
@@ -2601,7 +2735,12 @@ function renderChart(data) {
             });
             return ranked.length ? [ranked[0]] : [];
         }
-        var renderPatterns = choosePrimaryPattern(visiblePatterns);
+                var renderPatterns = authoritativeOverlay ? visiblePatterns.slice() : choosePrimaryPattern(visiblePatterns);
+  // Include continuation live signals as visible patterns too
+  var contLive = assetLiveSignals.filter(function(s) { return s.type === 'CONTINUATION'; });
+  if (contLive.length > 0 && renderPatterns.length === 0) {
+    renderPatterns = [contLive[0]];
+  }
   var iaEntry = document.getElementById('ia-entry');
   var ctDir = document.getElementById('ct-dir');
     var ctPatterns = document.getElementById('ct-patterns');
@@ -2649,15 +2788,19 @@ function renderChart(data) {
                 ctPredChip.style.display = 'none';
   }
 
-  // Candles — SEMPRE usa setData para dados do /api/data (120 velas).
-  // update() é reservado SOMENTE para live streaming (1-2 velas).
+  // Candles — só chama setData quando os dados realmente mudaram
   var newCandles = (cdata.candles || []).map(function(c) {
     return { time: parseTime(c.t), open: c.o, high: c.h, low: c.l, close: c.c };
   }).filter(function(c) { return !isNaN(c.time) && c.time > 0; });
   newCandles.sort(function(a, b) { return a.time - b.time; });
   if (newCandles.length > 0) {
-    candleData = newCandles;
-    mainSeries.setData(candleData);
+    var lastNew = newCandles[newCandles.length - 1];
+    var lastOld = candleData.length > 0 ? candleData[candleData.length - 1] : null;
+    var changed = !lastOld || candleData.length !== newCandles.length || lastOld.time !== lastNew.time || lastOld.close !== lastNew.close;
+    if (changed) {
+      candleData = newCandles;
+      mainSeries.setData(candleData);
+    }
   }
   if (firstRender) {
     mainChart.timeScale().fitContent();
@@ -2679,12 +2822,13 @@ function renderChart(data) {
       } else if (p.broker_status === 'win') { cls = 'win'; icoRef = '#i-check'; txt = 'WIN'; }
       else if (p.broker_status === 'loss') { cls = 'loss'; icoRef = '#i-x'; txt = 'LOSS'; }
       else if (p.broker_status === 'tie') { cls = 'skip'; icoRef = '#i-arrow-down'; txt = 'TIE'; }
-    var typeName = p.type === 'DOUBLE_TOP' ? 'DT \u25BC' : 'DB \u25B2';
+    var typeName = p.type === 'CONTINUATION' ? 'CONT \u25B6' : p.type === 'DOUBLE_TOP' ? 'DT \u25BC' : 'DB \u25B2';
       return '<div class="pat-row"><span class="pr-type"><svg class="icon-svg" style="width:11px;height:11px"><use href="#i-activity"/></svg> ' + typeName + ' ' + p.mode + '</span><span class="pr-ia"><svg class="icon-svg" style="width:11px;height:11px;stroke:var(--purple)"><use href="#i-brain"/></svg> ' + ((p.ia_prob||0.5)*100).toFixed(0) + '%</span><span class="pr-res ' + cls + '"><svg class="icon-svg" style="width:11px;height:11px"><use href="' + icoRef + '"/></svg> ' + txt + '</span></div>';
     }).join('');
   } else {
     patEl.style.display = 'none';
   }
+  } catch(e) { console.error('renderChart error:', e); }
 }
 
 function drawHSOverlay() {
@@ -2707,9 +2851,154 @@ function drawHSOverlay() {
   if (!latestData || !selectedAtivo || !mainChart || !mainSeries || !candleData.length) return;
   var cd = (latestData.charts || {})[selectedAtivo];
   if (!cd || !cd.patterns) return;
+  try {
+  var authoritativeOverlay = cd.overlay_mode === 'bot_live_only';
   var ts = mainChart.timeScale();
   function gx(i) { if (i < 0 || i >= candleData.length) return null; return ts.timeToCoordinate(candleData[i].time); }
   function gy(p) { return mainSeries.priceToCoordinate(p); }
+
+        // ═══ ZONAS DE SUPORTE E RESISTÊNCIA (DonForex Style) ═══
+      try { (function drawSRZones() {
+          if (candleData.length < 20) return;
+          var lookback = Math.min(200, candleData.length - 2);
+          var endIdx = candleData.length - 1;
+          var startIdx = Math.max(2, endIdx - lookback);
+          // ATR
+          var atrSum = 0, atrN = 0;
+          for (var ai = Math.max(1, startIdx); ai <= endIdx; ai++) {
+            var tr = Math.max(candleData[ai].high - candleData[ai].low,
+                              Math.abs(candleData[ai].high - candleData[ai-1].close),
+                              Math.abs(candleData[ai].low - candleData[ai-1].close));
+            atrSum += tr; atrN++;
+          }
+          var atrVal = atrN > 0 ? atrSum / atrN : 0.001;
+          var tol = atrVal * 0.35;
+          // Multi-TF swing detection
+          var levels = [];
+          for (var si = startIdx + 2; si < endIdx - 1; si++) {
+            // M1 pivots (2-bar)
+            if (candleData[si].low <= candleData[si-1].low && candleData[si].low <= candleData[si+1].low)
+              levels.push({type:'S', price:candleData[si].low, w:1});
+            if (candleData[si].high >= candleData[si-1].high && candleData[si].high >= candleData[si+1].high)
+              levels.push({type:'R', price:candleData[si].high, w:1});
+          }
+          // M5 swings
+          for (var m5 = startIdx; m5 + 14 < endIdx; m5 += 5) {
+            var m5h=-Infinity, m5l=Infinity;
+            for (var k5=0;k5<5;k5++){m5h=Math.max(m5h,candleData[m5+k5].high);m5l=Math.min(m5l,candleData[m5+k5].low);}
+            var m5ph=-Infinity,m5pl=Infinity,m5nh=-Infinity,m5nl=Infinity;
+            for(var k5b=0;k5b<5;k5b++){
+              if(m5-5+k5b>=startIdx){m5ph=Math.max(m5ph,candleData[m5-5+k5b].high);m5pl=Math.min(m5pl,candleData[m5-5+k5b].low);}
+              if(m5+5+k5b<endIdx){m5nh=Math.max(m5nh,candleData[m5+5+k5b].high);m5nl=Math.min(m5nl,candleData[m5+5+k5b].low);}
+            }
+            if(m5l<=m5pl&&m5l<=m5nl) levels.push({type:'S',price:m5l,w:2});
+            if(m5h>=m5ph&&m5h>=m5nh) levels.push({type:'R',price:m5h,w:2});
+          }
+          // M15 swings
+          for (var m15 = startIdx; m15 + 44 < endIdx; m15 += 15) {
+            var m15h=-Infinity, m15l=Infinity;
+            for(var k15=0;k15<15;k15++){m15h=Math.max(m15h,candleData[m15+k15].high);m15l=Math.min(m15l,candleData[m15+k15].low);}
+            var m15ph=-Infinity,m15pl=Infinity,m15nh=-Infinity,m15nl=Infinity;
+            for(var k15b=0;k15b<15;k15b++){
+              if(m15-15+k15b>=startIdx){m15ph=Math.max(m15ph,candleData[m15-15+k15b].high);m15pl=Math.min(m15pl,candleData[m15-15+k15b].low);}
+              if(m15+15+k15b<endIdx){m15nh=Math.max(m15nh,candleData[m15+15+k15b].high);m15nl=Math.min(m15nl,candleData[m15+15+k15b].low);}
+            }
+            if(m15l<=m15pl&&m15l<=m15nl) levels.push({type:'S',price:m15l,w:3});
+            if(m15h>=m15ph&&m15h>=m15nh) levels.push({type:'R',price:m15h,w:3});
+          }
+          if (!levels.length) return;
+          // Cluster: weighted strength (wider merge to avoid overlapping zones)
+          var bigTol = atrVal * 1.2;
+          var zones = [];
+          levels.forEach(function(lv) {
+            for (var zi = 0; zi < zones.length; zi++) {
+              if (Math.abs(lv.price - zones[zi].price) <= bigTol) {
+                var old = zones[zi].str;
+                zones[zi].price = (zones[zi].price * old + lv.price * lv.w) / (old + lv.w);
+                zones[zi].str += lv.w;
+                zones[zi].touches++;
+                return;
+              }
+            }
+            zones.push({type:lv.type, price:lv.price, str:lv.w, touches:1});
+          });
+          // Count actual candle touches (wicks entering zone)
+          zones.forEach(function(z) {
+            var wCount = 0;
+            for (var ti = startIdx; ti <= endIdx; ti++) {
+              var zTop = z.price + tol * 0.5;
+              var zBot = z.price - tol * 0.5;
+              if (candleData[ti].high >= zBot && candleData[ti].low <= zTop) wCount++;
+            }
+            z.wickTouches = wCount;
+          });
+          // Filter: 3+ strength, sort by strength
+          var strong = zones.filter(function(z){return z.str >= 3;})
+              .sort(function(a,b){return b.str - a.str;});
+          // Remove zones too close in price (keep strongest, min 1.5 ATR gap)
+          var minGap = atrVal * 1.5;
+          var filtered = [];
+          strong.forEach(function(z) {
+            var tooClose = false;
+            for (var fi = 0; fi < filtered.length; fi++) {
+              if (Math.abs(z.price - filtered[fi].price) < minGap) { tooClose = true; break; }
+            }
+            if (!tooClose) filtered.push(z);
+          });
+          strong = filtered.slice(0, 7);
+          // Current price for distance calc
+          var curPrice = candleData[endIdx].close;
+          // Price precision (auto-detect decimals)
+          var priceStr = curPrice.toString();
+          var decIdx = priceStr.indexOf('.');
+          var decimals = decIdx >= 0 ? priceStr.length - decIdx - 1 : 0;
+          decimals = Math.max(decimals, 2);
+          var pipMult = Math.pow(10, decimals);
+          // Draw zones (DonForex style: gray bands, numbered labels)
+          strong.forEach(function(zone, idx) {
+            var yC = gy(zone.price);
+            var yT = gy(zone.price + tol * 0.5);
+            var yB = gy(zone.price - tol * 0.5);
+            if (yC === null || yT === null || yB === null) return;
+            if (isNaN(yC) || isNaN(yT) || isNaN(yB)) return;
+            var bandH = Math.max(Math.abs(yB - yT), 5);
+            var bandTop = Math.min(yT, yB);
+            // Gray semi-transparent band
+            var alpha = Math.min(0.06 + zone.str * 0.012, 0.18);
+            ctx.fillStyle = 'rgba(180,195,220,' + alpha + ')';
+            ctx.fillRect(0, bandTop, r.width, bandH);
+            // Solid border lines (top + bottom of zone)
+            ctx.save();
+            ctx.strokeStyle = 'rgba(148,163,184,0.35)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, bandTop); ctx.lineTo(r.width, bandTop);
+            ctx.moveTo(0, bandTop + bandH); ctx.lineTo(r.width, bandTop + bandH);
+            ctx.stroke();
+            ctx.restore();
+            // Left label: "N. SRZ # R: X pts | W: Y"
+            ctx.save();
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            var lbl = (idx+1) + '. SRZ # ' + (zone.type === 'R' ? 'R' : 'S') + ': ' + Math.round(zone.str) + ' pts | W: ' + zone.wickTouches;
+            var txtW = ctx.measureText ? 170 : 160;
+            ctx.fillRect(0, bandTop - 1, txtW, 14);
+            ctx.fillStyle = 'rgba(220,230,245,0.85)';
+            ctx.font = '600 10px IBM Plex Mono, monospace';
+            ctx.fillText(lbl, 4, bandTop + 10);
+            ctx.restore();
+            // Right label: "D: X pts"
+            var dist = Math.abs(curPrice - zone.price);
+            var distPts = Math.round(dist * pipMult);
+            var dLabel = 'D: ' + distPts + ' pts';
+            ctx.save();
+            ctx.fillStyle = 'rgba(220,230,245,0.6)';
+            ctx.font = '500 10px IBM Plex Mono, monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(dLabel, r.width - 60, yC + 4);
+            ctx.restore();
+          });
+            })(); } catch(e) { console.error('S/R zones error:', e); }
+
         var selectedLiveSignals = (latestData.live_signals || []).filter(function(sig) {
                 return sig.ativo === selectedAtivo;
         });
@@ -2765,23 +3054,56 @@ function drawHSOverlay() {
         return bestTrade;
     }
 
+    function findResolvedTradeForPattern(pat) {
+        var refTs = patternReferenceTs(pat);
+        var bestTrade = null;
+        var bestDelta = Number.MAX_SAFE_INTEGER;
+        for (var i = 0; i < selectedBrokerEntries.length; i++) {
+            var trade = selectedBrokerEntries[i];
+            if (trade.result !== 'win' && trade.result !== 'loss' && trade.result !== 'tie') continue;
+            if (trade.dir !== pat.direction) continue;
+            var tradeTs = Number(trade.ts || 0);
+            var delta = (tradeTs > 0 && refTs > 0) ? Math.abs(tradeTs - refTs) : 0;
+            if (delta < 600 && (!bestTrade || delta < bestDelta)) {
+                bestTrade = trade;
+                bestDelta = delta;
+            }
+        }
+        return bestTrade;
+    }
+
     function choosePrimaryOverlayPattern(patterns) {
         if (!patterns || !patterns.length) return [];
-        var ranked = patterns.filter(function(p) {
+        if (authoritativeOverlay) return patterns.slice();
+        var validPats = patterns.filter(function(p) {
             return p && p.right_shoulder && p.right_shoulder.chart_idx >= 0;
-        }).sort(function(a, b) {
-            var aLive = a && !a.backtest ? 1 : 0;
-            var bLive = b && !b.backtest ? 1 : 0;
-            if (aLive !== bLive) return bLive - aLive;
-            var aActive = a && a.signal_active === false ? 0 : 1;
-            var bActive = b && b.signal_active === false ? 0 : 1;
-            if (aActive !== bActive) return bActive - aActive;
-            var aTs = patternReferenceTs(a);
-            var bTs = patternReferenceTs(b);
-            if (aTs !== bTs) return bTs - aTs;
-            return Number(b && b.ia_prob || 0) - Number(a && a.ia_prob || 0);
         });
-        return ranked.length ? [ranked[0]] : [];
+        // Separate DT and non-DT, pick best of each
+        var dtPats = validPats.filter(function(p) { return p.mode === 'double_touch'; });
+        var otherPats = validPats.filter(function(p) { return p.mode !== 'double_touch'; });
+        function rankPats(arr) {
+            return arr.sort(function(a, b) {
+                var aLive = !a.backtest ? 1 : 0, bLive = !b.backtest ? 1 : 0;
+                if (aLive !== bLive) return bLive - aLive;
+                // Prefer winning patterns (faithful to what IA learned)
+                var aWin = (a.backtest && a.backtest.result === 'win') ? 1 : 0;
+                var bWin = (b.backtest && b.backtest.result === 'win') ? 1 : 0;
+                if (aWin !== bWin) return bWin - aWin;
+                var aTs = patternReferenceTs(a), bTs = patternReferenceTs(b);
+                if (aTs !== bTs) return bTs - aTs;
+                return Number(b.ia_prob || 0) - Number(a.ia_prob || 0);
+            });
+        }
+        var result = [];
+        var ranked = rankPats(dtPats);
+        if (ranked.length) result.push(ranked[0]);
+        var rankedOther = rankPats(otherPats);
+        if (rankedOther.length) result.push(rankedOther[0]);
+        // If no DT or no other, just show whatever is best
+        if (!result.length && validPats.length) {
+            result.push(rankPats(validPats)[0]);
+        }
+        return result;
     }
 
   choosePrimaryOverlayPattern(cd.patterns).forEach(function(pat) {
@@ -2803,20 +3125,25 @@ function drawHSOverlay() {
     var isBear = pat.type === 'DOUBLE_TOP';
         var isAuthoritative = pat.overlay_authoritative === true;
 
-    // NN-based colors for live DT patterns (sem backtest)
+    // Colors: DT backtest result drives color, live uses NN/authoritative
     var nnApproved = pat.nn_approved;
     var isLive = !pat.backtest;
+    var btResult = pat.backtest ? pat.backtest.result : null;
     var mainC, mainCa;
-        if (isDT && isLive && isAuthoritative) {
-            mainC = '#a855f7'; mainCa = 'rgba(168,85,247,0.18)';  // roxo = modelo live do bot
+    if (isDT && !isLive && btResult === 'win') {
+      mainC = '#00c853'; mainCa = 'rgba(0,200,83,0.18)';  // verde = IA aprendeu WIN
+    } else if (isDT && !isLive && btResult === 'loss') {
+      mainC = '#ff3d57'; mainCa = 'rgba(255,61,87,0.12)';  // vermelho = IA aprendeu LOSS
+    } else if (isDT && isLive && isAuthoritative) {
+            mainC = '#a855f7'; mainCa = 'rgba(168,85,247,0.18)';
         } else if (isDT && isLive && nnApproved === true) {
-      mainC = '#00e676'; mainCa = 'rgba(0,230,118,0.18)';  // verde = NN aprovou
+      mainC = '#00e676'; mainCa = 'rgba(0,230,118,0.18)';
     } else if (isDT && isLive && nnApproved === false) {
-      mainC = '#ff3d57'; mainCa = 'rgba(255,61,87,0.12)';   // vermelho = NN rejeitou
+      mainC = '#ff3d57'; mainCa = 'rgba(255,61,87,0.12)';
     } else if (isDT && isLive) {
-      mainC = '#6b7280'; mainCa = 'rgba(107,114,128,0.12)';  // cinza = sem modelo
+      mainC = '#6b7280'; mainCa = 'rgba(107,114,128,0.12)';
     } else if (isDT) {
-      mainC = '#a855f7'; mainCa = 'rgba(168,85,247,0.15)';   // roxo = histórico
+      mainC = '#a855f7'; mainCa = 'rgba(168,85,247,0.15)';
     } else {
       mainC = isBear ? '#ff3d57' : '#00e676';
       mainCa = isBear ? 'rgba(255,61,87,0.15)' : 'rgba(0,230,118,0.15)';
@@ -2927,13 +3254,17 @@ function drawHSOverlay() {
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.arc(v1x, v1y, 5, 0, Math.PI * 2); ctx.stroke();
 
-        // ── 6. BADGE "DT" ou "DB" ──
+        // ── 6. BADGE "DT" ou "DB" com resultado ──
         var badgeCX = (lsx + rsx) / 2;
         var badgeCY = (touchMidY + v1y) / 2;
+        var btResult = pat.backtest ? pat.backtest.result : null;
         var badgeText = isBear ? 'DT' : 'DB';
+        if (btResult === 'win') badgeText += ' ✓';
+        else if (btResult === 'loss') badgeText += ' ✗';
         ctx.font = '700 10px Inter, sans-serif'; ctx.textAlign = 'center';
         var badgeW = ctx.measureText(badgeText).width + 14;
-        ctx.fillStyle = 'rgba(168,85,247,0.90)';
+        var badgeBg = btResult === 'win' ? 'rgba(0,200,83,0.90)' : btResult === 'loss' ? 'rgba(255,61,87,0.85)' : 'rgba(168,85,247,0.90)';
+        ctx.fillStyle = badgeBg;
         ctx.beginPath(); ctx.roundRect(badgeCX - badgeW / 2, badgeCY - 9, badgeW, 18, 8); ctx.fill();
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.roundRect(badgeCX - badgeW / 2, badgeCY - 9, badgeW, 18, 8); ctx.stroke();
@@ -3036,12 +3367,28 @@ function drawHSOverlay() {
     // ── Entry marker at confirmation candle (Close price) ──
         var timingHint = pat.timing_hint || {};
         var activeTrade = findActiveTradeForPattern(pat);
-        var waitingSignal = !!(isLive && !activeTrade && timingHint.available && timingHint.action && timingHint.action !== 'now');
+        var resolvedTrade = findResolvedTradeForPattern(pat);
+        var waitingSignal = !!(isLive && !activeTrade && !resolvedTrade && timingHint.available && timingHint.action && timingHint.action !== 'now');
         var shouldDrawEntry = true;
-        var entryLabel = (!activeTrade && isLive) ? 'SINAL' : 'ENTRADA';
+        var entryLabel = (!activeTrade && !resolvedTrade && isLive) ? 'SINAL' : 'ENTRADA';
         var entryChartIdx = (pat.entry_chart_idx != null) ? pat.entry_chart_idx : rsi;
         var entryPrice = pat.entry_price || (pat.backtest && pat.backtest.entry_price) || rs.price;
-        if (activeTrade && Number(activeTrade.price || 0) > 0) {
+        var entryMarkerColor = '#ff6a00';
+        var entryArrowChar = isBear ? '\u25BC' : '\u25B2';
+        if (resolvedTrade) {
+            entryPrice = Number(resolvedTrade.price || entryPrice);
+            entryChartIdx = nearestChartIdxForTs(resolvedTrade.ts);
+            if (entryChartIdx < 0) entryChartIdx = candleData.length - 1;
+            if (resolvedTrade.result === 'win') {
+                entryLabel = 'WIN';
+                entryMarkerColor = '#00e676';
+                entryArrowChar = '\u2713';
+            } else {
+                entryLabel = 'LOSS';
+                entryMarkerColor = '#ff3d57';
+                entryArrowChar = '\u2717';
+            }
+        } else if (activeTrade && Number(activeTrade.price || 0) > 0) {
             entryPrice = Number(activeTrade.price || 0);
             entryChartIdx = nearestChartIdxForTs(activeTrade.ts);
             if (entryChartIdx < 0) entryChartIdx = candleData.length - 1;
@@ -3055,18 +3402,18 @@ function drawHSOverlay() {
         var esleft = gx(Math.max(0, rsi - 2));
         var esright = gx(Math.min(candleData.length - 1, entryChartIdx + 12));
         if (esleft && esright) {
-          ctx.setLineDash([5, 3]); ctx.strokeStyle = '#ff6a00'; ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 3]); ctx.strokeStyle = entryMarkerColor; ctx.lineWidth = 1.5;
           ctx.beginPath(); ctx.moveTo(esleft, ey); ctx.lineTo(esright, ey); ctx.stroke(); ctx.setLineDash([]);
         }
         var entryDrawX = gx(Math.min(candleData.length - 1, entryChartIdx + 1)) || ex;
-        ctx.shadowColor = '#ff6a00'; ctx.shadowBlur = 10;
-        ctx.fillStyle = '#ff6a00'; ctx.beginPath(); ctx.arc(entryDrawX, ey, 10, 0, Math.PI*2); ctx.fill();
+        ctx.shadowColor = entryMarkerColor; ctx.shadowBlur = 10;
+        ctx.fillStyle = entryMarkerColor; ctx.beginPath(); ctx.arc(entryDrawX, ey, 10, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(entryDrawX, ey, 10, 0, Math.PI*2); ctx.stroke();
-        ctx.fillStyle = '#000'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(isBear ? '\u25BC' : '\u25B2', entryDrawX, ey);
+        ctx.fillStyle = resolvedTrade ? '#fff' : '#000'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(entryArrowChar, entryDrawX, ey);
         ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#ff6a00'; ctx.font = '700 10px Inter, sans-serif'; ctx.textAlign = 'left';
+        ctx.fillStyle = entryMarkerColor; ctx.font = '700 10px Inter, sans-serif'; ctx.textAlign = 'left';
                 ctx.fillText(entryLabel + ' ' + entryPrice.toFixed(5), entryDrawX + 16, ey + 4);
       }
     }
@@ -3083,7 +3430,7 @@ function drawHSOverlay() {
             ctx.beginPath();
             ctx.roundRect(rsx - waitWidth / 2, waitY - 10, waitWidth, 18, 5);
             ctx.fill();
-            ctx.strokeStyle = 'rgba(249,115,22,0.35)';
+            ctx.strokeStyle = 'rgba(91,168,230,0.35)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.roundRect(rsx - waitWidth / 2, waitY - 10, waitWidth, 18, 5);
@@ -3162,6 +3509,112 @@ function drawHSOverlay() {
       ctx.fillText(pName, rx, ry + 14);
     }
   });
+
+  // ═══ CONTINUATION SIGNALS — Setas de entrada no gráfico ═══
+  try {
+  var contSignals = selectedLiveSignals.filter(function(s) { return s.type === 'CONTINUATION'; });
+  // Also check patterns for continuation type
+  (cd.patterns || []).forEach(function(p) {
+    if (p.type === 'CONTINUATION') contSignals.push(p);
+  });
+  contSignals.forEach(function(sig) {
+    var entryTs = Number(sig.entry_ts || 0);
+    if (!(entryTs > 0)) return;
+    var ci = nearestChartIdxForTs(entryTs);
+    if (ci < 0 || ci >= candleData.length) return;
+    var cx = gx(ci);
+    var entryP = sig.entry_price || candleData[ci].close;
+    var cy = gy(entryP);
+    if (cx === null || cy === null || isNaN(cx) || isNaN(cy)) return;
+    var isPut = sig.direction === 'PUT';
+    var prob = sig.ml_prob || sig.ia_prob || 0;
+    var probPct = Math.round(prob * 100);
+    var approved = sig.ml_approved !== false && sig.nn_approved !== false;
+    var sigColor = approved ? (isPut ? '#ff3d57' : '#00e676') : '#6b7280';
+
+    // Glow circle
+    ctx.save();
+    ctx.shadowColor = sigColor;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = sigColor;
+    ctx.globalAlpha = 0.25;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Arrow
+    ctx.fillStyle = sigColor;
+    ctx.beginPath();
+    if (isPut) {
+      ctx.moveTo(cx, cy + 18);
+      ctx.lineTo(cx - 8, cy + 8);
+      ctx.lineTo(cx + 8, cy + 8);
+    } else {
+      ctx.moveTo(cx, cy - 18);
+      ctx.lineTo(cx - 8, cy - 8);
+      ctx.lineTo(cx + 8, cy - 8);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Label badge
+    var labelTxt = 'CONT ' + sig.direction + ' ' + probPct + '%';
+    if (blocked) labelTxt = '🚫 SR ' + labelTxt;
+    ctx.font = '700 10px IBM Plex Sans, system-ui, sans-serif';
+    var tw = ctx.measureText(labelTxt).width + 14;
+    var lx = cx + 12;
+    var ly = isPut ? cy + 22 : cy - 30;
+    // Background pill
+    ctx.fillStyle = 'rgba(7,17,31,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(lx, ly, tw, 18, 5);
+    ctx.fill();
+    ctx.strokeStyle = sigColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(lx, ly, tw, 18, 5);
+    ctx.stroke();
+    // Text
+    ctx.fillStyle = sigColor;
+    ctx.textAlign = 'left';
+    ctx.fillText(labelTxt, lx + 7, ly + 13);
+
+    // Compression zone (semi-transparent band)
+    if (sig.compression) {
+      var smStartTs = Number(sig.compression.start_ts || 0);
+      var smEndTs = Number(sig.compression.end_ts || 0);
+      var smi = nearestChartIdxForTs(smStartTs);
+      var smei = nearestChartIdxForTs(smEndTs);
+      if (smi >= 0 && smei >= 0 && smi < candleData.length && smei < candleData.length) {
+        var sx1 = gx(smi);
+        var sx2 = gx(smei);
+        if (sx1 !== null && sx2 !== null && !isNaN(sx1) && !isNaN(sx2)) {
+          var smH = -Infinity, smL = Infinity;
+          for (var ki = smi; ki <= smei && ki < candleData.length; ki++) {
+            smH = Math.max(smH, candleData[ki].high);
+            smL = Math.min(smL, candleData[ki].low);
+          }
+          var zyT = gy(smH);
+          var zyB = gy(smL);
+          if (zyT !== null && zyB !== null && !isNaN(zyT) && !isNaN(zyB)) {
+            ctx.fillStyle = isPut ? 'rgba(255,61,87,0.07)' : 'rgba(0,230,118,0.07)';
+            ctx.fillRect(sx1, Math.min(zyT, zyB), sx2 - sx1, Math.abs(zyB - zyT));
+            ctx.strokeStyle = isPut ? 'rgba(255,61,87,0.25)' : 'rgba(0,230,118,0.25)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.strokeRect(sx1, Math.min(zyT, zyB), sx2 - sx1, Math.abs(zyB - zyT));
+            ctx.setLineDash([]);
+            // Label "Compressão"
+            ctx.fillStyle = 'rgba(255,255,255,0.35)';
+            ctx.font = '500 8px IBM Plex Sans, system-ui, sans-serif';
+            ctx.fillText('Compressão', sx1 + 3, Math.min(zyT, zyB) - 3);
+          }
+        }
+      }
+    }
+  });
+  } catch(e) { console.error('Continuation signals error:', e); }
 
     if (selectedLiveSignals.length > 0) {
         var bestLiveSignal = selectedLiveSignals.reduce(function(a, b) {
@@ -3262,6 +3715,7 @@ function drawHSOverlay() {
             }
         }
     }
+  } catch(e) { console.error('drawHSOverlay error:', e); }
 }
 
 function buildSidebar(data) {
@@ -3289,11 +3743,12 @@ function buildSidebar(data) {
     return a.localeCompare(b);
   });
 
-    var prioritizedAtivos = allAtivos.filter(function(ativo) {
-        var cd = charts[ativo] || {};
-        return selectedSet.has(ativo) || liveSet.has(ativo) || cd.meets_min_patterns;
-    });
-    var displayAtivos = prioritizedAtivos.length > 0 ? prioritizedAtivos : allAtivos;
+    var displayAtivos = allAtivos;
+    // Quando o bot está rodando, mostrar apenas os ativos selecionados pelo bot
+    if (selectedSet.size > 0) {
+        var botAtivos = allAtivos.filter(function(a) { return selectedSet.has(a); });
+        if (botAtivos.length > 0) displayAtivos = botAtivos;
+    }
 
     list.innerHTML = displayAtivos.map(function(ativo) {
     var cd = charts[ativo], ad = byAsset[ativo] || {};
@@ -3386,7 +3841,7 @@ function buildLivePanel(data) {
     }
     return '<div class="signal-card" onclick="selectAsset(\'' + sig.ativo + '\')">' +
       '<div class="sc-top"><span class="sc-name">' + sig.ativo + nnBadge + invertBadge + resultBadge + '</span><span class="sc-dir ' + cls + '"><svg class="icon-svg" style="width:10px;height:10px"><use href="' + dirIcon + '"/></svg> ' + sig.direction + '</span></div>' +
-    '<div class="sc-bottom"><span class="sc-type"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-activity"/></svg> ' + (sig.type==='DOUBLE_TOP'?'DT \u25BC':'DB \u25B2') + ' ' + sig.mode + '</span>' +
+    '<div class="sc-bottom"><span class="sc-type"><svg class="icon-svg" style="width:10px;height:10px"><use href="#i-activity"/></svg> ' + (sig.type==='CONTINUATION'?'CONT \u25B6':sig.type==='DOUBLE_TOP'?'DT \u25BC':'DB \u25B2') + ' ' + sig.mode + '</span>' +
       '<span class="sc-prob"><svg class="icon-svg" style="width:12px;height:12px;stroke:var(--purple)"><use href="#i-brain"/></svg> ' + prob + '%' +
             '<span class="prob-bar"><span class="prob-fill" style="width:' + prob + '%"></span></span></span></div>' +
             predBadge + metaBadge +
@@ -3405,17 +3860,24 @@ function buildResultsPanel(data) {
     el.innerHTML = '<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:20px 0"><svg class="icon-svg" style="width:16px;height:16px;opacity:.4"><use href="#i-activity"/></svg><br>Sem entradas reais ainda<br><span style="font-size:10px;opacity:.6">Inicie o bot para ver os trades aqui</span></div>';
     return;
   }
-    /* Dedup client-side: se win/loss existe para ativo+dir, remover entry */
-  var resolvedKeys = {};
+    /* Dedup client-side: se win/loss existe para ativo+dir dentro de 600s, remover entry */
+  var resolvedArr = [];
   entries.forEach(function(r) {
     if (r.result === 'win' || r.result === 'loss' || r.result === 'tie') {
-      resolvedKeys[(r.ativo||'') + '|' + (r.dir||'') + '|' + Math.floor((r.ts||0)/300)] = true;
+      resolvedArr.push({a: r.ativo||'', d: r.dir||'', t: r.ts||0});
     }
   });
+  var seenEntries = [];
   entries = entries.filter(function(r) {
     if (r.result === 'entry') {
-      var dk = (r.ativo||'') + '|' + (r.dir||'') + '|' + Math.floor((r.ts||0)/300);
-      if (resolvedKeys[dk]) return false;
+      var ea = r.ativo||'', ed = r.dir||'', et = r.ts||0;
+      for (var i = 0; i < resolvedArr.length; i++) {
+        if (resolvedArr[i].a === ea && resolvedArr[i].d === ed && Math.abs(resolvedArr[i].t - et) < 600) return false;
+      }
+      for (var j = 0; j < seenEntries.length; j++) {
+        if (seenEntries[j].a === ea && seenEntries[j].d === ed && Math.abs(seenEntries[j].t - et) < 120) return false;
+      }
+      seenEntries.push({a: ea, d: ed, t: et});
     }
     return true;
   });
@@ -3443,53 +3905,88 @@ function buildResultsPanel(data) {
 function updateDashboard(data) {
   latestData = data;
   var s = data.summary || {};
-  // NN Per-Ativo: mostrar amostras treinadas por ativo
+    var rs = data.real_trade_summary || {};
   var nn = data.nn_per_asset || {};
+  var contMl = data.continuation_ml || {};
   var nnKeys = Object.keys(nn);
+  var contKeys = Object.keys(contMl);
+
+  // ── IA Accuracy Bar (slim bar above stats) ──
+  var iaBarItems = document.getElementById('ia-bar-items');
   if (nnKeys.length > 0) {
-    var nnParts = nnKeys.map(function(a) {
+    var nnParts = nnKeys.slice(0, 10).map(function(a) {
       var d = nn[a];
       var name = a.replace('-OTC','');
-      return name + '=' + (d.samples || 0);
+      var best = Math.max(d.ai1_val || 0, d.ai2_val || 0);
+      var color = best >= 85 ? '#00e676' : best >= 70 ? '#fb923c' : '#ff3d57';
+      return '<span style="color:' + color + ';font-weight:600">' + name + ' ' + best.toFixed(0) + '%</span>';
     });
-    document.getElementById('st-total').textContent = nnParts.join(' | ');
+    iaBarItems.innerHTML = nnParts.join(' <span class="ia-sep">\u2502</span> ');
+  } else if (contKeys.length > 0) {
+    var mlParts = contKeys.slice(0, 12).map(function(a) {
+      var d = contMl[a];
+      var name = a.replace('-OTC','');
+      var acc = d.acc || 0;
+      var color = acc >= 90 ? '#00e676' : acc >= 85 ? '#fb923c' : '#ff3d57';
+      return '<span style="color:' + color + ';font-weight:600">' + name + ' ' + acc.toFixed(0) + '%</span>';
+    });
+    iaBarItems.innerHTML = mlParts.join(' <span class="ia-sep">\u2502</span> ');
   } else {
-    document.getElementById('st-total').textContent = '-';
+    iaBarItems.textContent = 'Aguardando modelos...';
   }
-  var wr = s.wr || 0;
+
+  // ── Win Rate ──
+    var useRealStats = (rs.total || 0) > 0;
+    var wr = useRealStats ? (rs.wr || 0) : (s.wr || 0);
   var wrEl = document.getElementById('st-wr');
   wrEl.textContent = wr.toFixed(1) + '%';
   wrEl.className = 'val ' + (wr >= 60 ? 'green' : wr >= 45 ? 'yellow' : 'red');
-  document.getElementById('st-wins').textContent = s.wins || 0;
-  document.getElementById('st-losses').textContent = (s.total || 0) - (s.wins || 0);
-    var dt = (s.by_type || {}).DOUBLE_TOP;
-    var db = (s.by_type || {}).DOUBLE_BOTTOM;
-  document.getElementById('st-hs').textContent = dt ? dt.wr + '% (' + dt.total + ')' : '-';
-  document.getElementById('st-ihs').textContent = db ? db.wr + '% (' + db.total + ')' : '-';
-  document.getElementById('st-live').textContent = (data.live_signals || []).length;
-  // IA Level — mostrar status NN per-ativo
+
+  // ── Wins / Losses / Total ──
+    var wins = useRealStats ? (rs.wins || 0) : (s.wins || 0);
+    var total = useRealStats ? (rs.total || 0) : (s.total || 0);
+    var losses = useRealStats ? (rs.losses || 0) : (total - wins);
+  document.getElementById('st-wins').textContent = wins;
+  document.getElementById('st-losses').textContent = losses;
+  document.getElementById('st-total').textContent = total;
+
+  // ── Live + Assets count ──
+    var nLive = useRealStats ? (rs.entries || 0) : (data.live_signals || []).length;
+  var nAssets = Object.keys(data.charts || {}).length;
+  document.getElementById('st-live').textContent = nLive;
+  document.getElementById('st-assets').textContent = nAssets;
+
+  // ── Padrões (DT / Continuation breakdown) ──
+  var dt = (s.by_type || {}).DOUBLE_TOP;
+  var db = (s.by_type || {}).DOUBLE_BOTTOM;
+  var cont = (s.by_type || {}).CONTINUATION;
+  var dtParts = [];
+  if (dt) dtParts.push('<span style="color:#a855f7">DT ' + dt.wr + '%</span> <span style="color:var(--text-muted)">(' + dt.total + ')</span>');
+  if (db) dtParts.push('<span style="color:#a855f7">DB ' + db.wr + '%</span> <span style="color:var(--text-muted)">(' + db.total + ')</span>');
+  if (cont) dtParts.push('<span style="color:var(--cyan)">Cont ' + cont.wr + '%</span> <span style="color:var(--text-muted)">(' + cont.total + ')</span>');
+  document.getElementById('st-hs').innerHTML = dtParts.length ? dtParts.join(' <span style="color:var(--border-light);margin:0 3px">\u00b7</span> ') : '-';
+
+  // ── IA Level ──
   var iaLvlEl = document.getElementById('st-ia-level');
   var iaLvlBox = document.getElementById('st-ia-level-box');
-  var nnReady = 0;
-  var nnTotal = 0;
-  var nnK = Object.keys(nn);
-  for (var ni = 0; ni < nnK.length; ni++) {
+  var nnReady = 0, nnTotal = 0;
+  for (var ni = 0; ni < nnKeys.length; ni++) {
     nnTotal++;
-    if (nn[nnK[ni]].ml) nnReady++;
+    if (nn[nnKeys[ni]].ml) nnReady++;
   }
   if (nnReady > 0) {
-    iaLvlEl.textContent = '\ud83c\udfc6 NN ' + nnReady + '/' + nnTotal + ' ativos';
-    iaLvlEl.style.color = '#00e676';
-    iaLvlBox.style.borderColor = '#00e676';
+    iaLvlEl.innerHTML = '<span style="color:#00e676">DT ' + nnReady + '/' + nnTotal + '</span> <span style="color:var(--text-muted);margin:0 2px">+</span> <span style="color:var(--cyan)">ML ' + contKeys.length + '</span>';
+    iaLvlBox.style.borderColor = 'rgba(0,230,118,0.3)';
+  } else if (contKeys.length > 0) {
+    iaLvlEl.innerHTML = '<span style="color:var(--cyan)">ML ' + contKeys.length + ' ativos</span>';
+    iaLvlBox.style.borderColor = 'rgba(91,184,240,0.3)';
   } else if (nnTotal > 0) {
-    iaLvlEl.textContent = '\u26a0\ufe0f NN carregando...';
-    iaLvlEl.style.color = '#ff6a00';
-    iaLvlBox.style.borderColor = '#ff6a00';
+    iaLvlEl.innerHTML = '<span style="color:#ff6a00">\u26a0 Carregando...</span>';
+    iaLvlBox.style.borderColor = 'rgba(255,106,0,0.3)';
   } else {
     var lvl = s.ia_level || {num:1, nome:'Iniciante', emoji:'\ud83c\udf31', cor:'#6b7280'};
-    iaLvlEl.textContent = lvl.emoji + ' ' + lvl.num + ' - ' + lvl.nome;
-    iaLvlEl.style.color = lvl.cor;
-    iaLvlBox.style.borderColor = lvl.cor;
+    iaLvlEl.innerHTML = lvl.emoji + ' Nv.' + lvl.num;
+    iaLvlBox.style.borderColor = 'transparent';
   }
   document.getElementById('badge-scan').innerHTML = '<svg class="icon-svg" style="width:12px;height:12px"><use href="#i-layers"/></svg> Scan #' + (data.scan_count || 0);
   document.getElementById('badge-status').innerHTML = '<svg class="icon-svg" style="width:12px;height:12px"><use href="#i-wifi"/></svg> Online';
@@ -3516,7 +4013,7 @@ async function fetchData() {
 }
 
 fetchData();
-setInterval(fetchData, 15000);
+setInterval(fetchData, 30000);
 
 /* ═══ LIVE CANDLE STREAMING — atualiza a cada 2s ═══ */
 var _liveInterval = null;
@@ -3686,7 +4183,11 @@ function _renderDecisionModal(d, ativo, trade) {
     ov.classList.add('open');
     return;
   }
-    var nn = d.nn||{}, gpt = d.gpt||{}, geo = d.geometry||{}, pat = d.pattern||{}, consensus = d.ai_consensus||{}, shadow = d.shadow_pattern_lib||{};
+        var nn = d.nn||{}, gpt = d.gpt||{}, geo = d.geometry||{}, pat = d.pattern||{}, consensus = d.ai_consensus||{}, shadow = d.shadow_pattern_lib||{};
+        var quality = d.quality_score || {};
+        var m5s = d.m5_structure || {};
+        var regionGate = d.region_liquidity_gate || {};
+        var candleGate = d.candle_confirmation_gate || {};
   var status = d.status||'entry';
     var patLabel = d.pat_type==='DOUBLE_TOP' ? 'Double Top' : d.pat_type==='DOUBLE_BOTTOM' ? 'Double Bottom' : (d.pat_type||'Padrão');
     var geoScore = d.geom_score || 0;
@@ -3708,17 +4209,26 @@ function _renderDecisionModal(d, ativo, trade) {
         var finalStateClass = consensus.final_ok===false ? 'bad' : consensus.gpt_ok===true || consensus.shadow_agreement===true ? 'good' : 'warn';
         var finalStateText = consensus.reason || 'Sem resumo de consenso';
         var nnStateText = !nnAvailable ? (nn.state_text || 'NN indisponível') : (nn.approved===true ? 'Confluencia validada' : nn.approved===false ? 'Confluencia recusada' : 'Sem veredito');
-        var qualityBlend = Math.max(0, Math.min(1, (((nnAvailable ? nnScore : 0) || 0) * 0.56) + (iaProb * 0.24) + (Math.min(1, geoScore) * 0.20)));
+          var qualityBlend = Math.max(0, Math.min(1, (((nnAvailable ? nnScore : 0) || 0) * 0.56) + (iaProb * 0.24) + (Math.min(1, geoScore) * 0.20)));
         var qualityLabel = qualityBlend >= 0.86 ? 'Elite' : qualityBlend >= 0.72 ? 'Forte' : qualityBlend >= 0.58 ? 'Estavel' : 'Agressivo';
         var timingLabel = (d.wick_pct||0) >= 30 ? 'Entrada precisa' : (d.wick_pct||0) >= 15 ? 'Timing valido' : 'Timing curto';
         var structureState = geoScore >= 0.9 ? 'Estrutura premium' : geoScore >= 0.75 ? 'Estrutura consistente' : 'Estrutura observada';
+      var qualityScoreLabel = quality.score != null ? String(quality.score) + '/100' : 'N/D';
+      var qualityScoreClass = quality.score != null ? _vc((quality.score||0)/100,0.8,0.6) : 'neutral';
+      var m5StateText = m5s.reason || 'Estrutura M5 indisponível';
+      var m5StateClass = m5s.ok === true ? 'good' : m5s.ok === false ? 'bad' : 'neutral';
+      var regionStateText = regionGate.reason || 'Gate de região indisponível';
+      var regionStateClass = regionGate.ok === true ? 'good' : regionGate.ok === false ? 'bad' : 'neutral';
+      var candleStateText = candleGate.reason || 'Gate de vela indisponível';
+      var candleStateClass = candleGate.ok === true ? 'good' : candleGate.ok === false ? 'bad' : 'neutral';
   var geoOk = (geo.symmetry||0)>=0.40 && (geo.span||0)>=12 && (geo.depth_ratio||0)>=2.0;
   var nnMetricClass = nnAvailable ? _vc(nnScore,0.8,0.5) : 'neutral';
   var steps = [
         {n:'Padrão',v:patLabel,p:true},
-                {n:'Estrutura',v:qualityLabel,p:geoOk},
-                {n:'IA Base',v:_pct(iaProb),p:iaProb>=0.55},
-                {n:'Confluencia',v:(nnAvailable ? _pct(nnScore) : 'NN indisponível'),p:nnAvailable && nn.approved===true}
+                {n:'M5',v:(m5s.bias || 'neutro'),p:m5s.ok===true},
+                {n:'Região',v:(regionGate.ok===true ? 'válida' : 'bloq'),p:regionGate.ok===true},
+                {n:'Vela',v:(candleGate.signal_candle_class || 'n/d'),p:candleGate.ok===true},
+                {n:'IA',v:(nnAvailable ? _pct(nnScore) : 'NN indisponível'),p:nnAvailable && nn.approved===true}
   ];
   var pipe = steps.map(function(s,i){
     var cls = s.p?'pass':'fail';
@@ -3736,11 +4246,11 @@ function _renderDecisionModal(d, ativo, trade) {
         html += '<div class="dm-headline"><div class="dm-headcopy"><span class="dm-overline">Analise reservada da entrada</span><div class="dm-title"><span style="font-size:20px">'+(status==='win'?'✅':status==='loss'?'❌':'⏳')+'</span><strong>'+d.ativo+'</strong><span class="dm-direction '+dirCls+'">'+d.direcao+'</span></div><div class="dm-meta">'+(d.time||'Sem horario')+' · '+(d.mode||'Modo nao informado')+' · exp '+expMin+' min</div></div><div class="dm-score-badge '+nnStateClass+'"><span>Confluencia IA</span><strong>'+nnScoreLabel+'</strong></div></div>';
         html += '<div class="dm-pipeline">'+pipe+'</div>';
         html += '<div class="dm-hero">';
-        html += '<div class="dm-focus prime"><div class="dm-focus-head"><div><h4>Resumo executivo</h4><p>Leitura profissional da entrada com auditoria visual, sem expor a engenharia interna da estrategia.</p></div><div class="dm-score-badge '+nnStateClass+'"><span>Prob Win</span><strong>'+probWinLabel+'</strong></div></div>';
+        html += '<div class="dm-focus prime"><div class="dm-focus-head"><div><h4>Resumo executivo</h4><p>Leitura profissional da entrada com auditoria visual, sem expor a engenharia interna da estrategia.</p></div><div class="dm-score-badge '+qualityScoreClass+'"><span>Score final</span><strong>'+qualityScoreLabel+'</strong></div></div>';
         html += '<div class="dm-kpis">';
         html += '<div class="dm-kpi"><span class="kl">Veredito IA</span><span class="kv '+nnStateClass+'">'+nnStateText+'</span></div>';
         html += '<div class="dm-kpi"><span class="kl">Forca do setup</span><span class="kv '+_vc(qualityBlend,0.8,0.6)+'">'+qualityLabel+'</span></div>';
-        html += '<div class="dm-kpi"><span class="kl">Contexto base</span><span class="kv '+_vc(iaProb,0.7,0.5)+'">'+_pct1(iaProb)+'</span></div>';
+        html += '<div class="dm-kpi"><span class="kl">Estrutura M5</span><span class="kv '+m5StateClass+'">'+(m5s.bias || 'N/D')+'</span></div>';
         html += '<div class="dm-kpi"><span class="kl">Timing</span><span class="kv '+_vc(d.wick_pct||0,30,15)+'">'+timingLabel+'</span></div>';
         html += '</div></div>';
         html += '<div class="dm-focus"><h4>Resumo da execucao</h4><div class="dm-pillrow"><span class="dm-pill '+nnStateClass+'">'+nnStateText+'</span><span class="dm-pill neutral">EXP '+expMin+'m</span><span class="dm-pill neutral">'+(d.mode||'Sem modo')+'</span><span class="dm-pill '+statePillCls+'">'+resText+'</span></div>';
@@ -3749,6 +4259,9 @@ function _renderDecisionModal(d, ativo, trade) {
         html += '<div class="dm-row"><span class="dl">Fonte NN</span><span class="dv neutral">'+nnSource+'</span></div>';
         if (nnReason) html += '<div class="dm-row"><span class="dl">Motivo NN</span><span class="dv neutral">'+nnReason+'</span></div>';
         html += '<div class="dm-row"><span class="dl">Estrutura</span><span class="dv '+_vc(geoScore,0.9,0.7)+'">'+structureState+'</span></div>';
+        html += '<div class="dm-row"><span class="dl">Estrutura M5</span><span class="dv '+m5StateClass+'">'+m5StateText+'</span></div>';
+        html += '<div class="dm-row"><span class="dl">Região/Liquidez</span><span class="dv '+regionStateClass+'">'+regionStateText+'</span></div>';
+        html += '<div class="dm-row"><span class="dl">Vela confirmação</span><span class="dv '+candleStateClass+'">'+candleStateText+'</span></div>';
         html += '<div class="dm-row"><span class="dl">Broker</span><span class="dv neutral">'+(d.broker || '?')+'</span></div>';
         html += '</div>';
         html += '</div>';
@@ -3761,6 +4274,11 @@ function _renderDecisionModal(d, ativo, trade) {
         html += '<div class="dm-row"><span class="dl">IA generativa</span><span class="dv '+gptStateClass+'">'+gptStateText+'</span></div>';
         html += '<div class="dm-row"><span class="dl">Biblioteca shadow</span><span class="dv '+shadowStateClass+'">'+shadowStateText+'</span></div>';
         html += '<div class="dm-row"><span class="dl">Consenso final</span><span class="dv '+finalStateClass+'">'+finalStateText+'</span></div>';
+        html += '<div class="dm-row"><span class="dl">Score confluência</span><span class="dv '+qualityScoreClass+'">'+qualityScoreLabel+'</span></div>';
+        html += '<div class="dm-row"><span class="dl">Camada estrutura</span><span class="dv neutral">'+(quality.structure != null ? quality.structure.toFixed(1) + '/20' : 'N/D')+'</span></div>';
+        html += '<div class="dm-row"><span class="dl">Camada região</span><span class="dv neutral">'+(quality.region != null ? quality.region.toFixed(1) + '/20' : 'N/D')+'</span></div>';
+        html += '<div class="dm-row"><span class="dl">Camada vela</span><span class="dv neutral">'+(quality.candle != null ? quality.candle.toFixed(1) + '/20' : 'N/D')+'</span></div>';
+        html += '<div class="dm-row"><span class="dl">Camada IA</span><span class="dv neutral">'+(quality.ai != null ? quality.ai.toFixed(1) + '/20' : 'N/D')+'</span></div>';
         html += '<div class="dm-row"><span class="dl">Score geometrico</span><span class="dv '+_vc(geoScore,0.9,0.7)+'">'+_f4(geoScore)+'</span></div>';
         html += '<div class="dm-row"><span class="dl">Rejeicao</span><span class="dv '+_vc(d.wick_pct||0,30,15)+'">'+(d.wick_pct||0)+'%</span></div>';
         html += '</div>';
@@ -4086,7 +4604,7 @@ def main():
     args = parser.parse_args()
     
     log.info(f"{'='*60}")
-    log.info(f"  🧠 WS Trader — IA Double Touch Dashboard")
+    log.info(f"  🧠 WS Trader — IA Continuation Dashboard")
     log.info(f"  📊 Dados: leitura passiva dos arquivos do bot (sem conexão própria)")
     log.info(f"  🌐 http://localhost:{args.port}")
     log.info(f"{'='*60}")
