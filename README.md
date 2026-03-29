@@ -8,9 +8,6 @@
 
 Baixe a versão mais recente na [página de releases](../../releases/latest).
 
-Este repositório público hospeda apenas metadata de atualização e os instaladores publicados nas releases.
-O código-fonte proprietário não é distribuído aqui.
-
 ---
 
 ## Requisitos
