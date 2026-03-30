@@ -1,6 +1,6 @@
 {
-  "version": "7.0.0",
-  "changelog": "v7.0.0 - IA M1 proprietaria com 5 redes neurais (IA1-IA5), expiracao inteligente via rede neural (1-5 min), timeout dinamico, painel M1 AI AO VIVO removido, modelos treinados offline com candles_100k",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.0.0/WsTrader_Setup_7.0.0.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.0.0/WsTrader_Setup_7.0.0.exe"
+  "version": "7.0.1",
+  "changelog": "v7.0.1 - v7.0.1 - Modelos M1 AI inclusos no instalador, fix sinais dashboard, desativado download NN legado (404)",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.0.1/WsTrader_Setup_7.0.1.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.0.1/WsTrader_Setup_7.0.1.exe"
 }
