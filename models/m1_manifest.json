@@ -1,146 +1,146 @@
 {
-  "version": "7.0.4",
-  "updated": "2026-03-31 06:37:22",
+  "version": "7.0.5",
+  "updated": "2026-03-31 11:27:50",
   "total_files": 35,
   "files": {
     "m1_ai_AIG-OTC.pkl": {
-      "md5": "b5da71bde19ecb58a4871e3c61f11920",
+      "md5": "2a5a323407a2e442cf4844f3902dcd41",
       "size": 1207853
     },
     "m1_ai_AIRLINES-OTC.pkl": {
-      "md5": "01755c34a8fe76d9a0ced9f09f774604",
+      "md5": "7e37ee0e967a87463c7f0043c8efa5a6",
       "size": 1207858
     },
     "m1_ai_ALIBABA-OTC.pkl": {
-      "md5": "ed72db1cbcdf1ed100341a9d1dda9303",
+      "md5": "8202f71b3289267cecb8df5087f0af0e",
       "size": 1207856
     },
     "m1_ai_AMAZON-OTC.pkl": {
-      "md5": "ed948296b67eda37782d5488c6b1243b",
+      "md5": "866f5452c2b32074d1cf881ea9ab85d7",
       "size": 1207855
     },
     "m1_ai_AUDCAD-OTC.pkl": {
-      "md5": "fdb26761c791cbf50101633795232b46",
+      "md5": "aa7110db4779117fd9d869ffe64faba2",
       "size": 1207861
     },
     "m1_ai_AUDCHF-OTC.pkl": {
-      "md5": "3b9a615b436635714481369470f57955",
+      "md5": "7de0d323982bd96dca6b0c067d8ea068",
       "size": 1207862
     },
     "m1_ai_AUDJPY-OTC.pkl": {
-      "md5": "84cd5011857bbb4256e697bbc921bdf6",
+      "md5": "834059cf469d6eada2847515f32dc24a",
       "size": 1207862
     },
     "m1_ai_AUDNZD-OTC.pkl": {
-      "md5": "744242a1d4d66f0023d9a637afcd0efe",
+      "md5": "35948c260519cc85f69dad5c7b95f177",
       "size": 1207861
     },
     "m1_ai_AUDUSD-OTC.pkl": {
-      "md5": "fbe9244d04e057116b8611ff0210d04a",
+      "md5": "c325f6a120343f469a282c7f5cad9284",
       "size": 1207861
     },
     "m1_ai_CADCHF-OTC.pkl": {
-      "md5": "b066a051884cc26b678eec8d2ad25e09",
+      "md5": "635d1575d0466b8dd918a9c9b9323ade",
       "size": 1207848
     },
     "m1_ai_CADJPY-OTC.pkl": {
-      "md5": "f2fa5e14f013890fb74a22e37caa4016",
+      "md5": "2364e411e95f047ed6ddd0473a03a9a5",
       "size": 1207862
     },
     "m1_ai_CHFJPY-OTC.pkl": {
-      "md5": "a09d10af600ce38e42cad5a75266563d",
+      "md5": "eb54445bea82b1e9dd41118db736ae5d",
       "size": 1207848
     },
     "m1_ai_EURAUD-OTC.pkl": {
-      "md5": "ee94d2d93544aaeb738172c15359ee16",
+      "md5": "cb4711affb59eb8e29ecd816376edfa0",
       "size": 1207862
     },
     "m1_ai_EURCAD-OTC.pkl": {
-      "md5": "1a9dec5c1c144481130ccc53005c5c4f",
+      "md5": "68da6523267aae48bce3c46c50702424",
       "size": 1207862
     },
     "m1_ai_EURCHF-OTC.pkl": {
-      "md5": "54ce731f842d4f3d97b716c037d79e40",
+      "md5": "dab343703aba330a5b57ee7ecbc0f966",
       "size": 1207848
     },
     "m1_ai_EURGBP-OTC.pkl": {
-      "md5": "5e8d729e673e29ccb555623f8099d92c",
+      "md5": "e9ebb0191427ed2eadbf8a0c6744ae1e",
       "size": 1207861
     },
     "m1_ai_EURJPY-OTC.pkl": {
-      "md5": "fd21e64ae943ec8f54993c9fecf20a21",
+      "md5": "0adf4c86d0794e96a2f495a8df307af2",
       "size": 1207861
     },
     "m1_ai_EURNZD-OTC.pkl": {
-      "md5": "324ea181a10dea1cfaac715916a84461",
+      "md5": "6cc6f74a65dba3a61e317a1379f077e8",
       "size": 1207848
     },
     "m1_ai_EURUSD-OTC.pkl": {
-      "md5": "19713325f5c52fb818620d5e4a0e9908",
+      "md5": "9b065d05ef169fb3d4106a7efe2d54ba",
       "size": 1207862
     },
     "m1_ai_GBPAUD-OTC.pkl": {
-      "md5": "b948a6aab3ae843b948b2edd80f93faf",
+      "md5": "330c395fd19cc3450e14ab34654f52eb",
       "size": 1207862
     },
     "m1_ai_GBPCAD-OTC.pkl": {
-      "md5": "c4374814648a1e852f01cd887fd9eb58",
+      "md5": "b0fc39e60aec4771996265745733dc53",
       "size": 1207862
     },
     "m1_ai_GBPCHF-OTC.pkl": {
-      "md5": "0350397e4bb8d0b625b33b97495de104",
+      "md5": "c5489829944b9519b564b69ee97339e2",
       "size": 1207862
     },
     "m1_ai_GBPJPY-OTC.pkl": {
-      "md5": "fcbe4d8ec1d93455771fb0a6d470a230",
+      "md5": "5fa8e26f724c01043cfe6a2d23e76142",
       "size": 1207848
     },
     "m1_ai_GBPNZD-OTC.pkl": {
-      "md5": "5a4cd588f92364b978177d9bd6f7126e",
+      "md5": "7ff9a3f8237c4ece51fdcb6da4f10861",
       "size": 1207862
     },
     "m1_ai_GBPUSD-OTC.pkl": {
-      "md5": "dd626ca7298cc296754efbcb38b320c5",
+      "md5": "a9faa719e1097b413176e85ca5c3a210",
       "size": 1207848
     },
     "m1_ai_NZDCAD-OTC.pkl": {
-      "md5": "7d9f3033fbf8ea3caee7c852fcedc369",
-      "size": 1207861
+      "md5": "fa126e04ab4d56592e1bf41af1eb97b2",
+      "size": 1207860
     },
     "m1_ai_NZDJPY-OTC.pkl": {
-      "md5": "d040d782361a11874da86233ef78eae3",
+      "md5": "d5ebc0bc22ebf3fca6bc16d074549328",
       "size": 1207861
     },
     "m1_ai_NZDUSD-OTC.pkl": {
-      "md5": "de7e661571f9a69290c4141340221295",
+      "md5": "515f27fe55f5a66e53f3e1cccf75570d",
       "size": 1207848
     },
     "m1_ai_USDCAD-OTC.pkl": {
-      "md5": "c21abef34683ccf5ae93e1ec3316e1f0",
+      "md5": "37dd5f1e9f0c09f60af280c04bd50fbb",
       "size": 1207862
     },
     "m1_ai_USDCHF-OTC.pkl": {
-      "md5": "daebe9bd1c858b8aa259299f4e6aaeb7",
+      "md5": "eaf41a3164f5161e54fad00200a191a3",
       "size": 1207862
     },
     "m1_ai_USDHKD-OTC.pkl": {
-      "md5": "b414e4865c9835b7e04bea9fe2f9e6ac",
-      "size": 1207848
+      "md5": "cf0ecfde3a36ada0ebc5a09f3821776b",
+      "size": 1207847
     },
     "m1_ai_USDINR-OTC.pkl": {
-      "md5": "ca90aa0e95dc831d9facbfe534b8b550",
+      "md5": "f1c6763518f5a51bf6487f9f2b97b89f",
       "size": 1207861
     },
     "m1_ai_USDJPY-OTC.pkl": {
-      "md5": "59fc15883dbde29052b5d150735c1807",
+      "md5": "5d6aad13944bbf7eae1f44bd59de34e5",
       "size": 1207861
     },
     "m1_ai_USDSGD-OTC.pkl": {
-      "md5": "0315a476c1a7aee8f2df3a19412321e1",
+      "md5": "3ce45c4068e54e57a39afc007d579d09",
       "size": 1207848
     },
     "m1_ai_USDZAR-OTC.pkl": {
-      "md5": "c8ace8ee99ce3a7a0c2295128cdc4293",
+      "md5": "14f12981d4225b8ac824fc7003db336d",
       "size": 1207861
     }
   }
