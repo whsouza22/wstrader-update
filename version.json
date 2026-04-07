@@ -1,6 +1,6 @@
 {
-  "version": "7.0.4",
-  "changelog": "v7.0.4 - IA6 Confluence Gate, 35 modelos M1 AI, auto-update",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.0.4/WsTrader_Setup_7.0.4.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.0.4/WsTrader_Setup_7.0.4.exe"
+  "version": "7.0.6",
+  "changelog": "v7.0.6 - Smart Inversion AI conf-based, M5 structural model, P2/P3/P4 filter optimization",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.0.6/WsTrader_Setup_7.0.6.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.0.6/WsTrader_Setup_7.0.6.exe"
 }
