@@ -1,6 +1,6 @@
 {
-  "version": "7.1.0",
-  "changelog": "v7.1.0 - IA confirmacao inteligente (candle patterns + momentum + wick) | Blacklist crypto | Circuit breaker 3 losses | Cooldown por ativo | Entry deadline 3s",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.1.0/WsTrader_Setup_7.1.0.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.1.0/WsTrader_Setup_7.1.0.exe"
+  "version": "7.1.1",
+  "changelog": "v7.1.1 - Entrada instantanea (<1s) | Quadrante M5 | Dashboard non-blocking | Confirmacao inteligente candle patterns | Blacklist crypto | Circuit breaker",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.1.1/WsTrader_Setup_7.1.1.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.1.1/WsTrader_Setup_7.1.1.exe"
 }
