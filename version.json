@@ -1,6 +1,6 @@
 {
-  "version": "7.1.2",
-  "changelog": "v7.1.2 - Bloqueio sinais sem confirmacao (score<0 + conf=[]) | OTC TURBO direto sem DIGITAL timeout | DEDUP com expiracao 120s | Blacklist reforçado | Selecao inteligente de sinais",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.1.2/WsTrader_Setup_7.1.2.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.1.2/WsTrader_Setup_7.1.2.exe"
+  "version": "7.1.3",
+  "changelog": "v7.1.3 - Tendencia corrigida: analise forca de corpo das velas (body strength) | Bloqueia CALL quando vermelhas 2x maiores que verdes | Bloqueia PUT quando verdes 2x maiores que vermelhas | Override trend estrutural por momentum real",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.1.3/WsTrader_Setup_7.1.3.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.1.3/WsTrader_Setup_7.1.3.exe"
 }
