@@ -1,6 +1,6 @@
 {
-  "version": "7.2.0",
-  "changelog": "v7.2.0 - IA WS Trader adaptativa: threshold dinamico, regime detection, temporal decay kNN, learning rate adaptivo. Removido ChatGPT. Dashboard fix breakout_signals. Entradas limpas.",
-  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.2.0/WsTrader_Setup_7.2.0.exe",
-  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.2.0/WsTrader_Setup_7.2.0.exe"
+  "version": "7.2.1",
+  "changelog": "v7.2.1 - Transformer v2 gramatica ativo, RL pausado no modo gramatica, build protegido atualizado",
+  "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.2.1/WsTrader_Setup_7.2.1.exe",
+  "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.2.1/WsTrader_Setup_7.2.1.exe"
 }
