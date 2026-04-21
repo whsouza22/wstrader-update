@@ -1,6 +1,6 @@
 {
   "version": "7.2.1",
-  "changelog": "v7.2.1 - Transformer v2 gramatica ativo, RL pausado no modo gramatica, build protegido atualizado",
+  "changelog": "v7.2.1 - hotfix runtime: dependencias ws_auto no pacote + path frozen _MEIPASS + parser de instancia duplicada",
   "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.2.1/WsTrader_Setup_7.2.1.exe",
   "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.2.1/WsTrader_Setup_7.2.1.exe"
 }
