@@ -1,6 +1,6 @@
 {
   "version": "7.2.4",
-  "changelog": "v7.2.4 - hotfix rota pos-login para dashboard /bot",
+  "changelog": "v7.2.4 - hotfix bot nao redireciona para train_ai",
   "download_url": "https://github.com/whsouza22/wstrader-update/releases/download/v7.2.4/WsTrader_Setup_7.2.4.exe",
   "download_link": "https://github.com/whsouza22/wstrader-update/releases/download/v7.2.4/WsTrader_Setup_7.2.4.exe"
 }
