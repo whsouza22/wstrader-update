@@ -1,0 +1,22 @@
+﻿{
+  "version": "1.0.0",
+  "updated": "2026-08-13T20:20:48.7030007-04:00",
+  "grammar": {
+    "file": "grammar_v3_model.json",
+    "version": "v3",
+    "sha256": "458b9cefa9aec5be21155ae987843ef77384e0ee0e6254b1f1fa25a4e3e290a5",
+    "url": "https://github.com/whsouza22/wstrader-update/releases/download/assets-v1/grammar_v3_model.json"
+  },
+  "candles": {
+    "file": "candles_majors.zip",
+    "version": "majors-1",
+    "sha256": "7b2bfb57b2ffdb8dd5d4dd38f5899704fcf3f633e9f478ddc6b9e38b3f3ab095",
+    "url": "https://github.com/whsouza22/wstrader-update/releases/download/assets-v1/candles_majors.zip"
+  },
+  "supervisor": {
+    "file": "supervisor_corrections.json",
+    "version": "1",
+    "sha256": "1b85056cecc6a22438fdf8b86e83a4238da8ea9d39db9c049d4e7f4fb947e91d",
+    "url": "https://github.com/whsouza22/wstrader-update/releases/download/assets-v1/supervisor_corrections.json"
+  }
+}
